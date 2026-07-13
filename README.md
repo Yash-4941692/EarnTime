@@ -34,18 +34,20 @@ chrome://extensions
 
 ## Screenshots
 
-### Home Screen
-![Home Screen](screenshots/home.png)
+### Dashboard
+![Dashboard](screenshots/dashboard.png)
 
-### Study Timer
-![Study Timer](screenshots/timer.png)
-4. Enable **Developer Mode**.
-5. Click **Load unpacked**.
-6. Select the extracted extension folder.
+### Productivity Status
+![Half Unproductive](screenshots/half-unproductive.png)
 
-Done!
+### Settings
+![Settings](screenshots/settings.png)
+
+### Statistics
+![Stats](screenshots/stats.png)
 
 ---
+
 
 ## 🛠 Technologies
 
