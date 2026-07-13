@@ -1,53 +1,67 @@
-# EarnTime
+# EarnTime ⏳
 
-Version: 1.0.1
+> Earn your screen time by studying.
 
-## Description
-Earn entertainment screen time by studying. Block distracting websites until you've put in the work.
+EarnTime is a free Chrome extension that rewards productive study sessions with entertainment time.
 
-## 🚀 Quick Start (Pre-built)
-
-This extension comes pre-built and ready to use!
-
-1. Extract this ZIP file to a folder on your computer
-2. Open Chrome and navigate to `chrome://extensions/`
-3. Enable "Developer mode" using the toggle in the top right
-4. Click "Load unpacked" button
-5. Select the extracted folder
-6. The extension should now be installed and active!
-
-## ⚛️ Development Setup (Modify Source)
-
-This is a React TypeScript extension. To modify and rebuild, you can find the source code in the `source/` directory:
-
-### Prerequisites (for developers)
-- Node.js 18+ installed
-- npm or yarn
-
-### Steps to modify:
-1. Copy all contents from the `source/` folder to a new root directory
-2. Run `npm install`
-3. Run `npm run build` to update the extension files in the root
-
-## 📁 Project Structure
-
-```
-├── manifest.json        # Extension manifest
-├── popup.html           # Popup HTML template
-├── popup.js             # Bundled popup code
-├── popup.css            # Popup styles
-├── content.js           # Bundled content script
-├── background.js        # Bundled service worker
-├── icons/               # Extension icons
-└── src/                 # Source files
-```
-
-## Support
-
-For issues or questions, please refer to:
-- [Chrome Extension Documentation](https://developer.chrome.com/docs/extensions/)
-- [React Documentation](https://react.dev/)
+Instead of endlessly browsing, you study first and earn minutes that you can later spend on distracting websites.
 
 ---
-Built with Chrome Extension Builder (AI-Powered)
-⚛️ React TypeScript Extension
+
+## ✨ Features
+
+- 📚 Earn screen time by studying
+- 🚫 Blocks distracting websites until you earn time
+- ⏱ Custom study-to-reward ratio
+- 💾 Saves your progress locally
+- ⚡ Lightweight and fast
+- 🔒 No login required
+- 🆓 Completely free
+
+---
+
+## 📥 Installation
+
+Since this extension is not available on the Chrome Web Store, install it manually.
+
+1. Download this repository as a ZIP.
+2. Extract the ZIP.
+3. Open Chrome and go to:
+
+```
+chrome://extensions
+```
+
+4. Enable **Developer Mode**.
+5. Click **Load unpacked**.
+6. Select the extracted extension folder.
+
+Done!
+
+---
+
+## 🛠 Technologies
+
+- JavaScript
+- HTML
+- CSS
+
+---
+
+## 🤝 Contributing
+
+Suggestions, bug reports, and pull requests are welcome.
+
+---
+
+## ⭐ Support
+
+If you find EarnTime useful, please consider giving this repository a ⭐.
+
+It helps more people discover the project.
+
+---
+
+## 📄 License
+
+See `LICENSES.txt`.
