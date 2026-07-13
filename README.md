@@ -37,7 +37,7 @@ chrome://extensions
 ### Dashboard
 ![Dashboard](screenshots/dashboard.png)
 
-### Productivity Status
+### Half Unproductive Site (Site which is of use but also distracting)
 ![Half Unproductive](screenshots/half-unproductive.png)
 
 ### Settings
