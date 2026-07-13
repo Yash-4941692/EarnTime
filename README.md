@@ -32,6 +32,12 @@ Since this extension is not available on the Chrome Web Store, install it manual
 chrome://extensions
 ```
 
+4. Enable **Developer mode**.
+5. Click **Load unpacked** → Select the extracted EarnTime folder.
+6. Pin the extension and start earning screen time by studying! 📚⏱️
+
+---
+
 ## Screenshots
 
 ### Dashboard
