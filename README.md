@@ -32,6 +32,13 @@ Since this extension is not available on the Chrome Web Store, install it manual
 chrome://extensions
 ```
 
+## Screenshots
+
+### Home Screen
+![Home Screen](screenshots/home.png)
+
+### Study Timer
+![Study Timer](screenshots/timer.png)
 4. Enable **Developer Mode**.
 5. Click **Load unpacked**.
 6. Select the extracted extension folder.
