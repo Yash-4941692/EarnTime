@@ -2,12 +2,756 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EarnTime</title>
-  <link rel="stylesheet" href="popup.css">
+  <title>EarnTime Dashboard</title>
+  <style>
+    :root {
+      --primary: #818cf8;
+      --primary-glow: rgba(129, 140, 248, 0.3);
+      --primary-hover: #4f46e5;
+      --bg-dark: #090d16;
+      --card-glass: rgba(22, 28, 45, 0.45);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent: #10b981;
+      --accent-glow: rgba(16, 185, 129, 0.25);
+      --danger: #f43f5e;
+      --danger-glow: rgba(244, 63, 94, 0.25);
+      --warning: #f59e0b;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    body {
+      width: 420px;
+      height: 600px;
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(244, 63, 94, 0.1) 0px, transparent 50%);
+      color: var(--text-main);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(10px);
+      padding: 14px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-badge {
+      background: linear-gradient(135deg, #6366f1, #a855f7);
+      color: white;
+      font-weight: 800;
+      padding: 4px 8px;
+      border-radius: 8px;
+      font-size: 13px;
+      box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+    }
+
+    .app-title {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      background: linear-gradient(to right, #ffffff, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .wallet-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent-glow);
+      border: 1px solid var(--accent);
+      padding: 5px 12px;
+      border-radius: 20px;
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+
+    .wallet-status span {
+      font-weight: 800;
+      color: #34d399;
+      font-size: 12px;
+      font-family: monospace;
+    }
+
+    nav {
+      display: flex;
+      background: rgba(15, 23, 42, 0.3);
+      border-bottom: 1px solid var(--card-border);
+      padding: 4px 6px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 8px 0;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s ease-in-out;
+      text-align: center;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .tab-btn.active {
+      color: #fff;
+      background: rgba(99, 102, 241, 0.25);
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      box-shadow: inset 0 1px 1px rgba(255,255,255,0.1);
+    }
+
+    main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.2s ease-in-out;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .card {
+      background: var(--card-glass);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #cbd5e1;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .timer-container {
+      position: relative;
+      width: 160px;
+      height: 160px;
+      margin: 10px auto;
+    }
+
+    .progress-ring {
+      transform: rotate(-90deg);
+    }
+
+    .progress-ring__circle {
+      transition: stroke-dashoffset 0.35s;
+      transform-origin: 50% 50%;
+    }
+
+    .timer-display {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 32px;
+      font-weight: 800;
+      font-family: monospace;
+      color: var(--text-main);
+      text-shadow: 0 0 12px rgba(255, 255, 255, 0.15);
+    }
+
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: none;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease-in-out;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-primary { 
+      background: linear-gradient(135deg, #6366f1, #4f46e5); 
+      color: white; 
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4); }
+    .btn-secondary { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: white; }
+    .btn-secondary:hover { background: rgba(255,255,255,0.12); }
+    .btn-danger { 
+      background: linear-gradient(135deg, #f43f5e, #e11d48); 
+      color: white;
+      box-shadow: 0 4px 12px rgba(244, 63, 94, 0.3);
+    }
+    .btn-danger:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(244, 63, 94, 0.4); }
+    .btn-success { 
+      background: linear-gradient(135deg, #10b981, #059669); 
+      color: white;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+    .btn-success:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4); }
+    .btn-warning {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: white;
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+    }
+    .btn-warning:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4); }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+    }
+
+    select, input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--card-border);
+      color: white;
+      font-size: 13px;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    select:focus, input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--primary-glow);
+    }
+
+    .badge {
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge-productive { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-half { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-unproductive { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
+
+    .list-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      background: rgba(15, 23, 42, 0.4);
+      border-radius: 10px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      border: 1px solid var(--card-border);
+      transition: border-color 0.2s;
+    }
+
+    .list-item:hover {
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .icon-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 4px;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    .icon-btn:hover {
+      color: white;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(5, 8, 15, 0.85);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 24px;
+    }
+
+    .modal-card {
+      background: #0f172a;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 16px;
+      padding: 20px;
+      width: 100%;
+      max-width: 340px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+    }
+
+    .streak-widget {
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      margin-top: 8px;
+    }
+
+    .streak-metric {
+      text-align: center;
+    }
+
+    .streak-num {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--warning);
+      text-shadow: 0 0 10px rgba(245, 158, 11, 0.25);
+    }
+
+    .nuclear-banner {
+      background: var(--danger-glow);
+      color: var(--danger);
+      border: 1px solid var(--danger);
+      padding: 10px;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+      box-shadow: 0 0 10px var(--danger-glow);
+    }
+
+    .stepper-indicator {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      position: relative;
+    }
+
+    .stepper-indicator::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: rgba(255,255,255,0.1);
+      z-index: 1;
+      transform: translateY(-50%);
+    }
+
+    .step-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--bg-dark);
+      border: 2px solid rgba(255,255,255,0.2);
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+      transition: all 0.3s;
+    }
+
+    .step-dot.active {
+      border-color: var(--primary);
+      color: white;
+      box-shadow: 0 0 8px var(--primary-glow);
+    }
+
+    .step-dot.completed {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: white;
+    }
+  </style>
 </head>
 <body>
-  <div id="root"></div>
+
+  <header>
+    <div class="logo-container">
+      <div class="logo-badge">ET</div>
+      <div class="app-title">EarnTime Pro</div>
+    </div>
+    <div class="wallet-status">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5"><path d="M21 12V7H5a2 2 0 0 1-2-2V5M3 5v14a2 2 0 0 0 2 2h16v-5"></path><path d="M18 12a2 2 0 0 0 0 4h4v-4h-4z"></path></svg>
+      <span id="wallet-top-balance">0m 00s</span>
+    </div>
+  </header>
+
+  <nav>
+    <button class="tab-btn active" data-tab="home">Home</button>
+    <button class="tab-btn" data-tab="websites">Websites</button>
+    <button class="tab-btn" data-tab="wallet">Wallet</button>
+    <button class="tab-btn" data-tab="stats">Stats</button>
+    <button class="tab-btn" data-tab="achievements">Badges</button>
+    <button class="tab-btn" data-tab="settings">Settings</button>
+    <button class="tab-btn" data-tab="nuclear">Nuclear</button>
+  </nav>
+
+  <main>
+    <section id="tab-home" class="tab-content active">
+      <div class="card" id="nuclear-active-banner-area" style="display:none;">
+        <div class="nuclear-banner">⚠️ NUCLEAR ACTIVE — RESTRICTED TIMELINE</div>
+      </div>
+
+      <div class="card" style="text-align: center;">
+        <div class="card-title">Study Hub Timer</div>
+        
+        <div class="form-group" id="focus-domain-selector-wrapper" style="text-align: left;">
+          <label>Select Focus Website to Redirect & Lock</label>
+          <select id="focus-website-select">
+            <option value="">-- Setup Productive Domains First --</option>
+          </select>
+        </div>
+
+        <div class="timer-container">
+          <svg class="progress-ring" width="160" height="160">
+            <circle class="progress-ring__circle" id="timer-bg-circle" stroke="rgba(255,255,255,0.05)" stroke-width="8" fill="transparent" r="70" cx="80" cy="80"/>
+            <circle class="progress-ring__circle" id="timer-progress-bar" stroke="url(#timerGrad)" stroke-width="8" fill="transparent" r="70" cx="80" cy="80" stroke-dasharray="439.82" stroke-dashoffset="439.82" stroke-linecap="round"/>
+            <defs>
+              <linearGradient id="timerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#818cf8" />
+                <stop offset="100%" stop-color="#c084fc" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <div class="timer-display" id="timer-text">25:00</div>
+        </div>
+        
+        <div class="button-group" id="timer-controls-default">
+          <button class="btn btn-success" id="btn-timer-start">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            Start Focus
+          </button>
+          <button class="btn btn-secondary" id="btn-timer-stop" style="display:none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+            Stop
+          </button>
+        </div>
+
+        <div class="button-group" id="timer-controls-active" style="display:none; gap:10px;">
+          <button class="btn btn-warning" id="btn-timer-pause">
+            ⏸ Pause
+          </button>
+          <button class="btn btn-success" id="btn-timer-resume" style="display:none;">
+            ▶ Resume
+          </button>
+          <button class="btn btn-danger" id="btn-timer-stop-active">
+            ⏹ Stop
+          </button>
+        </div>
+        
+        <p style="font-size:10px; color:var(--text-muted); margin-top:10px;" id="focus-presence-label">
+          Timer ticks only when active on any configured productive tab.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Daily Study Target</div>
+        <div style="display: flex; justify-content: space-between; font-size:12px; margin-bottom: 5px;">
+          <span id="home-daily-progress-text">0m / 60m</span>
+          <span id="home-daily-pct" style="font-weight: 800; color: var(--primary);">0%</span>
+        </div>
+        <div style="background: rgba(255,255,255,0.05); height: 8px; border-radius: 4px; overflow: hidden; border:1px solid rgba(255,255,255,0.1);">
+          <div id="home-daily-bar" style="background: linear-gradient(to right, #818cf8, #a855f7); height: 100%; width: 0%; transition: width 0.3s;"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-websites" class="tab-content">
+      <div class="card">
+        <div class="card-title">Create Website Filter</div>
+        <div class="form-group">
+          <label>Website URL / Domain (e.g., youtube.com)</label>
+          <input type="text" id="add-domain-input" placeholder="e.g. facebook.com">
+        </div>
+        <div class="form-group">
+          <label>Target Category Type</label>
+          <select id="add-category-select">
+            <option value="productive">Productive</option>
+            <option value="halfUnproductive">Half-Unproductive (Grayscale Penalty)</option>
+            <option value="unproductive">Unproductive (Hard Block)</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" style="width:100%;" id="btn-add-website">Add Rule</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>Active Filters</span>
+          <input type="text" id="search-filters-input" placeholder="Search..." style="width: 120px; padding: 5px 8px; font-size:11px;">
+        </div>
+        <div id="filter-list-container" style="max-height: 190px; overflow-y: auto; padding-right: 2px;">
+          <!-- Managed rows render dynamically -->
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-wallet" class="tab-content">
+      <div class="card" style="text-align: center; padding: 22px;">
+        <div style="font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Usable Screen Balance</div>
+        <div style="font-size: 44px; font-weight: 800; color: #34d399; margin: 8px 0; text-shadow: 0 0 15px rgba(52, 211, 153, 0.3);" id="wallet-main-balance">0m 00s</div>
+        <p style="font-size: 10px; color: var(--text-muted);">Recreational content consumes balance in real time while tab is active and visible.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Transaction Log</div>
+        <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom: 8px;">
+          <span>Earned Today:</span>
+          <span style="color:#34d399; font-weight:700;" id="wallet-today-earned">+0 min</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom: 8px;">
+          <span>Spent Today:</span>
+          <span style="color:#fb7185; font-weight:700;" id="wallet-today-spent">-0 min</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:13px;">
+          <span>Total Spent Lifetime:</span>
+          <span style="color:var(--text-muted);" id="wallet-lifetime-spent">0 min</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-stats" class="tab-content">
+      <div class="card">
+        <div class="card-title">Target Metrics</div>
+        <div class="streak-widget">
+          <div class="streak-metric">
+            <div class="streak-num" id="stats-current-streak">0</div>
+            <div style="font-size:10px; color:var(--text-muted);">Current Streak</div>
+          </div>
+          <div class="streak-metric">
+            <div class="streak-num" id="stats-longest-streak">0</div>
+            <div style="font-size:10px; color:var(--text-muted);">Longest Streak</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Weekly Tracker</div>
+        <div id="stats-charts-viewport" style="display: flex; flex-direction: column; gap: 8px;">
+          <svg id="svg-weekly-chart" width="350" height="120" style="background: rgba(15, 23, 42, 0.4); border-radius: 8px;"></svg>
+          <div style="font-size: 10px; text-align: center; color: var(--text-muted);">Daily focus time in minutes</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Comprehensive Lifetime Stats</div>
+        <div style="font-size:12px; display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; justify-content:space-between;"><span>Total Studying:</span><span id="stats-total-study">0m</span></div>
+          <div style="display:flex; justify-content:space-between;"><span>Total Earned:</span><span id="stats-total-earned">0m</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-achievements" class="tab-content">
+      <div class="card">
+        <div class="card-title">Earned Milestone Badges</div>
+        <div id="achievements-badge-grid" style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+          <!-- Dynamic nodes -->
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-settings" class="tab-content">
+      <div class="card">
+        <div class="card-title">Focus & Reward Ratio Settings</div>
+        <div class="form-group" style="display: flex; gap: 10px;">
+          <div>
+            <label>Study Interval (mins)</label>
+            <input type="number" id="settings-study-input" min="1" max="120">
+          </div>
+          <div>
+            <label>Earns (mins)</label>
+            <input type="number" id="settings-reward-input" min="1" max="60">
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Daily Study Goal Target</div>
+        <div class="form-group">
+          <label>Goal Duration (Hours / Day)</label>
+          <input type="number" id="settings-goal-input" step="0.1" min="0.1" max="24.0">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Profile Database Operations</div>
+        <div class="button-group">
+          <button class="btn btn-secondary" id="btn-export-data">Export Profiles</button>
+          <button class="btn btn-secondary" id="btn-import-data">Import Profiles</button>
+        </div>
+        <button class="btn btn-danger" style="width:100%; margin-top:10px;" id="btn-factory-reset">Reset Configuration</button>
+      </div>
+    </section>
+
+    <section id="tab-nuclear" class="tab-content">
+      <div id="nuclear-setup-flow">
+        <div class="stepper-indicator">
+          <div class="step-dot active" id="dot-step-1">1</div>
+          <div class="step-dot" id="dot-step-2">2</div>
+          <div class="step-dot" id="dot-step-3">3</div>
+        </div>
+
+        <div id="step-panel-1" class="step-panel">
+          <div class="card">
+            <div class="card-title">Configure Locked Bypass Password</div>
+            <p style="font-size:11px; color:var(--text-muted); margin-bottom:12px; line-height: 1.5;">You will require this password to unlock settings, exit restriction modes, or alter filters during the session.</p>
+            <div class="form-group">
+              <input type="password" id="nuclear-setup-password" placeholder="Create emergency password...">
+            </div>
+            <button class="btn btn-primary" style="width: 100%;" id="btn-step-1-next">Continue</button>
+          </div>
+        </div>
+
+        <div id="step-panel-2" class="step-panel" style="display:none;">
+          <div class="card">
+            <div class="card-title">Choose Core Focus Website</div>
+            <p style="font-size:11px; color:var(--text-muted); margin-bottom:12px; line-height: 1.5;">Select which productive website you are locking yourself to during the session.</p>
+            <div class="form-group">
+              <select id="nuclear-setup-domain">
+                <!-- Dynamic nodes -->
+              </select>
+            </div>
+            <div style="display:flex; gap:10px;">
+              <button class="btn btn-secondary" id="btn-step-2-back">Back</button>
+              <button class="btn btn-primary" id="btn-step-2-next">Continue</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="step-panel-3" class="step-panel" style="display:none;">
+          <div class="card">
+            <div class="card-title">Armed Session Duration</div>
+            <p style="font-size:11px; color:var(--text-muted); margin-bottom:12px; line-height: 1.5;">Select how long you will keep the lock armed. The timer will automatically scale to target this exact timeline.</p>
+            <div class="form-group">
+              <select id="nuclear-setup-duration">
+                <option value="5">5 Minutes (Test)</option>
+                <option value="15">15 Minutes</option>
+                <option value="30">30 Minutes</option>
+                <option value="60">60 Minutes</option>
+                <option value="120">120 Minutes</option>
+              </select>
+            </div>
+            <div style="display:flex; gap:10px;">
+              <button class="btn btn-secondary" id="btn-step-3-back">Back</button>
+              <button class="btn btn-danger" style="font-weight: 800;" id="btn-nuclear-arm">ARM LOCKS NOW</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="nuclear-status-view" style="display:none;">
+        <div class="card" style="text-align: center; border-color: var(--danger);">
+          <div class="nuclear-banner">⚠️ HARD LOCK MECHANISMS ARMED</div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top:12px;">Locked Study Time Remaining</div>
+          
+          <div class="timer-container" style="margin: 14px auto;">
+            <svg class="progress-ring" width="160" height="160">
+              <circle class="progress-ring__circle" stroke="rgba(255,255,255,0.05)" stroke-width="8" fill="transparent" r="70" cx="80" cy="80"/>
+              <circle class="progress-ring__circle" id="nuclear-progress-bar" stroke="url(#nukeGrad)" stroke-width="8" fill="transparent" r="70" cx="80" cy="80" stroke-dasharray="439.82" stroke-dashoffset="439.82" stroke-linecap="round"/>
+              <defs>
+                <linearGradient id="nukeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#f43f5e" />
+                  <stop offset="100%" stop-color="#fb7185" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <div class="timer-display" id="nuclear-lock-countdown" style="color:var(--danger); font-size: 28px;">00:00</div>
+          </div>
+          
+          <div style="margin: 12px 0; border-top:1px solid var(--card-border); padding-top:12px;">
+            <div style="font-size: 12px; display:flex; justify-content:space-between; margin-bottom: 6px;"><span>Focus Locked To:</span><span id="nuclear-lock-domain" style="color:var(--danger); font-weight:700;">example.com</span></div>
+            <div style="font-size: 12px; display:flex; justify-content:space-between;"><span>All Settings Status:</span><span style="color:#fb7185;">MUTED</span></div>
+          </div>
+          
+          <div class="form-group" style="text-align: left; margin-top: 14px;">
+            <label>Emergency Exit Bypass Password</label>
+            <input type="password" id="nuclear-unlock-password" placeholder="Enter session password...">
+          </div>
+          <button class="btn btn-secondary" style="width:100%;" id="btn-nuclear-unlock">Override Locks</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="custom-alert-modal">
+    <div class="modal-card">
+      <div class="card-title" style="color: var(--warning);" id="custom-alert-title">Notification</div>
+      <p style="font-size:13px; margin: 14px 0; line-height:1.6;" id="custom-alert-body">Message here...</p>
+      <button class="btn btn-primary" style="width:100%;" id="custom-alert-close">Acknowledge</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="custom-confirm-modal">
+    <div class="modal-card">
+      <div class="card-title" style="color: var(--danger);" id="custom-confirm-title">Confirm Action</div>
+      <p style="font-size:13px; margin: 14px 0; line-height:1.6;" id="custom-confirm-body">Proceed with this transaction?</p>
+      <div class="button-group">
+        <button class="btn btn-secondary" id="custom-confirm-cancel">Cancel</button>
+        <button class="btn btn-danger" id="custom-confirm-ok">Acknowledge</button>
+      </div>
+    </div>
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html>
