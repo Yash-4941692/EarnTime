@@ -53,7 +53,7 @@ These run the **built** extension pages and the **built** content script in head
 - Block page: exhausted, debt, and the extensions variant with the exact wording.
 - YouTube: mode chooser; Productive Mode shows only keyword channels and hides unknown channels and Shorts; blank homepage replaced by study search; a non-keyword watch page is covered, the stored status becomes degraded (so the time is not credited), and no second prompt is shown on the same site; Unproductive Mode is disabled at zero balance and greys the page when chosen; a missing YouTube layout fails closed after the grace period.
 - WhatsApp: only allowed chats visible, unreadable row hidden; an open conversation not on the list is covered.
-- All browser tests fail on any uncaught page error.
+- Four of the browser tests (popup, setup wizard, settings, YouTube results) also fail on any uncaught page error. The other tests do not check for page errors.
 
 ## Bugs found and fixed during testing
 
