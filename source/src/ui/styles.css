@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  background: #020617;
+  color: #e2e8f0;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+input, select, textarea, button {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid #34d399;
+  outline-offset: 2px;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4 shadow-[0_1px_0_rgba(255,255,255,0.03)_inset];
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500;
+  }
+  .field {
+    @apply w-full rounded-xl border border-slate-700/80 bg-slate-950/70 px-3 py-2 text-[14px] text-slate-100 placeholder:text-slate-600 focus:border-emerald-400/70 focus:outline-none;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply bg-emerald-400 text-emerald-950 hover:bg-emerald-300;
+  }
+  .btn-secondary {
+    @apply border border-slate-700 bg-slate-800/70 text-slate-100 hover:bg-slate-800;
+  }
+  .btn-ghost {
+    @apply text-slate-400 hover:text-slate-100;
+  }
+  .btn-danger {
+    @apply border border-rose-500/30 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/60 px-2.5 py-1 text-[12.5px] text-slate-200;
+  }
+}

@@ -1,8 +1,17 @@
+const path = require('path');
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ["./src/**/*.{js,jsx,ts,tsx}"],
+  content: [
+    path.join(__dirname, 'src/ui/**/*.{ts,tsx}'),
+    path.join(__dirname, 'pages/*.html'),
+  ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        ink: '#020617',
+      },
+    },
   },
   plugins: [],
-}
+};

@@ -1,14 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "EarnTime Pro",
-  "version": "1.3.0",
-  "description": "Earn screen time by studying. Offline-first interactive productivity workspace with presence tracking.",
+  "name": "EarnTime",
+  "version": "2.0.0",
+  "description": "Study to earn screen time. Counts only active study time, enforces unproductive-site limits, and repays overspending through study.",
   "permissions": [
     "storage",
     "tabs",
     "alarms",
-    "webNavigation",
-    "scripting"
+    "idle",
+    "history",
+    "notifications",
+    "declarativeNetRequest"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -20,6 +22,7 @@
   },
   "action": {
     "default_popup": "popup.html",
+    "default_title": "EarnTime",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -31,9 +34,15 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_start"
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
     }
   ]
 }
