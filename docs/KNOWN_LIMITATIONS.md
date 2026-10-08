@@ -1,0 +1,99 @@
+# Known limitations
+
+EarnTime is a self-discipline tool. It is not a security boundary, and nothing in it is unbypassable. This document lists what it cannot do, what it can only approximate, and what was not verified in a real Chrome browser. Read it before relying on EarnTime for a commitment.
+
+## 1. Chrome restrictions on `chrome://` pages (required statement)
+
+> Chrome prevents extensions from completely controlling privileged `chrome://` pages. Therefore this protection cannot be made absolute using a standard Chrome extension alone.
+
+**Can be blocked.** A tab that opens `chrome://extensions` or `chrome://settings/extensions` is redirected to EarnTime's block page. This covers typed addresses, links and the extensions menu, because they all end in a tab navigation.
+
+**API used.** `chrome.tabs` events (`onCreated`, `onUpdated`) with `chrome.tabs.update`. No other technique is used. No hidden page, no injected script into `chrome://` pages, no workaround of Chrome's security model.
+
+**Tested.** In the simulated browser only (`test/sim/flows.test.ts`): a new tab opened at `chrome://extensions` is redirected; a typed `chrome://extensions/?id=…` navigation in an existing tab is redirected; `chrome://settings/extensions` is redirected; `chrome://settings/privacy` is not affected. The redirect is recorded in the ledger. **Not tested in a real Chrome instance** (see `docs/TESTING.md`): the redirect timing, the flash, the extensions-menu route, and tabs restored at startup. Expect a possible brief flash of the extensions page before the redirect runs.
+
+**Bypasses that remain** (none of these were tested in a real browser):
+
+- Right-click the EarnTime toolbar icon and choose **Remove from Chrome**. Chrome allows this without opening any extensions page. Removing EarnTime deletes its data.
+- A tab can briefly render `chrome://extensions` before the redirect runs.
+- Disabling or reloading an extension through Chrome's own policy tools, or through enterprise management, is outside EarnTime's control.
+- Other Chrome profiles, guest mode, incognito windows (unless the user allows EarnTime there), other browsers on the same machine, and Chrome's safe mode or `--disable-extensions`.
+- Uninstalling EarnTime deletes its storage. A reinstall starts setup again. Setup can grant at most **30 minutes** of starting balance, which limits the damage, but it does not remove the bypass.
+- Anyone with developer tools on the profile can read or edit extension storage, including the balance and the cost settings.
+- The system clock. Moving it backwards charges only the real elapsed time seen by the worker (a monotonic clock), so usage is not erased. Moving it forwards is treated as an interruption and reconciled from history. Neither is a complete defence.
+
+## 2. Counting
+
+- **Only one tab counts**: the active tab of the focused normal Chrome window. Tab switches are observed live, but during an interruption they can only be estimated (see section 3).
+- **Idle detection is coarse.** `chrome.idle` reports idle after 15 seconds without input. Silent video watched without any input is not counted. That is a deliberate favour to the user, not a complete measure of attention.
+- **Checkpoints every 30 seconds.** A state change that Chrome does not announce with an event (for example, allowing incognito access) takes effect at the next checkpoint, up to 30 seconds later.
+- **Popup and devtools windows** are not normal windows, so while they have focus nothing is counted.
+- **Picture-in-picture** and **embedded players on other sites** are not analysed. Only the top-level page is evaluated.
+- **Incognito** is not tracked unless the user allows EarnTime in incognito. The popup shows a warning when it is not.
+- **One profile, one ledger.** Each Chrome profile has its own EarnTime state.
+
+## 3. Interruption reconciliation (estimates)
+
+When the worker was not running (extension disabled, browser closed, computer asleep, or a gap longer than two minutes), EarnTime reads browser history and estimates the time. The rules are fixed and are written to the ledger:
+
+- Each visit is assumed to last until the next visit, capped at **15 minutes**.
+- The page that was active at the last checkpoint is assumed to last until the first visit, capped at 15 minutes.
+- The final page is assumed to last until now, capped at 15 minutes if you are still on that site and at **2 minutes** if not.
+- History does not record time within a page or tab switches between already-open tabs. Those are invisible during an interruption.
+- Half-productive sites are charged as unproductive during an interruption, because their mode cannot be verified then. This is deliberate and fail-closed.
+- If the browser was closed, only the last 30 seconds before closing are charged.
+- Incognito visits are not in history, so they are not counted during an interruption.
+- Reconciliation looks back at most **7 days**.
+- After a sleep without a screen lock, returning to the same page can charge up to 15 minutes. If the screen locks, counting stops at lock time.
+
+The audit export (Settings → Protection) records each reconciliation's window, charged minutes, credited minutes and debt added.
+
+## 4. Half-productive filters
+
+- **YouTube keywords are substrings.** `pw` matches `Upwork`. Use longer keywords where that matters. The settings page has a checker.
+- **YouTube's layout can change.** If the page is not recognised, the results are hidden, the page is covered after eight seconds, and the time counts as unproductive until it loads correctly.
+- **Embedded YouTube players** on other websites are not filtered.
+- **WhatsApp Web chats** match exactly (after case and whitespace normalisation). WhatsApp's layout can change. If the chat list cannot be read, it is hidden and the time counts as unproductive.
+- **Other half-productive sites** (sites you add yourself) have no content filter. Choosing Productive Mode there is a trust decision.
+
+## 5. Debt and blocking
+
+- **Blocking uses declarativeNetRequest** for top-level page loads. Sub-resources are not blocked.
+- **Navigations inside an already-open page** (single-page apps, `pushState`) are not blocked by the rule. EarnTime re-checks open tabs at each checkpoint (up to 30 seconds).
+- **Debt allows only productive sites** (and half-productive sites in Productive Mode). Unlisted sites are blocked too. Add the search engines and documentation you need to the productive list.
+- **Unproductive Mode** on a half-productive site is unavailable when the balance is empty or the user is in debt. An Unproductive session ends when the balance runs out.
+- **Half-productive mode is per tab.** Leaving the site and returning asks again. Closing the tab ends the session. Browser restarts clear all sessions.
+
+## 6. Protection costs
+
+- The cost model lives in extension storage. It is enforced by EarnTime, so it can be read or edited by anyone with developer access to the profile.
+- The default unlock cost is 10 minutes. It can be set to 0, which turns the cost model off. Lowering it is charged at the current price first.
+- Rules cannot be loosened while in debt.
+- Setup runs once. Its starting balance is capped at 30 minutes.
+
+## 7. Data and privacy
+
+- Data is stored unencrypted in `chrome.storage.local`. Anyone with access to the Chrome profile can read it.
+- The history permission is used only during reconciliation. EarnTime keeps hostnames and minutes. It does not store page addresses or titles.
+- The audit export contains hostnames, minutes and settings. It contains no page addresses.
+- The extension makes no network requests.
+
+## 8. Out of scope
+
+- Chrome for Android, Firefox, Edge and other browsers have not been tested.
+- No sync across devices and no account.
+- No time-of-day schedules and no parental-control features.
+- No defence against a determined user with full control of the machine.
+
+## 9. Test gaps
+
+No real Chrome browser was available for end-to-end testing. The following behaviours have **not** been exercised with a real Chrome extension runtime:
+
+- service-worker suspension and restart, and the worker's behaviour across real idle transitions;
+- declarativeNetRequest blocking and the block-page redirect;
+- the `chrome://extensions` redirect and the flash it may cause;
+- disabling, reloading and removing the extension, and the reconciliation that follows;
+- real `chrome.history` visits, real idle timing, real notifications and real incognito gating;
+- YouTube and WhatsApp Web as they currently render (the browser tests use fixture pages).
+
+`docs/TESTING.md` lists the manual checks to run before release.

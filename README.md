@@ -1,82 +1,104 @@
 # EarnTime ⏳
 
-> Earn your screen time by studying.
+> Study to earn your screen time.
 
-EarnTime is a free Chrome extension that rewards productive study sessions with entertainment time.
+EarnTime is a Chrome extension (Manifest V3) that turns study time into screen time. You study on productive sites and earn minutes. You spend those minutes on the sites you choose. If you overspend, you are in debt, and only productive sites open until you study the debt off.
 
-Instead of endlessly browsing, you study first and earn minutes that you can later spend on distracting websites.
+By default **60 productive minutes earn 5 minutes**. The ratio, starting balance, site lists, YouTube keywords, WhatsApp chats and daily tasks are all configurable during a one-time setup.
 
----
-
-## ✨ Features
-
-- 📚 Earn screen time by studying
-- 🚫 Blocks distracting websites until you earn time
-- ⏱ Custom study-to-reward ratio
-- 💾 Saves your progress locally
-- ⚡ Lightweight and fast
-- 🔒 No login required
-- 🆓 Completely free
-
----
-
-## 📥 Installation
-
-Since this extension is not available on the Chrome Web Store, install it manually.
-
-1. Download this repository as a ZIP.
-2. Extract the ZIP.
-3. Open Chrome and go to:
-
-```
-chrome://extensions
-```
-
-4. Enable **Developer mode**.
-5. Click **Load unpacked** → Select the extracted EarnTime folder.
-6. Pin the extension and start earning screen time by studying! 📚⏱️
+> **Honest scope.** EarnTime is a self-discipline tool. It cannot make itself unbypassable inside Chrome. Chrome does not allow an extension to fully control `chrome://` pages, and other limits are listed in [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md). Read that file before relying on it.
 
 ---
 
 ## Screenshots
 
-### Dashboard
-![Dashboard](screenshots/dashboard.png)
+| Dashboard | Debt mode |
+| --- | --- |
+| ![Dashboard](screenshots/popup.png) | ![Debt mode](screenshots/popup-debt.png) |
 
-### Half Unproductive Site (Site which is of use but also distracting)
-![Half Unproductive](screenshots/half-unproductive.png)
+| Half-productive mode chooser | Protection settings |
+| --- | --- |
+| ![Mode chooser](screenshots/mode-chooser.png) | ![Protection settings](screenshots/settings-protection.png) |
 
-### Settings
-![Settings](screenshots/settings.png)
-
-### Statistics
-![Stats](screenshots/stats.png)
+*Screenshots were produced by the browser test suite (fixture pages stand in for YouTube).*
 
 ---
 
+## What it does
 
-## 🛠 Technologies
+- **Earn-to-use model.** Productive time earns screen time at your ratio. Unproductive time spends it.
+- **Three categories.** Productive (earns), half-productive (you choose the mode on each visit; YouTube and WhatsApp Web are included by default) and unproductive (spends).
+- **Counts only active use.** Only the active tab of the focused Chrome window counts. Background tabs, minimised windows, idle time and locked screens do not.
+- **Debt.** If usage runs past your balance while EarnTime was not running (extension disabled, browser closed, computer asleep), the excess becomes debt, estimated from browser history. Debt restricts browsing to productive sites until it is repaid by studying.
+- **YouTube Productive Mode.** Blank homepage with study search. Results and videos show only when the channel name contains one of your keywords. Unreadable channel names are hidden.
+- **WhatsApp Web Productive Mode.** Only the chats you list are shown, matched by exact name. If the layout cannot be read, the chat list is hidden.
+- **Protection costs.** After setup, changes that make usage easier cost an unlock cost (default 10 min). Tightening is free. Setup runs once.
+- **Daily tasks.** Recurring or one-off tasks that pay screen time, once per day or once ever.
+- **Audit log.** Every credit, charge, debt, rule change and interruption is recorded. Export it as read-only JSON (hosts only, never page addresses).
+- **Local only.** No account, no network calls, no analytics. Data stays in `chrome.storage.local`.
 
-- JavaScript
-- HTML
-- CSS
-
----
-
-## 🤝 Contributing
-
-Suggestions, bug reports, and pull requests are welcome.
-
----
-
-## ⭐ Support
-
-If you find EarnTime useful, please consider giving this repository a ⭐.
-
-It helps more people discover the project.
+For day-to-day use, see the [user guide](docs/USER_GUIDE.md).
 
 ---
 
-## 📄 License
+## Install
 
-See `LICENSES.txt`.
+### From source or the ZIP
+
+1. Download this repository (or the release ZIP) and extract it.
+2. Open `chrome://extensions` and enable **Developer mode**.
+3. Click **Load unpacked** and select the extracted folder (the one containing `manifest.json`).
+4. The setup wizard opens on first run.
+
+Version 2 replaces the earlier EarnTime release. Settings and balances are migrated automatically on first start. The earlier nuclear mode, focus timer, streaks and factory reset are removed. Legacy storage (including the plaintext password from nuclear mode) is deleted during migration.
+
+---
+
+## Development
+
+The extension source lives in [`source/`](source/). Built files are written to the repository root, where the manifest loads them.
+
+```bash
+cd source
+npm install
+npm run build          # esbuild → ../background.js, ../content.js, ../popup.*, ../settings.*, ../setup.*, ../block.*
+npm run typecheck      # tsc --strict over src/ and test/
+npm run test:unit      # pure logic: time accounting, reconciliation, rules, costs, migration, invariants
+npm run test:sim       # 28 flow tests against a simulated browser (real controller, real chrome adapter)
+npm test               # typecheck + unit + simulated-browser flow tests (no browser binary needed)
+CHROME_PATH=/path/to/chromium npm run test:browser   # built pages and content scripts in headless Chromium
+CHROME_PATH=/path/to/chromium npm run test:all       # everything
+```
+
+The browser tests need a Chromium binary. They do not load the extension into Chrome; they run the built pages with an in-page harness. See [`docs/TESTING.md`](docs/TESTING.md) for the test report and the manual checklist that still needs a real Chrome.
+
+### Layout
+
+```
+manifest.json              MV3 manifest (permissions: storage, tabs, alarms, idle, history, notifications, declarativeNetRequest)
+background.js              service worker (built)
+content.js                 content script for half-productive pages (built)
+popup.* settings.* setup.* block.*   extension pages (built; *.html copied from source/pages)
+source/src/core/           pure logic: accounting, reconciliation, rules, costs, tasks, migration, view models
+source/src/background/     service worker: controller (serial job queue), Chrome adapter, event wiring
+source/src/content/        content scripts: mode chooser, YouTube and WhatsApp filters, overlays
+source/src/ui/             React pages (popup, settings, setup, block) and shared components
+source/test/               unit tests, simulated-browser flow tests, browser tests and fixtures
+docs/                      user guide, testing report, known limitations
+```
+
+---
+
+## Privacy
+
+- Data is stored only in your browser's extension storage.
+- The `history` permission is used once per interruption, to estimate time from visits. EarnTime keeps hostnames and minutes, not page addresses or titles.
+- No network requests are made by the extension.
+
+## Contributing
+
+Suggestions, bug reports and pull requests are welcome. Please run `npm test` in `source/` and, for UI or content-script changes, `CHROME_PATH=... npm run test:all` before opening a pull request.
+
+## License
+
+See [`LICENSES.txt`](LICENSES.txt) and [`LICENSE`](LICENSE).
