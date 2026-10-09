@@ -8,6 +8,7 @@ import {
   SEC,
   balanceMin,
   command,
+  confirmedCommand,
   debtMin,
   installAndSetup,
   newBrowser,
@@ -388,12 +389,40 @@ test('listing a site is free on every list; lifting a restriction costs live bal
   r = await command(b, { type: 'whatsapp.add', chat: 'Study Group' });
   assert.equal(r.ok, true);
   assert.equal(balanceMin(b), 30, 'keywords and chats are free to add');
-  r = await command(b, { type: 'site.move', host: 'tiktok.com', to: 'productive' });
-  assert.equal(r.ok, true);
+  // These two lift a restriction, so the UI quotes them first and charges only once accepted.
+  r = await confirmedCommand(b, { type: 'site.move', host: 'tiktok.com', to: 'productive' });
+  assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(balanceMin(b), 20, 'making an unproductive site productive costs the unlock cost');
-  r = await command(b, { type: 'site.remove', host: 'instagram.com' });
-  assert.equal(r.ok, true);
+  r = await confirmedCommand(b, { type: 'site.remove', host: 'instagram.com' });
+  assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(balanceMin(b), 10, 'dropping an unproductive site lifts a block, so it costs');
+});
+
+test('a loosening change is quoted to the UI and charged only once the quote is accepted', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 30 });
+
+  const quote = await command(b, { type: 'site.remove', host: 'instagram.com' });
+  assert.equal(quote.ok, false);
+  assert.equal(quote.error.code, 'confirm');
+  assert.equal(quote.error.quote.minutes, 10, 'the quote names the price');
+  assert.equal(quote.error.quote.balanceMin, 30, 'the quote names the balance');
+  assert.equal(
+    quote.error.message,
+    'Removing instagram.com from unproductive sites costs 10 min of your screen-time balance (you have 30 min).',
+  );
+  assert.equal(balanceMin(b), 30, 'quoting charged nothing');
+  assert.ok(b.storedState().rules.unproductive.includes('instagram.com'), 'quoting left the site listed');
+
+  // Asking again without accepting is the same as declining: still nothing spent.
+  const again = await command(b, { type: 'site.remove', host: 'instagram.com' });
+  assert.equal(again.error.code, 'confirm');
+  assert.equal(balanceMin(b), 30);
+
+  const accepted = await command(b, { type: 'site.remove', host: 'instagram.com', confirm: true });
+  assert.equal(accepted.ok, true, JSON.stringify(accepted));
+  assert.equal(balanceMin(b), 20, 'only the accepted call paid');
+  assert.equal(b.storedState().rules.unproductive.includes('instagram.com'), false);
 });
 
 test('a changed setting that the balance cannot pay is refused without side effects', async () => {
@@ -505,7 +534,7 @@ test('auto-reply: a rule naming a group does reach that group, and only it', asy
 test('auto-reply: ticking a task queues an announcement and nudges the WhatsApp tab at once', async () => {
   const b = newBrowser();
   await installAndSetup(b, { initialBalanceMin: 30 });
-  await command(b, { type: 'task.add', title: 'Chemistry Lecture', rewardMin: 5, recurring: true });
+  await confirmedCommand(b, { type: 'task.add', title: 'Chemistry Lecture', rewardMin: 5, recurring: true });
   await command(b, {
     type: 'autoreply.add',
     rule: { trigger: 'task', targets: ['Progress Check'], message: "Yash Boss completed his today's {task}", repeat: 'daily' },
@@ -566,7 +595,7 @@ test('auto-reply: a queued message waits for WhatsApp and only a WhatsApp tab ma
     type: 'autoreply.add',
     rule: { trigger: 'task', targets: ['Progress Check'], message: 'Done', repeat: 'daily' },
   });
-  await command(b, { type: 'task.add', title: 'DPP', rewardMin: 5, recurring: true });
+  await confirmedCommand(b, { type: 'task.add', title: 'DPP', rewardMin: 5, recurring: true });
   await command(b, { type: 'task.toggle', id: b.storedState().tasks[0].id });
   assert.equal(b.storedState().autoReplyQueue.length, 1, 'the message waits because WhatsApp is not open');
 

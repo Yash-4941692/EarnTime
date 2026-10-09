@@ -4,13 +4,15 @@ import { useEffect, useState } from 'react';
 import { STATE_KEY } from '../../core/constants';
 import type { Command } from '../../core/commands';
 import type { Reply } from '../../core/messages';
-import type { EarnState } from '../../core/types';
+import type { EarnState, UnlockQuote } from '../../core/types';
 
 export interface CommandResult {
   ok: boolean;
   data?: unknown;
   message?: string;
   needMs?: number;
+  /** Present when the change costs screen time and has not been confirmed yet. */
+  quote?: UnlockQuote;
 }
 
 /** Sends a user command to the service worker and normalises the reply for the UI. */
@@ -19,7 +21,7 @@ export async function runCommand(command: Command): Promise<CommandResult> {
     const reply = (await chrome.runtime.sendMessage({ type: 'ui.command', command })) as Reply | undefined;
     if (!reply) return { ok: false, message: 'EarnTime is not responding. Try again in a moment.' };
     if (reply.ok) return { ok: true, data: reply.data };
-    return { ok: false, message: reply.error.message, needMs: reply.error.needMs };
+    return { ok: false, message: reply.error.message, needMs: reply.error.needMs, quote: reply.error.quote };
   } catch {
     return { ok: false, message: 'EarnTime is not responding. Try again in a moment.' };
   }

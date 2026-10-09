@@ -93,6 +93,10 @@ first-time introduction).
 - **WhatsApp Web must be open and logged in** in a Chrome tab. A background tab is enough — it does
   not need focus. EarnTime nudges it every 30 seconds and the instant you tick a task, because Chrome
   throttles timers in unfocused tabs.
+- A chat is answered when its unread badge appears. WhatsApp only renders the part of the chat list
+  you can see, so for a chat EarnTime has not scanned before, it trusts the **top six rows** — that is
+  where WhatsApp floats a conversation that has just received a message. An old thread you scroll into
+  view further down is not answered; see `docs/KNOWN_LIMITATIONS.md` section 8.
 - If WhatsApp Web is closed, task and scheduled messages **wait in a queue** (6 hours) and go out when
   you next open it.
 - **Plain text only.** Media, stickers, documents, reactions, voice notes, replying to a specific
@@ -141,7 +145,18 @@ setting, not a lock.
 
 Adding a task still costs, because a task is a button that pays you minutes on demand.
 
-If the balance cannot pay, the change is refused and nothing changes. Changes are refused while you are in debt.
+### You are asked before anything is charged
+
+A change that costs screen time is never charged on the click that asked for it. EarnTime first shows
+you the price and your balance, and nothing is spent or changed until you accept:
+
+> Removing instagram.com from unproductive sites costs 10 min of your screen-time balance (you have
+> 30 min). Continue?
+
+Declining leaves everything exactly as it was. Free changes are never quoted, so filling in your
+lists stays one click per entry.
+
+If the balance cannot pay, the change is refused outright and nothing changes. Changes are refused while you are in debt.
 
 EarnTime also redirects `chrome://extensions` and `chrome://settings/extensions` tabs to its block page.
 

@@ -55,6 +55,14 @@ The audit export (Settings → Protection) records each reconciliation's window,
 - **Embedded YouTube players** on other websites are not filtered.
 - **WhatsApp Web chats** match exactly (after case and whitespace normalisation). WhatsApp's layout can change. If the chat list cannot be read, it is hidden and the time counts as unproductive.
 - **Other half-productive sites** (sites you add yourself) have no content filter. Choosing Productive Mode there is a trust decision.
+- **A page that opens while the service worker is still starting can be left unmanaged.** Chrome
+  unloads the service worker when it has been idle and restarts it on demand, and that start is not
+  instant. A page that sends its first question before the worker is listening gets no answer back.
+  EarnTime now retries that question with a growing pause for about ten seconds, which covers the
+  normal case — but if every attempt fails, that one page load stays open with no mode chooser, no
+  filter, and no session, so its time is not charged. This is a fail-open gap and it is not closed:
+  it is bounded, not eliminated. Reloading the page is the workaround, and it works because the
+  worker is awake by then.
 
 ## 5. Debt and blocking
 
@@ -69,6 +77,11 @@ The audit export (Settings → Protection) records each reconciliation's window,
 - The cost model lives in extension storage. It is enforced by EarnTime, so it can be read or edited by anyone with developer access to the profile.
 - The default unlock cost is 10 minutes. It can be set to 0, which turns the cost model off. Lowering it is charged at the current price first.
 - Rules cannot be loosened while in debt.
+- **A change that costs screen time is quoted before it is charged.** The first request is refused
+  with the price and your balance, and nothing is spent or changed; the identical command, sent again
+  with the cost accepted, is what pays. Free changes are never quoted, so filling in a list is still
+  one click per entry. The quote is a prompt in EarnTime's own UI — it is not a Chrome-level
+  confirmation, and a change made by editing storage directly bypasses it entirely.
 - Setup runs once. Its starting balance is capped at 30 minutes.
 - **A cost applies only when an existing restriction is lifted.** Adding a site to any list is free,
   because a site on no list is already unrestricted; adding or removing YouTube keywords, WhatsApp
@@ -107,6 +120,17 @@ The audit export (Settings → Protection) records each reconciliation's window,
   (phone, another computer) before EarnTime's next scan may never be seen. Scans happen every 2.5 s in
   a focused tab and roughly every 30 s in a background tab, where Chrome throttles timers and the
   service worker has to nudge the page.
+- **A chat that was not on screen when the baseline was taken is judged by position, not by count.**
+  WhatsApp renders only the visible slice of a long chat list, so a chat that messages you from below
+  the fold first appears *already holding its badge* — there is no earlier count for it to grow from,
+  and comparing counts alone would silence it for good. Such a chat therefore counts as new when it
+  appears in the top six rows, which is where WhatsApp floats a conversation that just received a
+  message. The trade-off is positional and can be wrong in both directions: a chat that arrives in the
+  top rows for another reason (an unusual sort order, a pinned chat being re-rendered) may be
+  answered without a new message, and a genuine message that lands in a chat sitting below the top
+  six without moving it will not be seen until something else floats it up. Counts of chats that
+  scroll out of view are remembered, so scrolling an old thread away and back does not answer it
+  twice.
 - **Delivery is not instant in a background tab.** Task announcements are pushed immediately; incoming
   -message replies can lag by up to about 30 seconds.
 - **Automated messaging may violate WhatsApp's terms of service** and could in principle get a number

@@ -264,6 +264,24 @@ export interface RuleFailure {
   message: string;
   /** Milliseconds the user would need to afford the change (insufficient-balance failures). */
   needMs?: number;
+  /** Price of a change that must be confirmed before it is charged (`code: 'confirm'` only). */
+  quote?: UnlockQuote;
+}
+
+/**
+ * What a loosening change would cost, quoted before anything is charged. A change that costs screen
+ * time is refused once with one of these attached; re-issuing the same command with `confirm: true`
+ * is what actually pays.
+ */
+export interface UnlockQuote {
+  /** Minutes the change costs. */
+  minutes: number;
+  /** Whole minutes in the balance at the time of the quote. */
+  balanceMin: number;
+  /** Short description of what is being loosened, e.g. `remove instagram.com`. */
+  reason: string;
+  /** One-line description of the change, for the confirmation prompt. */
+  label: string;
 }
 
 /** Result of a command. `data` is present only for successful commands that return a value. */
@@ -279,4 +297,6 @@ export type RuleErrorCode =
   | 'debt'
   | 'insufficient'
   | 'unavailable'
-  | 'limit';
+  | 'limit'
+  /** The change is allowed but costs screen time, so it must be confirmed first. Nothing was charged. */
+  | 'confirm';

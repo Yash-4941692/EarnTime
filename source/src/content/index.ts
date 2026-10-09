@@ -7,6 +7,7 @@
 import { WHATSAPP_HOST } from '../core/constants';
 import type { PageDirective } from '../core/directive';
 import type { AutoReplyJob, HalfMode } from '../core/types';
+import { askWorker } from './askWorker';
 import { applyGrayscale } from './grayscale';
 import { chooserCard, createOverlay, type Overlay } from './overlay';
 import { startWhatsAppAutoReply } from './whatsappSend';
@@ -176,7 +177,10 @@ function start(): void {
 
   startAutoReply(() => whatsapp);
 
-  void send({ type: 'page.init', url }).then((reply) => {
+  // The service worker may still be starting when this page sends its first message, so the question
+  // is retried until it answers. Without the retry, a page that loaded while the worker was asleep
+  // was left with no chooser, no filter and no session — open, and uncharged.
+  void askWorker<Reply>({ type: 'page.init', url }, send).then((reply) => {
     if (!reply || !reply.ok) return;
     applyDirective(reply.directive);
   });
