@@ -27,7 +27,7 @@ jobs:
           MERGE_SHA=$(gh pr list \
             --repo "$GITHUB_REPOSITORY" \
             --state merged \
-            --head "$GITHUB_REPOSITORY_OWNER:$GITHUB_REF_NAME" \
+            --head "$GITHUB_REF_NAME" \
             --limit 100 \
             --json mergeCommit,mergedAt \
             --jq 'sort_by(.mergedAt) | last | .mergeCommit.oid')
