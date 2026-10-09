@@ -43,9 +43,9 @@ For day-to-day use, see the [user guide](docs/USER_GUIDE.md).
 
 ## Install
 
-### From source or the ZIP
+### From the release ZIP or from source
 
-1. Download this repository (or the release ZIP) and extract it.
+1. Download `EarnTime-<version>.zip` from the [latest release](https://github.com/Yash-4941692/EarnTime/releases/latest) (or download this repository) and extract it. The ZIP unpacks flat: `manifest.json` sits at the top level of the extracted folder.
 2. Open `chrome://extensions` and enable **Developer mode**.
 3. Click **Load unpacked** and select the extracted folder (the one containing `manifest.json`).
 4. The setup wizard opens on first run.
@@ -68,7 +68,10 @@ npm run test:sim       # 28 flow tests against a simulated browser (real control
 npm test               # typecheck + unit + simulated-browser flow tests (no browser binary needed)
 CHROME_PATH=/path/to/chromium npm run test:browser   # built pages and content scripts in headless Chromium
 CHROME_PATH=/path/to/chromium npm run test:all       # everything
+npm run package        # release ZIP: refuses a dirty tree, rebuilds, writes outputs/EarnTime-<version>.zip and prints its sha256
 ```
+
+`npm run package` writes to `/home/user/outputs` by default; pass `-- --out-dir <dir>` to choose somewhere else, or `-- --root <checkout>` to package a different clone. It fails unless the working tree is clean before *and* after the build, so a ZIP always matches exactly one commit, and it re-reads the archive to check every entry against the committed file.
 
 The browser tests need a Chromium binary. They do not load the extension into Chrome; they run the built pages with an in-page harness. See [`docs/TESTING.md`](docs/TESTING.md) for the test report and the manual checklist that still needs a real Chrome.
 
