@@ -1,0 +1,157 @@
+name: Publish v2.1.1
+
+# Publishes the v2.1.1 release for EarnTime: builds the release ZIP from the
+# merged PR #6 commit (8f8316d98597b53b6cd55b8e52e561376e99cf91) with the
+# repository's deterministic packager, attaches it to the GitHub release, then
+# downloads the published asset back and verifies its SHA-256 checksum.
+#
+# The sandbox this release was prepared in cannot reach uploads.github.com, so
+# the asset upload runs here on GitHub's infrastructure instead. The job refuses
+# to publish unless the rebuild is bit-identical to the ZIP built locally from
+# the same merge commit.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: v2.1.1
+      MERGE_SHA: 8f8316d98597b53b6cd55b8e52e561376e99cf91
+      # SHA-256 of EarnTime-2.1.1.zip built from the merge commit with
+      # `npm run package` (deterministic: fixed timestamps from the commit date).
+      EXPECTED_SHA256: 83fd50af85a9edbd9591e1ffdc44305dd970a69932750f5d350112ca721cf7fd
+      ZIP_NAME: EarnTime-2.1.1.zip
+    steps:
+      - name: Check out the merge commit
+        uses: actions/checkout@v4
+        with:
+          ref: 8f8316d98597b53b6cd55b8e52e561376e99cf91
+
+      # Same Node release as the machine that produced the expected checksum;
+      # Node's bundled zlib makes `npm run package` output reproducible.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.3'
+
+      - name: Install dependencies
+        working-directory: source
+        run: npm ci
+
+      - name: Build release ZIP from the merge commit
+        working-directory: source
+        run: npm run package -- --out-dir "$RUNNER_TEMP/dist"
+
+      - name: Assert rebuild is bit-identical to the merge-commit build
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dist"
+          echo "$EXPECTED_SHA256  $ZIP_NAME" | sha256sum -c -
+          unzip -t "$ZIP_NAME"
+          test "$(unzip -Z1 "$ZIP_NAME" | wc -l)" -eq 28
+          unzip -p "$ZIP_NAME" manifest.json | grep -q '"version": "2.1.1"'
+          unzip -p "$ZIP_NAME" content.js | grep -q 'page.init'
+
+      - name: Publish release with ZIP attached
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NOTES=$(cat <<'EOF'
+          Study to earn your screen time — 2.1.1 release.
+
+          A bug-fix release. Three problems reported from real Chrome use, each traced to a specific line and each carrying a regression test. No settings change and no data migration: upgrading keeps your lists, balance and history.
+
+          ## What's fixed
+
+          ### Auto-reply was answering nobody
+
+          `takeUnread()` reported a chat only when its unread count **grew from a count it had already recorded**. WhatsApp Web renders only the visible slice of a long chat list, so a chat that messaged you from below the fold first appeared **already holding its unread badge** — there was no earlier count for it to grow from, and comparing counts alone silenced it for good. That is why nothing was replying.
+
+          A chat no previous scan has seen now counts as new when it appears in the **top six rows** of the list, which is where WhatsApp floats a conversation that has just received a message. Two guards are kept:
+
+          - nothing counts during the very first scan, so reloading the page never answers yesterday's backlog;
+          - a chat further down the list does not count, so scrolling an old thread into view stays silent.
+
+          Counts are remembered for chats that scroll out of view, so an old thread cannot be answered twice — and a chat that genuinely gains messages while it is off-screen is answered when it comes back.
+
+          ### Opening YouTube (or any half-productive site) used to skip the mode prompt
+
+          `page.init` was sent once, and a missing answer was read as "nothing to do". Chrome unloads the service worker when it has been idle and restarts it on demand, and that start is not instant — so a page that loaded while the worker was still waking got no mode chooser, no filter, and, because a session only starts once a mode is chosen, **no screen time charged**. Reloading appeared to fix it only because the worker was warm by then.
+
+          The question is now retried with a growing pause for about ten seconds.
+
+          Honest scope: this narrows the gap, it does not close it. If every attempt fails, that one page load stays open and uncounted. That is written up in `docs/KNOWN_LIMITATIONS.md` section 4 rather than left implicit, and reloading the page remains the workaround.
+
+          ### Loosening a setting no longer spends 10 minutes on one click
+
+          There was no confirmation anywhere: the click sent the command and the balance was charged on the spot. The service worker now refuses the first attempt with the price and your balance, charging and changing nothing:
+
+          > Removing instagram.com from unproductive sites costs 10 min of your screen-time balance (you have 30 min). Continue?
+
+          The identical command is sent again, with the cost accepted, only if you say yes. Declining leaves everything exactly as it was. **Free changes never prompt**, so filling in your site, keyword, chat and task lists is still one click per entry — and a change your balance cannot pay is still refused outright rather than quoted.
+
+          ## Verification
+
+          `npm test` → **175 tests passing** (126 unit + 12 jsdom DOM + 37 simulated-browser flow), typecheck and build clean, up from 160. New coverage: 4 DOM tests for the chat-list windowing, 7 unit tests for the `page.init` retry, 4 unit tests and 1 flow test for the confirmation gate. The new tests were checked against the old code — two of the DOM tests and the core retry behaviour fail without these fixes.
+
+          Not verified here: **real Chrome and real WhatsApp Web are both unavailable in the sandbox used**, so none of this has been exercised against a real Chrome extension runtime, and the selectors in `source/src/content/whatsappSend.ts` remain a reasoned guess at WhatsApp's current DOM. The manual checklist in `docs/TESTING.md` is the thing to run before trusting a release.
+
+          ## Install
+
+          1. Download `EarnTime-2.1.1.zip` and extract it (flat layout: `manifest.json` at the top level).
+          2. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked** and select the extracted folder.
+          3. Reload any open WhatsApp Web or YouTube tab once after upgrading.
+
+          Upgrading from 2.1.0: reload the unpacked extension. Settings, lists, balance and history carry over; nothing needs to be re-entered.
+
+          ## Asset checksum (SHA-256)
+          ```
+          83fd50af85a9edbd9591e1ffdc44305dd970a69932750f5d350112ca721cf7fd  EarnTime-2.1.1.zip
+          ```
+
+          Built from merge commit `8f8316d98597b53b6cd55b8e52e561376e99cf91` with `npm run package`; all 28 entries verified byte-identical to the committed files.
+
+          ## Chrome limitation
+
+          Chrome prevents extensions from completely controlling privileged `chrome://` pages. Therefore this protection cannot be made absolute using a standard Chrome extension alone. See `docs/KNOWN_LIMITATIONS.md`.
+          EOF
+          )
+          echo "$NOTES" > "$RUNNER_TEMP/notes.md"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists — (re)uploading the asset."
+            gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/dist/$ZIP_NAME" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/dist/$ZIP_NAME" \
+              --target "$MERGE_SHA" \
+              --title "EarnTime v2.1.1" \
+              --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+          gh release view "$RELEASE_TAG" --json tagName,targetCommitish,isDraft,isPrerelease,url,assets
+
+      - name: Download the published asset and verify its checksum
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/dl"
+          gh release download "$RELEASE_TAG" -D "$RUNNER_TEMP/dl" -p "$ZIP_NAME"
+          cd "$RUNNER_TEMP/dl"
+          ACTUAL=$(sha256sum "$ZIP_NAME" | cut -d' ' -f1)
+          echo "Built checksum:      $EXPECTED_SHA256"
+          echo "Downloaded checksum: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED_SHA256"
+          echo
+          {
+            echo "### $RELEASE_TAG asset verification"
+            echo ""
+            echo "- Built from merge commit \`$MERGE_SHA\` with \`npm run package\` (Node v22.22.3)"
+            echo "- Built ZIP SHA-256: \`$EXPECTED_SHA256\`"
+            echo "- Downloaded asset SHA-256: \`$ACTUAL\`"
+            echo "- Checksums match: ✅"
+          } >> "$GITHUB_STEP_SUMMARY"
