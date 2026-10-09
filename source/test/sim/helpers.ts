@@ -42,6 +42,16 @@ export async function command(b: FakeBrowser, command: Record<string, unknown>):
   return b.sendFromExtensionPage({ type: 'ui.command', command });
 }
 
+/**
+ * Sends a command the way the UI does: a change that costs screen time comes back quoted on the
+ * first call, and only an accepted quote is charged. Free changes complete in one step.
+ */
+export async function confirmedCommand(b: FakeBrowser, cmd: Record<string, unknown>): Promise<any> {
+  const quoted = await command(b, cmd);
+  if (quoted.ok || quoted.error?.code !== 'confirm') return quoted;
+  return command(b, { ...cmd, confirm: true });
+}
+
 export function balanceMin(b: FakeBrowser): number {
   return b.storedState().balanceMs / MIN;
 }

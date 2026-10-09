@@ -24,6 +24,41 @@ interface Harness {
   composerText(): string;
   openTitle(): string | null;
   sendClicks: number;
+  /** Renders a chat row, as the windowed chat list does when it scrolls into view. */
+  renderChat(chat: Chat, index?: number): void;
+  /** Removes a chat row, as the windowed chat list does when it scrolls out of view. */
+  unrenderChat(title: string): void;
+  /** Titles currently rendered, top first. */
+  rendered(): string[];
+}
+
+/** Builds one chat row shaped like WhatsApp's: avatar, title and (when unread) a badge. */
+function buildRow(doc: Document, chat: Chat): HTMLElement {
+  const row = doc.createElement('div');
+  row.setAttribute('role', 'listitem');
+  row.dataset.etChat = chat.title;
+  const cell = doc.createElement('div');
+  cell.setAttribute('role', 'gridcell');
+  const avatar = doc.createElement('span');
+  avatar.setAttribute('data-icon', chat.group ? 'default-group' : 'default-user');
+  const title = doc.createElement('span');
+  title.setAttribute('title', chat.title);
+  title.textContent = chat.title;
+  cell.append(avatar, title);
+  if (chat.unread) {
+    const badge = doc.createElement('span');
+    badge.setAttribute('aria-label', `${chat.unread} unread messages`);
+    badge.textContent = String(chat.unread);
+    cell.append(badge);
+  }
+  row.append(cell);
+  // Clicking a row opens that conversation, as WhatsApp does.
+  row.addEventListener('click', () => {
+    const header = doc.querySelector('#main header span[title]') as HTMLElement;
+    header.setAttribute('title', chat.title);
+    header.textContent = chat.title;
+  });
+  return row;
 }
 
 /** Builds a page shaped like WhatsApp Web: a chat list, an open conversation and a composer. */
@@ -50,32 +85,7 @@ function makeWhatsApp(chats: Chat[], open: string | null = null): Harness {
   dom.window.Element.prototype.scrollIntoView = function scrollIntoView() {};
   const grid = doc.querySelector('#pane-side [role="grid"]') as HTMLElement;
 
-  for (const chat of chats) {
-    const row = doc.createElement('div');
-    row.setAttribute('role', 'listitem');
-    const cell = doc.createElement('div');
-    cell.setAttribute('role', 'gridcell');
-    const avatar = doc.createElement('span');
-    avatar.setAttribute('data-icon', chat.group ? 'default-group' : 'default-user');
-    const title = doc.createElement('span');
-    title.setAttribute('title', chat.title);
-    title.textContent = chat.title;
-    cell.append(avatar, title);
-    if (chat.unread) {
-      const badge = doc.createElement('span');
-      badge.setAttribute('aria-label', `${chat.unread} unread messages`);
-      badge.textContent = String(chat.unread);
-      cell.append(badge);
-    }
-    row.append(cell);
-    // Clicking a row opens that conversation, as WhatsApp does.
-    row.addEventListener('click', () => {
-      const header = doc.querySelector('#main header span[title]') as HTMLElement;
-      header.setAttribute('title', chat.title);
-      header.textContent = chat.title;
-    });
-    grid.append(row);
-  }
+  for (const chat of chats) grid.append(buildRow(doc, chat));
 
   if (open) {
     const header = doc.querySelector('#main header span[title]') as HTMLElement;
@@ -88,6 +98,17 @@ function makeWhatsApp(chats: Chat[], open: string | null = null): Harness {
     composerText: () => (doc.querySelector('#main footer div[contenteditable]') as HTMLElement).textContent ?? '',
     openTitle: () => (doc.querySelector('#main header span[title]') as HTMLElement).getAttribute('title') || null,
     sendClicks: 0,
+    renderChat(chat, index) {
+      const row = buildRow(doc, chat);
+      const at = index ?? grid.children.length;
+      grid.insertBefore(row, grid.children[at] ?? null);
+    },
+    unrenderChat(title) {
+      for (const child of Array.from(grid.children)) {
+        if ((child as HTMLElement).dataset.etChat === title) child.remove();
+      }
+    },
+    rendered: () => Array.from(grid.children).map((child) => (child as HTMLElement).dataset.etChat ?? ''),
   };
 
   const sendButton = doc.querySelector('#main footer button[aria-label="Send"]') as HTMLElement;
@@ -131,6 +152,38 @@ function useHarness(h: Harness): () => void {
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Runs the engine while the (windowed) chat list changes underneath it, and returns every unread
+ * report in order. Each step runs after the previous one's scans have settled, so a step can add or
+ * remove rows the way scrolling does.
+ */
+async function scanSeries(h: Harness, steps: Array<() => void>, settleMs = 80): Promise<string[][]> {
+  const reports: string[][] = [];
+  const restore = useHarness(h);
+  const engine = startWhatsAppAutoReply({
+    pollMs: 5,
+    async requestJobs(unread) {
+      reports.push(unread);
+      return [];
+    },
+    async report() {},
+    onSending: () => {},
+    async onGiveUp() {},
+  });
+  try {
+    // Let the baseline scan happen before anything changes.
+    await wait(settleMs);
+    for (const step of steps) {
+      step();
+      await wait(settleMs);
+    }
+  } finally {
+    engine.stop();
+    restore();
+  }
+  return reports;
+}
 
 function job(chat: string, message: string, id = 'j1'): AutoReplyJob {
   return { id, ruleId: 'r1', chat, message, trigger: 'incoming', createdAt: Date.now(), expiresAt: Date.now() + 60_000 };
@@ -194,11 +247,11 @@ test('the first scan is a baseline: existing unread messages are not answered, a
   assert.deepEqual(reports.groups[0], ['Progress Check'], 'the group icon is recognised');
 });
 
-test('an unread chat the engine has never seen is still not treated as a new message', async () => {
-  const h = makeWhatsApp([{ title: 'Rahul', unread: 0 }, { title: 'Priya' }]);
-  // Priya gains a badge before the engine's first scan of her row is meaningful.
+test('a chat that is already unread when the page loads is not answered, however near the top it sits', async () => {
+  const h = makeWhatsApp([{ title: 'Rahul', unread: 0 }, { title: 'Priya', unread: 1 }]);
+  // Priya is unread and inside the top rows, but this is the engine's very first sight of the page.
   const reports = await run(h, []);
-  assert.deepEqual(reports.unread[0], []);
+  assert.deepEqual(reports.unread[0], [], 'the first scan only baselines, so a reload never answers a backlog');
 });
 
 test('a chat that gains an unread message while the page stays open is reported once', async () => {
@@ -225,6 +278,65 @@ test('a chat that gains an unread message while the page stays open is reported 
 
   const withUnread = reports.filter((r) => r.length > 0);
   assert.deepEqual(withUnread, [['Rahul']], 'reported on the scan that saw the badge, and not again afterwards');
+});
+
+// ------------------------------------------------------------------ the windowed chat list
+
+test('a chat that was below the fold at the baseline is answered when a message floats it up', async () => {
+  const h = makeWhatsApp([{ title: 'Rahul', unread: 0 }]);
+  const reports = await scanSeries(h, [
+    // Priya was never rendered while the baseline was taken, so she has no count to grow from: she
+    // appears already holding her badge, which is exactly the case count-comparison alone misses.
+    () => h.renderChat({ title: 'Priya', unread: 1 }, 0),
+  ]);
+  assert.deepEqual(
+    reports.filter((r) => r.length > 0),
+    [['Priya']],
+    `a chat floated to the top with a badge is a new message (saw ${JSON.stringify(reports)})`,
+  );
+});
+
+test('an old thread scrolled into view further down the list is not treated as a new message', async () => {
+  const h = makeWhatsApp([
+    { title: 'A' }, { title: 'B' }, { title: 'C' }, { title: 'D' },
+    { title: 'E' }, { title: 'F' }, { title: 'G' }, { title: 'H' },
+  ]);
+  const reports = await scanSeries(h, [
+    // Still holding yesterday's badge, and rendered well below the top rows.
+    () => h.renderChat({ title: 'Old Thread', unread: 3 }, 7),
+  ]);
+  assert.deepEqual(
+    reports.filter((r) => r.length > 0),
+    [],
+    `a chat further down is being scrolled into view, not just messaged (saw ${JSON.stringify(reports)})`,
+  );
+});
+
+test('a chat that scrolls out of the rendered list and back is not answered again', async () => {
+  const h = makeWhatsApp([{ title: 'Rahul', unread: 1 }]);
+  const reports = await scanSeries(h, [
+    () => h.unrenderChat('Rahul'),
+    () => h.renderChat({ title: 'Rahul', unread: 1 }, 0),
+  ]);
+  assert.deepEqual(
+    reports.filter((r) => r.length > 0),
+    [],
+    `the baseline survives the row being unrendered (saw ${JSON.stringify(reports)})`,
+  );
+});
+
+test('a chat that gains messages while it is unrendered is answered when it comes back', async () => {
+  const h = makeWhatsApp([{ title: 'Rahul', unread: 1 }]);
+  const reports = await scanSeries(h, [
+    () => h.unrenderChat('Rahul'),
+    // Two more messages arrived while the row was not on screen.
+    () => h.renderChat({ title: 'Rahul', unread: 3 }, 0),
+  ]);
+  assert.deepEqual(
+    reports.filter((r) => r.length > 0),
+    [['Rahul']],
+    `the remembered count makes the growth visible (saw ${JSON.stringify(reports)})`,
+  );
 });
 
 // ------------------------------------------------------------------ sending

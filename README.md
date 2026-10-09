@@ -33,7 +33,7 @@ By default **60 productive minutes earn 5 minutes**. The ratio, starting balance
 - **YouTube Productive Mode.** Blank homepage with study search. Results and videos show only when the channel name contains one of your keywords. Unreadable channel names are hidden.
 - **WhatsApp Web Productive Mode.** Only the chats you list are shown, matched by exact name. If the layout cannot be read, the chat list is hidden.
 - **WhatsApp auto-reply.** EarnTime can send plain-text messages from your WhatsApp Web tab: a reply when someone messages you, an announcement when you tick off a task (`Yash Boss completed his today's {task}`), or a scheduled message during a time window. A rule that names chats sends to exactly those; a rule with no names answers **personal chats only** — never a group. Works with WhatsApp in a background tab. See the [user guide](docs/USER_GUIDE.md#whatsapp-auto-reply).
-- **Protection costs.** After setup, a change costs the unlock cost (default 10 min) only when it **lifts a restriction EarnTime was already enforcing** — dropping an unproductive or half-productive site, or moving a site to a more permissive list. Adding a site to any list is free, and so are YouTube keywords, WhatsApp chats and groups, because none of them gate access to a site. Setup runs once.
+- **Protection costs.** After setup, a change costs the unlock cost (default 10 min) only when it **lifts a restriction EarnTime was already enforcing** — dropping an unproductive or half-productive site, or moving a site to a more permissive list. Adding a site to any list is free, and so are YouTube keywords, WhatsApp chats and groups, because none of them gate access to a site. A change that costs is **quoted before it is charged**, so one click never spends your balance by accident. Setup runs once.
 - **Daily tasks.** Recurring or one-off tasks that pay screen time, once per day or once ever.
 - **Audit log.** Every credit, charge, debt, rule change and interruption is recorded. Export it as read-only JSON (hosts only, never page addresses).
 - **Local only.** No account, no network calls, no analytics. Data stays in `chrome.storage.local`.
@@ -98,7 +98,9 @@ docs/                      user guide, testing report, known limitations
 
 Auto-reply drives WhatsApp Web's own interface, because WhatsApp offers no extension API. It sends
 **plain text only**, only while WhatsApp Web is open and logged in, and only to chats you name — a
-rule with no names answers personal chats and never a group. Every selector is a guess about
+rule with no names answers personal chats and never a group. It can only see the chats WhatsApp has
+actually rendered, so a chat it has never scanned counts as new only when a message floats it into the
+top rows of the list. Every selector is a guess about
 WhatsApp's current layout, so a redesign will break it; when that happens a send fails, the reason is
 logged in Settings, and after three failures the tab stops until WhatsApp is reloaded. Automated
 messaging may be against WhatsApp's terms of service. Full list in

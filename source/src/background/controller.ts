@@ -530,7 +530,7 @@ export function createController(opts: ControllerOptions): Controller {
         const reply = await job('command', true, (state, now): Reply => {
           const result = applyCommand(state, command, now);
           if (result.ok) return { ok: true, data: result.data };
-          return { ok: false, error: { code: result.code, message: result.message, needMs: result.needMs } };
+          return { ok: false, error: { code: result.code, message: result.message, needMs: result.needMs, quote: result.quote } };
         });
         // A ticked task or a test message should reach WhatsApp straight away, not on the next tick.
         if (reply.ok && (command?.type === 'task.toggle' || command?.type === 'autoreply.test')) {

@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyCommand, applySetup, auditExport, type SetupPayload } from '../../src/core/commands';
+import { applyCommand, applySetup, auditExport, type Command, type SetupPayload } from '../../src/core/commands';
 import { siteChangeLoosens, ratioLoosens } from '../../src/core/protection';
+import type { EarnState, RuleResult } from '../../src/core/types';
 import { freshState, MIN, T0 } from './helpers';
 
 const setupBase: SetupPayload = {
@@ -16,6 +17,28 @@ const setupBase: SetupPayload = {
   whatsappChats: ['Mom'],
   tasks: [],
 };
+
+/**
+ * Applies a command the way the UI now does: a change that costs screen time is quoted on the first
+ * call and charged only on the second, confirmed one. Free changes go through in one step. The quote
+ * itself is asserted to be free of side effects, so a misclick can never spend anything.
+ */
+function applyConfirmed(state: EarnState, command: Command, now: number): RuleResult {
+  const before = {
+    balance: state.balanceMs,
+    rules: JSON.stringify(state.rules),
+    tasks: JSON.stringify(state.tasks),
+    settings: JSON.stringify(state.settings),
+  };
+  const quoted = applyCommand(state, command, now);
+  if (quoted.ok || quoted.code !== 'confirm') return quoted;
+  assert.equal(quoted.quote?.minutes, state.settings.unlockCostMin, 'the quote names the price');
+  assert.equal(state.balanceMs, before.balance, 'the quote charged nothing');
+  assert.equal(JSON.stringify(state.rules), before.rules, 'the quote moved no site');
+  assert.equal(JSON.stringify(state.tasks), before.tasks, 'the quote changed no task');
+  assert.equal(JSON.stringify(state.settings), before.settings, 'the quote changed no setting');
+  return applyCommand(state, { ...command, confirm: true } as Command, now);
+}
 
 test('setup applies once and refuses to run again (no balance reset)', () => {
   const state = freshState(false);
@@ -73,17 +96,70 @@ test('after setup, adding a site to any list is free: it was untracked, so nothi
 test('removing a restricted site costs the unlock cost; removing a productive site is free', () => {
   const state = freshState(true);
   state.balanceMs = 30 * MIN;
-  assert.equal(applyCommand(state, { type: 'site.remove', host: 'instagram.com' }, T0).ok, true);
+  assert.equal(applyConfirmed(state, { type: 'site.remove', host: 'instagram.com' }, T0).ok, true);
   assert.equal(state.balanceMs, 20 * MIN, 'dropping an unproductive site lifts a block, so it costs');
   assert.equal(applyCommand(state, { type: 'site.remove', host: 'khanacademy.org' }, T0).ok, true);
   assert.equal(state.balanceMs, 20 * MIN, 'dropping a productive site is stricter, so it is free');
   assert.ok(state.ledger.some((e) => e.kind === 'unlock' && e.ms === 10 * MIN));
 });
 
+test('a change that costs screen time is quoted first and charged only once confirmed', () => {
+  const state = freshState(true);
+  state.balanceMs = 30 * MIN;
+  const command: Command = { type: 'site.remove', host: 'instagram.com' };
+
+  const quote = applyCommand(state, command, T0);
+  assert.equal(quote.ok, false);
+  assert.equal(quote.ok === false && quote.code, 'confirm');
+  assert.equal(quote.ok === false && quote.quote?.minutes, 10, 'the quote names the price');
+  assert.equal(quote.ok === false && quote.quote?.balanceMin, 30, 'the quote names the balance');
+  assert.equal(
+    quote.ok === false && quote.quote?.label,
+    'Removing instagram.com from unproductive sites',
+    'the quote describes the change',
+  );
+  assert.equal(
+    quote.ok === false ? quote.message : '',
+    'Removing instagram.com from unproductive sites costs 10 min of your screen-time balance (you have 30 min).',
+  );
+  assert.equal(state.balanceMs, 30 * MIN, 'nothing was charged before the user accepted');
+  assert.ok(state.rules.unproductive.includes('instagram.com'), 'the site is still listed');
+
+  // Asking again without confirming still charges nothing, so a double click cannot spend twice.
+  assert.equal(applyCommand(state, command, T0 + 1).ok, false);
+  assert.equal(state.balanceMs, 30 * MIN);
+
+  assert.equal(applyCommand(state, { ...command, confirm: true }, T0 + 2).ok, true);
+  assert.equal(state.balanceMs, 20 * MIN, 'only the confirmed call pays');
+  assert.equal(state.rules.unproductive.includes('instagram.com'), false, 'the change applied once accepted');
+});
+
+test('a change that cannot be afforded is refused rather than quoted', () => {
+  const state = freshState(true);
+  state.balanceMs = 4 * MIN;
+  const result = applyCommand(state, { type: 'site.remove', host: 'instagram.com' }, T0);
+  assert.equal(result.ok === false && result.code, 'insufficient');
+  assert.equal(result.ok === false && result.quote, undefined, 'there is nothing to confirm');
+});
+
+test('a free change is never quoted, so filling in a list stays one click per entry', () => {
+  const state = freshState(true);
+  state.balanceMs = 30 * MIN;
+  assert.equal(
+    applyCommand(state, { type: 'site.remove', host: 'khanacademy.org' }, T0).ok,
+    true,
+    'removing a productive site is stricter, so it is not quoted',
+  );
+  assert.equal(applyCommand(state, { type: 'site.add', list: 'unproductive', host: 'reddit.com' }, T0).ok, true);
+  assert.equal(applyCommand(state, { type: 'youtube.add', keyword: 'Quantum' }, T0).ok, true);
+  assert.equal(applyCommand(state, { type: 'whatsapp.add', chat: 'Mom' }, T0).ok, true);
+  assert.equal(state.balanceMs, 30 * MIN, 'no free change was charged');
+});
+
 test('marking an unproductive site productive costs; marking it unproductive again is free', () => {
   const state = freshState(true);
   state.balanceMs = 30 * MIN;
-  assert.equal(applyCommand(state, { type: 'site.move', host: 'instagram.com', to: 'productive' }, T0).ok, true);
+  assert.equal(applyConfirmed(state, { type: 'site.move', host: 'instagram.com', to: 'productive' }, T0).ok, true);
   assert.equal(state.balanceMs, 20 * MIN, 'unproductive → productive costs');
   assert.equal(applyCommand(state, { type: 'site.move', host: 'instagram.com', to: 'unproductive' }, T0).ok, true);
   assert.equal(state.balanceMs, 20 * MIN, 'the way back is free');
@@ -137,7 +213,7 @@ test('moving a site to a stricter list is free; to a looser list costs', () => {
   state.balanceMs = 30 * MIN;
   assert.equal(applyCommand(state, { type: 'site.move', host: 'youtube.com', to: 'unproductive' }, T0).ok, true);
   assert.equal(state.balanceMs, 30 * MIN);
-  assert.equal(applyCommand(state, { type: 'site.move', host: 'youtube.com', to: 'half' }, T0).ok, true);
+  assert.equal(applyConfirmed(state, { type: 'site.move', host: 'youtube.com', to: 'half' }, T0).ok, true);
   assert.equal(state.balanceMs, 20 * MIN);
   assert.ok(state.rules.half.includes('youtube.com'));
 });
@@ -157,7 +233,7 @@ test('ratio: loosening costs the unlock cost, tightening is free', () => {
   state.balanceMs = 30 * MIN;
   assert.equal(applyCommand(state, { type: 'ratio.set', earnFromMin: 60, earnToMin: 4 }, T0).ok, true);
   assert.equal(state.balanceMs, 30 * MIN);
-  assert.equal(applyCommand(state, { type: 'ratio.set', earnFromMin: 60, earnToMin: 6 }, T0).ok, true);
+  assert.equal(applyConfirmed(state, { type: 'ratio.set', earnFromMin: 60, earnToMin: 6 }, T0).ok, true);
   assert.equal(state.balanceMs, 20 * MIN);
   assert.equal(state.settings.earnToMin, 6);
 });
@@ -167,7 +243,7 @@ test('unlock cost: lowering it costs the current price, raising it is free', () 
   state.balanceMs = 30 * MIN;
   assert.equal(applyCommand(state, { type: 'unlock.set', minutes: 25 }, T0).ok, true);
   assert.equal(state.balanceMs, 30 * MIN, 'raising the cost is free');
-  assert.equal(applyCommand(state, { type: 'unlock.set', minutes: 5 }, T0).ok, true);
+  assert.equal(applyConfirmed(state, { type: 'unlock.set', minutes: 5 }, T0).ok, true);
   assert.equal(state.balanceMs, 5 * MIN, 'lowering the cost is paid at the current price (25 min)');
   assert.equal(state.settings.unlockCostMin, 5);
   state.balanceMs = 2 * MIN;
@@ -198,13 +274,13 @@ test('WhatsApp chats: exact names, free to add and to remove', () => {
 test('tasks: adding and raising rewards costs, deleting and lowering is free', () => {
   const state = freshState(true);
   state.balanceMs = 30 * MIN;
-  const added = applyCommand(state, { type: 'task.add', title: 'Mock test', rewardMin: 5, recurring: true }, T0);
+  const added = applyConfirmed(state, { type: 'task.add', title: 'Mock test', rewardMin: 5, recurring: true }, T0);
   assert.equal(added.ok, true);
   assert.equal(state.balanceMs, 20 * MIN);
   const id = state.tasks[0].id;
   assert.equal(applyCommand(state, { type: 'task.update', id, rewardMin: 3 }, T0).ok, true);
   assert.equal(state.balanceMs, 20 * MIN);
-  assert.equal(applyCommand(state, { type: 'task.update', id, rewardMin: 9 }, T0).ok, true);
+  assert.equal(applyConfirmed(state, { type: 'task.update', id, rewardMin: 9 }, T0).ok, true);
   assert.equal(state.balanceMs, 10 * MIN);
   assert.equal(applyCommand(state, { type: 'task.delete', id }, T0).ok, true);
   assert.equal(state.tasks.length, 0);

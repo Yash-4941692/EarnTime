@@ -3,7 +3,7 @@
 **Status: partially verified.** Everything below was run in the sandbox described in *Environment*. The extension was **not** run in a real Chrome browser, because the sandbox could not obtain a Chromium build that supports extensions (see *Real-browser gap*). Chrome-specific behaviour must be checked with the manual checklist before release.
 
 > **2026-10-09 update.** The cost model, the setup redirect and WhatsApp auto-reply were added since
-> the browser suite was last run. `npm test` (type check + 116 unit + 8 jsdom DOM tests + 36 flow
+> the browser suite was last run. `npm test` (type check + 126 unit + 12 jsdom DOM tests + 37 flow
 > tests) passes. The browser suite was not re-run — no Chromium binary was obtainable — so steps 20–25
 > of the manual checklist below are the ones that still need a real Chrome.
 
@@ -20,9 +20,9 @@
 | --- | --- | --- |
 | Type check (strict, `noUnusedLocals`) | `npm run typecheck` | **pass** |
 | Build (root artifacts) | `npm run build` | **pass** |
-| Unit tests | `npm run test:unit` | **116 / 116 pass** |
-| DOM tests (jsdom, WhatsApp sender) | `npm run test:dom` | **8 / 8 pass** |
-| Flow tests (simulated browser) | `npm run test:sim` | **36 / 36 pass** |
+| Unit tests | `npm run test:unit` | **126 / 126 pass** |
+| DOM tests (jsdom, WhatsApp sender) | `npm run test:dom` | **12 / 12 pass** |
+| Flow tests (simulated browser) | `npm run test:sim` | **37 / 37 pass** |
 | Browser tests (headless Chromium) | `npm run test:browser` | **14 / 14 pass** |
 | Real Chrome extension end-to-end | manual checklist below | **not run** |
 
@@ -30,7 +30,7 @@ The type checker and the build report no warnings. The extension logs a warning 
 
 ## What each suite covers
 
-### Unit tests (`source/test/unit`, 116)
+### Unit tests (`source/test/unit`, 126)
 
 - **Host handling**: input normalisation (`https://www.` stripped, punycode, rejects `chrome://`, `javascript:` and malformed names), subdomain matching, most-specific entry wins, strictest list wins on ties, migration de-duplication.
 - **Time**: local day keys, splitting intervals at local midnight, compact formatting.
@@ -39,21 +39,29 @@ The type checker and the build report no warnings. The extension logs a warning 
 - **Reconciliation**: the specification example (balance 10 min, 40 min of unproductive use gives debt 30 min); the single-visit cap; the continuation cap; productive time repaying debt first; half-productive visits charged during interruptions; the 7-day window; browser-start cut; neutral sites never charged.
 - **Roles and blocking**: role for every observation state; block predicates for zero balance and debt; the half-productive session rules; page directives; the declarativeNetRequest rule builder (allow outranks block-all); guarded `chrome://` URLs; the exact required wording of the limitation sentence.
 - **Tasks**: once per local day for recurring tasks, once ever for one-off tasks, undo does not revoke, re-tick does not pay twice, rewards repay debt first.
-- **Protection and commands**: setup once only, setup validation (including the 30-minute starting-balance cap), free changes before setup, **adding a site to any list is free**, **keywords and chats are free both ways**, a cost only when an existing restriction is lifted (removing an unproductive or half-productive site, or moving a site up the ladder), refusal when the balance cannot pay (with no side effect), refusal while in debt, cost of lowering the unlock cost, audit export contains hosts but no URLs.
+- **Protection and commands**: setup once only, setup validation (including the 30-minute starting-balance cap), free changes before setup, **adding a site to any list is free**, **keywords and chats are free both ways**, a cost only when an existing restriction is lifted (removing an unproductive or half-productive site, or moving a site up the ladder), refusal when the balance cannot pay (with no side effect), refusal while in debt, cost of lowering the unlock cost, audit export contains hosts but no URLs. Confirmation-before-charge: **a costing change is quoted on the first call and charged only on the confirmed second one**, the quote itself moves nothing and spends nothing, asking twice without confirming still charges nothing, a change the balance cannot pay is refused rather than quoted, and a free change is never quoted at all.
+- **`page.init` retry** (`askWorker.test.ts`, 7): an immediate answer is returned with no pause; a page that loads while the worker is starting is answered once the worker is up, with growing pauses between attempts; an explicit refusal is an answer and is never retried; a slow worker exhausts the budget and the page is told there is no answer; a zero budget stops the retrying at once; the whole pause schedule fits inside the default budget; and a worker that never comes up costs exactly one attempt per scheduled pause.
 - **Auto-reply** (`autoreply.test.ts`, 22): clock parsing and formatting; time windows including one that crosses midnight; validation (a task or scheduled rule must name its chats, half-written and zero-length windows refused, de-duplication); `{task}`/`{time}` rendering; **a fallback reaches personal chats only — never a group, never a Productive Mode chat, never a chat it cannot classify**; a rule that names a group does reach that group; named rules claim a chat so fallbacks do not double-fire; every matching fallback fires in order; disabled and out-of-window rules never fire; repeat modes (every / once a day / once ever); cooldowns; per-trigger planning; the queue hands over a few jobs at a time and expires the rest; a manual test send does not consume a repeat slot; the activity log is capped.
 - **Migration**: legacy root-extension and React-prototype storage; balance and ratio preserved; the nuclear password is not carried over; corrupted storage is sanitised.
 - **Invariants**: 25 seeded random sequences (200 steps each) of checkpoints, reconciliations, task toggles and backwards clock jumps. Balance and debt stay non-negative, debt origin never falls below debt, and net worth moves exactly by credits minus charges. A ledger-size limit test.
 
-### DOM tests (`source/test/dom`, 8)
+### DOM tests (`source/test/dom`, 12)
 
 These run the **real** `content/whatsappSend.ts` against a hand-written fake WhatsApp Web layout in
 jsdom, so the selectors, unread detection, group detection, composer automation and failure reporting
 are all exercised without a browser binary. `document.execCommand` is stubbed (jsdom has none) to
 behave as Chrome does.
 
-- The first scan is a baseline: unread messages that were already there are not answered.
+- The first scan is a baseline: unread messages that were already there are not answered, even when
+  the chat sits near the top of the list.
 - The group icon is recognised and reported with the poll.
 - A chat that gains an unread badge while the page stays open is reported once, and not again.
+- The four cases the windowed chat list creates, driven by rendering and un-rendering rows as
+  scrolling does: **a chat that was below the fold when the baseline was taken is answered once a
+  message floats it to the top** (this is the case that was silently broken); an old thread scrolled
+  into view further down is not treated as new; a chat that scrolls out of the rendered list and back
+  is not answered a second time; and a chat that gains messages while it is unrendered is answered
+  when it comes back.
 - A queued message is typed into the composer, the send button is pressed, the composer ends up empty,
   and the conversation the user was reading is put back.
 - A chat that does not exist fails with a readable reason and leaves no half-typed draft.
@@ -64,7 +72,7 @@ behave as Chrome does.
 What these cannot prove is that today's real WhatsApp Web still uses those selectors. See the manual
 checklist below.
 
-### Flow tests on a simulated browser (`source/test/sim`, 36)
+### Flow tests on a simulated browser (`source/test/sim`, 37)
 
 The simulator (`test/sim/fakeBrowser.ts`) exposes a `chrome`-shaped object and runs the **real** Chrome adapter, event wiring and controller. Time is virtual. It models: tabs and windows, focus, minimise, idle with a 15-second detection interval, audible tabs, history, declarativeNetRequest main-frame rules with priorities, service-worker suspension and restart, extension disable and enable, browser restart with new tab ids, wall-clock changes, and incognito gating. It does **not** model Chrome's own internals.
 
@@ -105,13 +113,31 @@ These were found by the tests above and fixed before this report was written:
 8. Setup could grant up to 600 minutes. Capped at 30 minutes, because reinstalling restarts setup.
 9. The README and user guide said setup opens on first run, but nothing opened it. A fresh install now opens the setup wizard (flow test added).
 
+**Fixed in 2.1.1**, reported from real use rather than caught by the suites above. Each has a regression test:
+
+10. **Auto-reply answered nobody.** `takeUnread()` reported a chat only when its unread count *grew
+    from a count it had already recorded*. WhatsApp renders only the visible slice of the chat list,
+    so a chat that messaged you from below the fold first appeared **already holding its badge**, with
+    no baseline to grow from — and was silenced for good. A chat no previous scan has seen now counts
+    when it appears in the top six rows, where WhatsApp floats a conversation that has just received a
+    message; counts of chats that scroll out of view are remembered so an old thread cannot be
+    answered twice. (Four DOM tests, two of which fail against the old code.)
+11. **A page that loaded while the service worker was starting got no chooser and charged no time.**
+    `page.init` was sent once and a missing answer was treated as "nothing to do". It is now retried
+    with a growing pause for about ten seconds. This narrows the fail-open gap rather than closing it;
+    what remains is documented in `KNOWN_LIMITATIONS.md` section 4. (Seven unit tests.)
+12. **A loosening change spent ten minutes on a single click, with no warning anywhere.** The service
+    worker now refuses the first attempt with the price and the balance, charging and changing
+    nothing, and the UI re-issues the identical command only once the cost is accepted. Free changes
+    are untouched. (Three unit tests and one flow test.)
+
 Simulator defects (not product bugs) were also corrected while writing the tests: new tabs were placed in the first window rather than the focused one, declarativeNetRequest rules were not applied to tabs opened directly at a blocked address, and the settle logic could return before a queued job had saved. Each was fixed in the simulator to match Chrome's behaviour; no expectation was loosened to make a test pass.
 
 ## Real-browser gap
 
 The browser suite was **not re-run** for the auto-reply and cost-model work: no Chromium binary was
 available in the sandbox used for it (`CHROME_PATH` unset, nothing on `PATH`). `npm test` — type check,
-116 unit tests, 8 DOM tests and 36 flow tests — was run and passes. The browser tests below therefore
+126 unit tests, 12 DOM tests and 37 flow tests — was run and passes. The browser tests below therefore
 reflect the earlier run and do not yet cover auto-reply.
 
 Attempts to obtain an extension-capable Chromium in the sandbox:

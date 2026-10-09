@@ -32,6 +32,20 @@ const COMPOSER_SELECTORS = ['#main footer div[contenteditable="true"][data-tab]'
 const SEND_GAP_MS = 1200;
 /** Consecutive failed sends after which this tab gives up until WhatsApp is reloaded. */
 const MAX_CONSECUTIVE_FAILURES = 3;
+/**
+ * How far down the chat list a conversation may sit and still count as "just messaged you" when the
+ * previous scan could not see it.
+ *
+ * WhatsApp renders only the visible slice of a long chat list, so a chat that messages you from
+ * below the fold first appears **already holding its badge** — there is no earlier count for it to
+ * grow from, and comparing counts alone silences it for good. What makes the top rows safe to trust
+ * is that WhatsApp floats a conversation to the top when a message arrives: a chat that appears
+ * unread in the top rows got there because it just received something. A chat further down is an old
+ * thread being scrolled back into view, which must not fire.
+ */
+const NEW_CHAT_ROW_WINDOW = 6;
+/** Cap on the remembered baseline, so a long-lived tab with a big chat list cannot grow without bound. */
+const MAX_TRACKED_CHATS = 300;
 
 export interface WhatsAppAutoReplyOptions {
   /** Asks the service worker what to send, reporting new messages and the groups it could identify. */
@@ -250,18 +264,46 @@ export function startWhatsAppAutoReply(opts: WhatsAppAutoReplyOptions): WhatsApp
   let failures = 0;
   let timer: number | null = null;
 
-  /** Chat titles that gained an unread message since the previous scan. */
+  /**
+   * Chat titles that gained an unread message since the previous scan.
+   *
+   * The obvious rule — report a chat whose count grew — misses every chat the previous scan could
+   * not see, because the windowed chat list had not rendered it yet. Such a chat appears already
+   * holding its badge and never grows from anything. Those are handled by position instead: a chat
+   * no previous scan has seen counts when it sits in the top `NEW_CHAT_ROW_WINDOW` rows, where
+   * WhatsApp floats a conversation that just received a message.
+   *
+   * Two guards keep that from firing on the wrong things:
+   *  - nothing counts until a baseline exists, so a reload does not answer yesterday's backlog;
+   *  - a chat further down does not count, so scrolling an old thread into view stays silent.
+   */
   const takeUnread = (): string[] => {
     const next = new Map<string, number>();
     const arrived: string[] = [];
-    for (const row of rows()) {
+    const list = rows();
+    for (let index = 0; index < list.length; index += 1) {
+      const row = list[index];
       const title = titleOfRow(row);
       if (!title) continue;
       const count = unreadOf(row);
       const previous = seen.get(title);
       next.set(title, Math.max(count, next.get(title) ?? 0));
-      // A chat first seen already holding unread messages did not "just message you".
-      if (count > 0 && previous !== undefined && count > previous) arrived.push(title);
+      if (count === 0) continue;
+      if (previous === undefined) {
+        // Never scanned before: either this is the first scan of a freshly loaded page, where every
+        // badge predates EarnTime, or a chat the list had not rendered has just been floated up.
+        if (seen.size > 0 && index < NEW_CHAT_ROW_WINDOW) arrived.push(title);
+        continue;
+      }
+      if (count > previous) arrived.push(title);
+    }
+    // Remember the counts of chats the list is not rendering right now. Without this, scrolling a
+    // chat out of view and back would present it as unseen and answer it a second time.
+    let retained = Math.max(0, MAX_TRACKED_CHATS - next.size);
+    for (const [title, count] of seen) {
+      if (next.has(title) || retained === 0) continue;
+      retained -= 1;
+      next.set(title, count);
     }
     seen = next;
     return arrived;

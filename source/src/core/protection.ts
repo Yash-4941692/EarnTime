@@ -56,11 +56,36 @@ export function ratioLoosens(
   return newTo / newFrom > oldTo / oldFrom + 1e-9;
 }
 
+export interface PayUnlockOptions {
+  /**
+   * Human-readable description of the change, shown when asking the user to confirm. Falls back to
+   * `reason`, which is written to the ledger and is terser.
+   */
+  label?: string;
+  /**
+   * False when the user has not confirmed the change yet. The cost is then only quoted: nothing is
+   * charged, nothing is mutated, and the caller is told the price so it can ask first. A loosening
+   * change is never charged on the click that requested it.
+   */
+  confirmed?: boolean;
+}
+
 /**
  * Pays an unlock cost from the balance. Never creates debt, and refuses while in debt mode.
  * Before setup is complete nothing is charged.
+ *
+ * A change that costs screen time is charged only once the user has confirmed it: with
+ * `confirmed: false` this quotes the price and returns a `confirm` failure instead of paying. The
+ * balance and debt checks run first, so the user is asked to confirm a change that is actually
+ * payable rather than one that would be refused anyway.
  */
-export function payUnlock(state: EarnState, minutes: number, now: number, reason: string): RuleResult {
+export function payUnlock(
+  state: EarnState,
+  minutes: number,
+  now: number,
+  reason: string,
+  options: PayUnlockOptions = {},
+): RuleResult {
   if (!state.setupDone || minutes <= 0) return { ok: true };
   if (state.debtMs > 0) {
     return {
@@ -76,6 +101,16 @@ export function payUnlock(state: EarnState, minutes: number, now: number, reason
       code: 'insufficient',
       needMs: costMs,
       message: `This change costs ${minutes} min of screen time, and you have ${Math.floor(state.balanceMs / MINUTE_MS)} min.`,
+    };
+  }
+  if (options.confirmed === false) {
+    const balanceMin = Math.floor(state.balanceMs / MINUTE_MS);
+    const label = options.label ?? reason;
+    return {
+      ok: false,
+      code: 'confirm',
+      message: `${label} costs ${minutes} min of your screen-time balance (you have ${balanceMin} min).`,
+      quote: { minutes, balanceMin, reason, label },
     };
   }
   state.balanceMs -= costMs;

@@ -36,21 +36,25 @@ export interface SetupPayload {
   tasks: Array<{ title: string; rewardMin: number; recurring: boolean }>;
 }
 
+/**
+ * `confirm` is set by the UI when the user has already accepted a change that costs screen time.
+ * Every command here is quoted first and charged only on the second, confirmed call.
+ */
 export type Command =
   | { type: 'setup.complete'; payload: SetupPayload }
-  | { type: 'ratio.set'; earnFromMin: number; earnToMin: number }
-  | { type: 'unlock.set'; minutes: number }
-  | { type: 'site.add'; list: ListName; host: string }
-  | { type: 'site.remove'; host: string }
-  | { type: 'site.move'; host: string; to: ListName }
+  | { type: 'ratio.set'; earnFromMin: number; earnToMin: number; confirm?: boolean }
+  | { type: 'unlock.set'; minutes: number; confirm?: boolean }
+  | { type: 'site.add'; list: ListName; host: string; confirm?: boolean }
+  | { type: 'site.remove'; host: string; confirm?: boolean }
+  | { type: 'site.move'; host: string; to: ListName; confirm?: boolean }
   | { type: 'youtube.add'; keyword: string }
   | { type: 'youtube.remove'; keyword: string }
   | { type: 'whatsapp.add'; chat: string }
   | { type: 'whatsapp.remove'; chat: string }
   | { type: 'wagroup.add'; chat: string }
   | { type: 'wagroup.remove'; chat: string }
-  | { type: 'task.add'; title: string; rewardMin: number; recurring: boolean }
-  | { type: 'task.update'; id: string; title?: string; rewardMin?: number; recurring?: boolean }
+  | { type: 'task.add'; title: string; rewardMin: number; recurring: boolean; confirm?: boolean }
+  | { type: 'task.update'; id: string; title?: string; rewardMin?: number; recurring?: boolean; confirm?: boolean }
   | { type: 'task.delete'; id: string }
   | { type: 'task.toggle'; id: string }
   | { type: 'autoreply.add'; rule: AutoReplyDraft }
@@ -99,10 +103,25 @@ function findPlace(state: EarnState, host: string): ListName | null {
   return listOfEntry(host, state.rules);
 }
 
-function applyRatio(state: EarnState, now: number, from: number, to: number): RuleResult {
+/**
+ * Charges a loosening change, but only once the user has confirmed the quoted price. `reason` goes
+ * to the ledger; `label` is the sentence the confirmation prompt shows.
+ */
+function charge(
+  state: EarnState,
+  now: number,
+  minutes: number,
+  reason: string,
+  label: string,
+  confirmed: boolean | undefined,
+): RuleResult {
+  return payUnlock(state, minutes, now, reason, { label, confirmed: confirmed === true });
+}
+
+function applyRatio(state: EarnState, now: number, from: number, to: number, confirmed: boolean | undefined): RuleResult {
   const { earnFromMin: oldFrom, earnToMin: oldTo } = state.settings;
   if (state.setupDone && ratioLoosens(oldFrom, oldTo, from, to)) {
-    const paid = payUnlock(state, state.settings.unlockCostMin, now, 'earn ratio');
+    const paid = charge(state, now, state.settings.unlockCostMin, 'earn ratio', `Raising the earn ratio to ${from}:${to}`, confirmed);
     if (!paid.ok) return paid;
   }
   state.settings.earnFromMin = from;
@@ -121,7 +140,14 @@ function applySite(state: EarnState, now: number, cmd: Extract<Command, { type: 
     if (state.rules[cmd.list].length >= MAX_LIST_ITEMS) return fail('limit', 'That list is full.');
     // A host that was on no list was already unrestricted, so listing it costs nothing.
     const cost = siteChangeLoosens('neutral', cmd.list) ? state.settings.unlockCostMin : 0;
-    const paid = payUnlock(state, cost, now, `add ${host} to ${cmd.list}`);
+    const paid = charge(
+      state,
+      now,
+      cost,
+      `add ${host} to ${cmd.list}`,
+      `Adding ${host} to ${LIST_LABEL[cmd.list].toLowerCase()} sites`,
+      cmd.confirm,
+    );
     if (!paid.ok) return paid;
     state.rules[cmd.list].push(host);
     addLedger(state, 'rule', now, 0, `Added ${host} to ${LIST_LABEL[cmd.list].toLowerCase()} sites`, host);
@@ -134,7 +160,15 @@ function applySite(state: EarnState, now: number, cmd: Extract<Command, { type: 
   if (!current) return fail('not-found', `${host} is not on any list.`);
 
   if (cmd.type === 'site.remove') {
-    const paid = payUnlock(state, siteChangeLoosens(current, 'neutral') ? state.settings.unlockCostMin : 0, now, `remove ${host}`);
+    const cost = siteChangeLoosens(current, 'neutral') ? state.settings.unlockCostMin : 0;
+    const paid = charge(
+      state,
+      now,
+      cost,
+      `remove ${host}`,
+      `Removing ${host} from ${LIST_LABEL[current].toLowerCase()} sites`,
+      cmd.confirm,
+    );
     if (!paid.ok) return paid;
     state.rules[current] = state.rules[current].filter((h) => h !== host);
     addLedger(state, 'rule', now, 0, `Removed ${host} from ${LIST_LABEL[current].toLowerCase()} sites`, host);
@@ -145,7 +179,14 @@ function applySite(state: EarnState, now: number, cmd: Extract<Command, { type: 
   if (current === cmd.to) return { ok: true };
   if (state.rules[cmd.to].length >= MAX_LIST_ITEMS) return fail('limit', 'That list is full.');
   const cost = siteChangeLoosens(current, cmd.to) ? state.settings.unlockCostMin : 0;
-  const paid = payUnlock(state, cost, now, `move ${host} to ${cmd.to}`);
+  const paid = charge(
+    state,
+    now,
+    cost,
+    `move ${host} to ${cmd.to}`,
+    `Moving ${host} to ${LIST_LABEL[cmd.to].toLowerCase()} sites`,
+    cmd.confirm,
+  );
   if (!paid.ok) return paid;
   state.rules[current] = state.rules[current].filter((h) => h !== host);
   state.rules[cmd.to].push(host);
@@ -190,7 +231,14 @@ function applyTaskCommand(state: EarnState, now: number, cmd: Extract<Command, {
     case 'task.add': {
       const valid = validateTask(cmd);
       if (!valid.ok) return valid;
-      const paid = payUnlock(state, state.settings.unlockCostMin, now, `new task "${valid.data.title}"`);
+      const paid = charge(
+        state,
+        now,
+        state.settings.unlockCostMin,
+        `new task "${valid.data.title}"`,
+        `Adding the task "${valid.data.title}"`,
+        cmd.confirm,
+      );
       if (!paid.ok) return paid;
       const task: Task = {
         id: newTaskId(now),
@@ -217,7 +265,14 @@ function applyTaskCommand(state: EarnState, now: number, cmd: Extract<Command, {
       const rewardUp = next.data.rewardMin > task.rewardMin;
       const becameRecurring = next.data.recurring && !task.recurring;
       if (rewardUp || becameRecurring) {
-        const paid = payUnlock(state, state.settings.unlockCostMin, now, `change task "${task.title}"`);
+        const paid = charge(
+          state,
+          now,
+          state.settings.unlockCostMin,
+          `change task "${task.title}"`,
+          `Changing the task "${task.title}"`,
+          cmd.confirm,
+        );
         if (!paid.ok) return paid;
       }
       task.title = next.data.title;
@@ -378,7 +433,7 @@ export function applyCommand(state: EarnState, cmd: Command, now: number): RuleR
     case 'ratio.set': {
       const ratio = validEarn(cmd.earnFromMin, cmd.earnToMin);
       if (!ratio.ok) return ratio;
-      return applyRatio(state, now, ratio.data.earnFromMin, ratio.data.earnToMin);
+      return applyRatio(state, now, ratio.data.earnFromMin, ratio.data.earnToMin, cmd.confirm);
     }
     case 'unlock.set': {
       const minutes = Math.round(cmd.minutes);
@@ -388,7 +443,7 @@ export function applyCommand(state: EarnState, cmd: Command, now: number): RuleR
       const old = state.settings.unlockCostMin;
       if (minutes < old) {
         // Lowering the cost of changes is itself a loosening, so it costs the current price.
-        const paid = payUnlock(state, old, now, 'lower unlock cost');
+        const paid = charge(state, now, old, 'lower unlock cost', `Lowering the unlock cost to ${minutes} min`, cmd.confirm);
         if (!paid.ok) return paid;
       }
       state.settings.unlockCostMin = minutes;

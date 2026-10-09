@@ -2,7 +2,7 @@
 
 import type { Command } from './commands';
 import type { PageDirective } from './directive';
-import type { AutoReplyJob, HalfMode, RuleErrorCode } from './types';
+import type { AutoReplyJob, HalfMode, RuleErrorCode, UnlockQuote } from './types';
 
 export type PageMessage =
   | { type: 'page.init'; url: string }
@@ -34,6 +34,8 @@ export interface ReplyError {
   code: RuleErrorCode | 'unknown' | 'unavailable';
   message: string;
   needMs?: number;
+  /** Price of a change the user still has to accept before it is charged. */
+  quote?: UnlockQuote;
 }
 
 export type Reply =
