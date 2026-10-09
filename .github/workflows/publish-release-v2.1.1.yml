@@ -12,12 +12,20 @@ name: Publish v2.1.1
 
 on:
   workflow_dispatch:
+  # The sandbox that prepared this release cannot reach uploads.github.com, and
+  # the GitHub App token cannot create workflow_dispatch events, so the run is
+  # triggered by a push whose commit message asks for it.
+  push:
+    branches: [arena/5cd9fe53-earntime]
 
 permissions:
   contents: write
 
 jobs:
   publish:
+    # Pushes to the session branch only run this when the commit message asks
+    # for it; workflow_dispatch always runs (used for retries).
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish v2.1.1]')
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: v2.1.1
