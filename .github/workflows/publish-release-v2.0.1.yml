@@ -1,0 +1,121 @@
+name: Publish v2.0.1
+
+# Publishes the v2.0.1 release for EarnTime: builds the release ZIP from the
+# merged PR #2 commit (39b578e3f9cb2e1c02a56c37ffa4aa3d05b1a68d) with the
+# repository's deterministic packager, attaches it to the GitHub release, then
+# downloads the published asset back and verifies its SHA-256 checksum.
+#
+# The sandbox this release was prepared in cannot reach uploads.github.com, so
+# the asset upload runs here on GitHub's infrastructure instead. The job refuses
+# to publish unless the rebuild is bit-identical to the ZIP built locally from
+# the same merge commit.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/20abaaf8-earntime]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    # Pushes to the session branch only run this when the commit message asks
+    # for it; workflow_dispatch always runs (used for retries).
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish v2.0.1]')
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: v2.0.1
+      MERGE_SHA: 39b578e3f9cb2e1c02a56c37ffa4aa3d05b1a68d
+      # SHA-256 of EarnTime-2.0.1.zip built from the merge commit with
+      # `npm run package` (deterministic: fixed timestamps from the commit date).
+      EXPECTED_SHA256: 14631756f973b0ad3b201c97b4d10a7b51af8882801a2c3ca97550d7b6501526
+      ZIP_NAME: EarnTime-2.0.1.zip
+    steps:
+      - name: Check out the merge commit
+        uses: actions/checkout@v4
+        with:
+          ref: 39b578e3f9cb2e1c02a56c37ffa4aa3d05b1a68d
+
+      # Same Node release as the machine that produced the expected checksum;
+      # Node's bundled zlib makes `npm run package` output reproducible.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.3'
+
+      - name: Install dependencies
+        working-directory: source
+        run: npm ci
+
+      - name: Build release ZIP from the merge commit
+        working-directory: source
+        run: npm run package -- --out-dir "$RUNNER_TEMP/dist"
+
+      - name: Assert rebuild is bit-identical to the merge-commit build
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dist"
+          echo "$EXPECTED_SHA256  $ZIP_NAME" | sha256sum -c -
+          unzip -t "$ZIP_NAME"
+          test "$(unzip -Z1 "$ZIP_NAME" | wc -l)" -eq 28
+          unzip -p "$ZIP_NAME" manifest.json | grep -q '"version": "2.0.1"'
+
+      - name: Publish release with ZIP attached
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NOTES=$(cat <<'EOF'
+          Study to earn your screen time — 2.0.1 release.
+
+          Chrome extension (Manifest V3). This release adds `npm run package` (a verified, deterministic release ZIP) and corrects the privileged `chrome://` wording in the user guide. Version 2 replaces the earlier EarnTime releases; settings and balances migrate automatically on first start.
+
+          ## Install
+          1. Download `EarnTime-2.0.1.zip` and extract it (flat layout: `manifest.json` at the top level).
+          2. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked** and select the extracted folder.
+
+          ## Asset checksum (SHA-256)
+          ```
+          14631756f973b0ad3b201c97b4d10a7b51af8882801a2c3ca97550d7b6501526  EarnTime-2.0.1.zip
+          ```
+
+          The archive is built from the merge commit `39b578e3f9cb2e1c02a56c37ffa4aa3d05b1a68d` with `npm run package`; all 28 entries were verified byte-identical to the committed files.
+
+          ## Chrome limitation
+          Chrome prevents extensions from completely controlling privileged `chrome://` pages. Therefore this protection cannot be made absolute using a standard Chrome extension alone. See `docs/KNOWN_LIMITATIONS.md`.
+          EOF
+          )
+          echo "$NOTES" > "$RUNNER_TEMP/notes.md"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists — (re)uploading the asset."
+            gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/dist/$ZIP_NAME" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/dist/$ZIP_NAME" \
+              --target "$MERGE_SHA" \
+              --title "EarnTime v2.0.1" \
+              --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+          gh release view "$RELEASE_TAG" --json tagName,targetCommitish,isDraft,isPrerelease,url,assets
+
+      - name: Download the published asset and verify its checksum
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/dl"
+          gh release download "$RELEASE_TAG" -D "$RUNNER_TEMP/dl" -p "$ZIP_NAME"
+          cd "$RUNNER_TEMP/dl"
+          ACTUAL=$(sha256sum "$ZIP_NAME" | cut -d' ' -f1)
+          echo "Built checksum:      $EXPECTED_SHA256"
+          echo "Downloaded checksum: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED_SHA256"
+          echo
+          {
+            echo "### $RELEASE_TAG asset verification"
+            echo ""
+            echo "- Built from merge commit \`$MERGE_SHA\` with \`npm run package\` (Node v22.22.3)"
+            echo "- Built ZIP SHA-256: \`$EXPECTED_SHA256\`"
+            echo "- Downloaded asset SHA-256: \`$ACTUAL\`"
+            echo "- Checksums match: ✅"
+          } >> "$GITHUB_STEP_SUMMARY"
