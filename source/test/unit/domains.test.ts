@@ -6,7 +6,6 @@ import { cleanHostList, dedupeRules } from '../../src/core/state';
 test('normalizeHostInput accepts URLs, bare domains and www prefixes', () => {
   assert.equal(normalizeHostInput('https://www.YouTube.com/watch?v=abc'), 'youtube.com');
   assert.equal(normalizeHostInput('  youtube.com/feed  '), 'youtube.com');
-  assert.equal(normalizeHostInput('web.whatsapp.com'), 'web.whatsapp.com');
   assert.equal(normalizeHostInput('nptel.ac.in.'), 'nptel.ac.in');
   assert.equal(normalizeHostInput('xn--80ak6aa92e.com'), 'xn--80ak6aa92e.com');
 });

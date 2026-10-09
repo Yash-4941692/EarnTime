@@ -22,11 +22,9 @@ export function setupPayload(overrides: Partial<SetupPayload> = {}): SetupPayloa
     unlockCostMin: 10,
     initialBalanceMin: 0,
     productive: ['khanacademy.org', 'nptel.ac.in'],
-    half: ['youtube.com', 'web.whatsapp.com'],
+    half: ['youtube.com'],
     unproductive: ['instagram.com', 'reddit.com'],
     youtubeKeywords: ['JEE', 'NDA', 'Study', 'Learn', 'Education', 'PW'],
-    whatsappChats: ['Mom'],
-    whatsappGroups: ['Progress Check'],
     tasks: [],
     ...overrides,
   };

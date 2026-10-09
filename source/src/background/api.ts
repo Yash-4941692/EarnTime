@@ -58,8 +58,6 @@ export interface ExtApi {
   tabs: {
     query(): Promise<TabInfo[]>;
     update(tabId: number, url: string): Promise<void>;
-    /** Delivers a message to a content script. Rejects when the tab has none. */
-    sendToTab(tabId: number, message: unknown): Promise<unknown>;
   };
   history: {
     search(startTime: number, endTime: number, maxResults: number): Promise<HistoryItem[]>;

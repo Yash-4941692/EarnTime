@@ -10,14 +10,12 @@
  */
 
 import { applyCommand, auditExport, type Command } from '../core/commands';
-import { logAutoReply, planIncomingReplies, planWindowReplies, takeQueue } from '../core/autoreply';
 import {
   HEALTH_FRESH_MS,
   HEALTH_GRACE_MS,
   IDLE_DETECTION_S,
   MAX_HISTORY_URLS,
   STATE_KEY,
-  WHATSAPP_HOST,
 } from '../core/constants';
 import { pageDirective } from '../core/directive';
 import { buildBlockingRules, type DnrRule } from '../core/dnr';
@@ -78,7 +76,7 @@ export function createController(opts: ControllerOptions): Controller {
   const { api, clock, mono } = opts;
 
   let chain: Promise<unknown> = Promise.resolve();
-  const health = new Map<number, { ok: boolean; at: number }>();
+  const health = new Map<number, { ok: boolean; detail?: string; at: number }>();
   let lastMono: number | null = null;
   let appliedRulesKey: string | null = null;
   let lastBadge = '';
@@ -131,7 +129,10 @@ export function createController(opts: ControllerOptions): Controller {
     const session = state.sessions[String(tabId)];
     if (!session || session.mode !== 'productive') return 'n/a';
     const report = health.get(tabId);
-    if (report && now - report.at <= HEALTH_FRESH_MS) return report.ok ? 'ok' : 'bad';
+    if (report && now - report.at <= HEALTH_FRESH_MS) {
+      if (!report.ok) return 'bad';
+      return report.detail === 'covered' ? 'covered' : 'ok';
+    }
     if (now - session.since < HEALTH_GRACE_MS) return 'pending';
     return 'bad';
   }
@@ -215,20 +216,6 @@ export function createController(opts: ControllerOptions): Controller {
       await api.dnr.replaceDynamicRules(existing, desired);
       appliedRulesKey = key;
     });
-  }
-
-/**
-   * Nudges every open WhatsApp Web tab to run a delivery cycle now. Used when a task pays out (so an
-   * announcement goes out straight away) and on every tick (so a background tab, whose timers Chrome
-   * throttles, still checks for messages). Tabs without the content script are ignored quietly.
-   */
-  async function nudgeWhatsAppTabs(): Promise<void> {
-    const tabs = await safe<TabInfo[]>('tabs.query', [], () => api.tabs.query());
-    for (const tab of tabs) {
-      if (tab.id === undefined) continue;
-      if (hostFromUrl(tab.url ?? tab.pendingUrl ?? '') !== WHATSAPP_HOST) continue;
-      await safe('tabs.sendToTab', undefined, () => api.tabs.sendToTab(tab.id as number, { type: 'wa.push' }));
-    }
   }
 
   async function enforceOpenTabs(state: EarnState): Promise<void> {
@@ -352,7 +339,6 @@ export function createController(opts: ControllerOptions): Controller {
   const controller: Controller = {
     async tick() {
       await job('tick', true, () => undefined);
-      await nudgeWhatsAppTabs();
     },
 
     async onStartup() {
@@ -444,9 +430,10 @@ export function createController(opts: ControllerOptions): Controller {
         if (sender.tabId !== undefined) {
           const previous = health.get(sender.tabId);
           const ok = message.ok === true;
-          health.set(sender.tabId, { ok, at: clock() });
-          // A change of filter status changes the role, so account for the interval before it takes effect.
-          if (!previous || previous.ok !== ok) await job('filter-health', true, () => undefined);
+          const detail = ok && typeof message.detail === 'string' ? message.detail : undefined;
+          health.set(sender.tabId, { ok, detail, at: clock() });
+          // A change of filter health or cover state changes the role, so account for the interval first.
+          if (!previous || previous.ok !== ok || previous.detail !== detail) await job('filter-health', true, () => undefined);
         }
         return { ok: true };
       }
@@ -458,35 +445,6 @@ export function createController(opts: ControllerOptions): Controller {
           if (result.clearSession && tabId !== null) delete state.sessions[String(tabId)];
           if (tabId !== null) health.delete(tabId);
           return { ok: true, directive: result.directive };
-        });
-      }
-      if (message.type === 'wa.poll' || message.type === 'wa.result') {
-        return job('whatsapp', false, (state, now): Reply => {
-          // Only a real WhatsApp Web tab may drive the composer.
-          if (hostFromUrl(sender.url) !== WHATSAPP_HOST) return { ok: true, jobs: [] };
-          if (message.type === 'wa.result') {
-            logAutoReply(
-              state,
-              {
-                chat: typeof message.chat === 'string' ? message.chat.slice(0, 80) : '',
-                ruleId: typeof message.ruleId === 'string' ? message.ruleId : '',
-                ok: message.ok === true,
-                detail: message.ok
-                  ? `Sent: ${(typeof message.text === 'string' ? message.text : '').slice(0, 60)}`
-                  : `Failed: ${typeof message.error === 'string' ? message.error.slice(0, 120) : 'unknown error'}`,
-              },
-              now,
-            );
-            return { ok: true, jobs: [] };
-          }
-          const names = (value: unknown): string[] =>
-            Array.isArray(value)
-              ? value.filter((name): name is string => typeof name === 'string' && name.trim() !== '').slice(0, 40)
-              : [];
-          const groups = names(message.groups);
-          for (const name of names(message.unread)) planIncomingReplies(state, name, now, groups);
-          planWindowReplies(state, now);
-          return { ok: true, jobs: takeQueue(state, now) };
         });
       }
       if (message.type === 'page.choose') {
@@ -527,16 +485,11 @@ export function createController(opts: ControllerOptions): Controller {
     if (isUiMessage(message)) {
       if (message.type === 'ui.command') {
         const command = message.command as Command;
-        const reply = await job('command', true, (state, now): Reply => {
+        return job('command', true, (state, now): Reply => {
           const result = applyCommand(state, command, now);
           if (result.ok) return { ok: true, data: result.data };
           return { ok: false, error: { code: result.code, message: result.message, needMs: result.needMs, quote: result.quote } };
         });
-        // A ticked task or a test message should reach WhatsApp straight away, not on the next tick.
-        if (reply.ok && (command?.type === 'task.toggle' || command?.type === 'autoreply.test')) {
-          await nudgeWhatsAppTabs();
-        }
-        return reply;
       }
       if (message.type === 'ui.export') {
         return job('export', false, (state, now): Reply => ({ ok: true, data: auditExport(state, now) }));

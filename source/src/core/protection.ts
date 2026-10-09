@@ -35,12 +35,8 @@ export function siteChangeLoosens(from: Place, to: Place): boolean {
 }
 
 /**
- * True when editing the YouTube keyword or WhatsApp chat lists lifts a restriction.
- *
- * These lists never control access to a site: YouTube and WhatsApp Web stay reachable either way
- * (they are half-productive, so the mode prompt is what gates them). A keyword only decides which
- * channels count as study inside a Productive Mode the user already chose, and a chat only decides
- * which conversations stay visible there. Editing them is therefore always free.
+ * Editing the YouTube keyword list never lifts a site restriction. The list only decides which
+ * channels count as study inside a Productive Mode the user already chose, so editing it is free.
  */
 export function filterListLoosens(): boolean {
   return false;

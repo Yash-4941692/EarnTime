@@ -15,7 +15,7 @@ import { normalizeHostInput } from '../../core/domains';
 import { Button, Card, Field, Notice } from '../components';
 import { runCommand, useStoredState } from '../lib/extension';
 
-const STEPS = ['Welcome', 'Earn rule', 'Starting balance', 'Websites', 'YouTube', 'WhatsApp', 'Daily tasks', 'Review'] as const;
+const STEPS = ['Welcome', 'Earn rule', 'Starting balance', 'Websites', 'YouTube', 'Daily tasks', 'Review'] as const;
 
 interface Draft {
   earnFrom: string;
@@ -26,8 +26,6 @@ interface Draft {
   half: string[];
   unproductive: string[];
   keywords: string[];
-  chats: string[];
-  groups: string[];
   tasks: Array<{ title: string; rewardMin: number; recurring: boolean }>;
 }
 
@@ -40,8 +38,6 @@ const INITIAL: Draft = {
   half: [...DEFAULT_HALF_SITES],
   unproductive: [...SUGGESTED_UNPRODUCTIVE_SITES],
   keywords: [...DEFAULT_YOUTUBE_KEYWORDS],
-  chats: [],
-  groups: [],
   tasks: [],
 };
 
@@ -187,8 +183,6 @@ export function Setup() {
       half: draft.half,
       unproductive: draft.unproductive,
       youtubeKeywords: draft.keywords,
-      whatsappChats: draft.chats,
-      whatsappGroups: draft.groups,
       tasks: draft.tasks,
     };
     const result = await runCommand({ type: 'setup.complete', payload });
@@ -285,7 +279,7 @@ export function Setup() {
             </div>
             <div className="space-y-2">
               <h3 className="eyebrow">Half-productive: you choose the mode each visit</h3>
-              <ChipInput id="s-half" label="Half-productive site" values={draft.half} onChange={(half) => setDraft({ ...draft, half })} placeholder="e.g. reddit.com" normalize={normalizeHostInput} hint="YouTube and WhatsApp Web have study filters. Other sites are trusted in Productive Mode." />
+              <ChipInput id="s-half" label="Half-productive site" values={draft.half} onChange={(half) => setDraft({ ...draft, half })} placeholder="e.g. reddit.com" normalize={normalizeHostInput} hint="YouTube has a study filter. Other sites are trusted in Productive Mode." />
             </div>
             <div className="space-y-2">
               <h3 className="eyebrow">Unproductive: spends time</h3>
@@ -305,28 +299,10 @@ export function Setup() {
         ) : null}
 
         {step === 5 ? (
-          <div className="space-y-4">
-            <h2 className="text-[18px] font-semibold text-slate-50">WhatsApp chats</h2>
-            <p className="text-[13.5px] leading-relaxed text-slate-400">
-              In Productive Mode only these chats are visible. Use the exact name WhatsApp shows. You can leave this empty and add chats later.
-            </p>
-            <ChipInput id="s-chat" label="Chat name" values={draft.chats} onChange={(chats) => setDraft({ ...draft, chats })} placeholder="Exact chat name" />
-            <ChipInput
-              id="s-group"
-              label="Group names"
-              values={draft.groups}
-              onChange={(groups) => setDraft({ ...draft, groups })}
-              placeholder="e.g. Progress Check"
-              hint="Optional. Auto-reply never messages a group unless a rule names it, and this list is how EarnTime tells groups from personal chats."
-            />
-          </div>
-        ) : null}
-
-        {step === 6 ? (
           <TasksStep tasks={draft.tasks} onChange={(tasks) => setDraft({ ...draft, tasks })} />
         ) : null}
 
-        {step === 7 ? (
+        {step === 6 ? (
           <div className="space-y-4">
             <h2 className="text-[18px] font-semibold text-slate-50">Review</h2>
             <dl className="grid grid-cols-[160px_1fr] gap-x-4 gap-y-2 text-[13.5px]">
@@ -344,10 +320,6 @@ export function Setup() {
               <dd className="break-words">{draft.unproductive.join(', ') || 'none'}</dd>
               <dt className="text-slate-500">YouTube keywords</dt>
               <dd className="break-words">{draft.keywords.join(', ') || 'none'}</dd>
-              <dt className="text-slate-500">WhatsApp chats</dt>
-              <dd className="break-words">{draft.chats.join(', ') || 'none'}</dd>
-              <dt className="text-slate-500">WhatsApp groups</dt>
-              <dd className="break-words">{draft.groups.join(', ') || 'none'}</dd>
               <dt className="text-slate-500">Tasks</dt>
               <dd>{draft.tasks.length}</dd>
             </dl>

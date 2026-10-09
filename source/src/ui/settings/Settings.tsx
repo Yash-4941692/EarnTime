@@ -9,17 +9,14 @@ import { dashboardView } from '../../core/view';
 import type { EarnState, LedgerEntry, ListName, Task } from '../../core/types';
 import { Button, Card, Empty, Field, InlineCode, Notice } from '../components';
 import { exportAudit, incognitoAllowed, useNow, useStoredState } from '../lib/extension';
-import { AutoReplySection } from './AutoReply';
 import { createAct, type Act } from './useAct';
 
-type SectionId = 'time' | 'websites' | 'youtube' | 'whatsapp' | 'autoreply' | 'tasks' | 'protection';
+type SectionId = 'time' | 'websites' | 'youtube' | 'tasks' | 'protection';
 
 const SECTIONS: Array<{ id: SectionId; label: string; hint: string }> = [
   { id: 'time', label: 'Time rules', hint: 'Earn ratio, balance, unlock cost' },
   { id: 'websites', label: 'Websites', hint: 'Productive, half and unproductive lists' },
   { id: 'youtube', label: 'YouTube', hint: 'Channel keywords for Productive Mode' },
-  { id: 'whatsapp', label: 'WhatsApp', hint: 'Chats visible in Productive Mode' },
-  { id: 'autoreply', label: 'Auto-reply', hint: 'WhatsApp messages EarnTime sends for you' },
   { id: 'tasks', label: 'Daily tasks', hint: 'Goals that pay screen time' },
   { id: 'protection', label: 'Protection', hint: 'What is enforced and its limits' },
 ];
@@ -32,7 +29,7 @@ const LIST_LABEL: Record<ListName, string> = {
 
 const LIST_HELP: Record<ListName, string> = {
   productive: 'Earns screen time while you use it. Always open.',
-  half: 'Mixed sites. You choose Productive or Unproductive Mode each visit. YouTube and WhatsApp Web get filters.',
+  half: 'Mixed sites. You choose Productive or Unproductive Mode each visit. YouTube gets a study filter.',
   unproductive: 'Spends your balance. Blocked when the balance is empty or you are in debt.',
 };
 
@@ -304,50 +301,6 @@ function YouTubeSection({ state, act }: { state: EarnState; act: Act }) {
   );
 }
 
-function WhatsAppSection({ state, act }: { state: EarnState; act: Act }) {
-  const [chat, setChat] = useState('');
-  const chats = state.settings.whatsappChats;
-  return (
-    <div className="space-y-5">
-      <Card className="space-y-3">
-        <h2 className="text-[15px] font-semibold text-slate-50">Productive Mode on WhatsApp Web</h2>
-        <ul className="list-disc space-y-1 pl-5 text-[13px] leading-snug text-slate-400">
-          <li>Only chats on this list appear in the chat list. Other chats are hidden.</li>
-          <li>Names must match exactly, as WhatsApp shows them. Letter case and extra spaces are ignored.</li>
-          <li>If WhatsApp changes its layout, the chat list is hidden and the time counts as unproductive until it works again.</li>
-        </ul>
-      </Card>
-      <Card className="space-y-3">
-        <ul className="divide-y divide-slate-800/80 rounded-xl border border-slate-800/80" aria-label="Allowed WhatsApp chats">
-          {chats.length === 0 ? <li className="px-3 py-3 text-[13px] text-slate-500">No chats allowed yet.</li> : null}
-          {chats.map((name) => (
-            <li key={name} className="flex items-center justify-between gap-3 px-3 py-2.5">
-              <span className="truncate text-[13.5px] text-slate-100">{name}</span>
-              <Button variant="ghost" className="px-2 py-1 text-[12.5px]" onClick={() => void act({ type: 'whatsapp.remove', chat: name }, `Removed "${name}".`)}>
-                Remove
-              </Button>
-            </li>
-          ))}
-        </ul>
-        <form
-          className="grid grid-cols-[1fr_auto] gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (chat.trim()) void act({ type: 'whatsapp.add', chat }, `Added "${chat.trim()}".`).then((ok) => ok && setChat(''));
-          }}
-        >
-          <Field label="Add a chat name" htmlFor="wa-chat" hint="Free to add and remove: this list never unlocks a site.">
-            <input id="wa-chat" className="field" value={chat} onChange={(e) => setChat(e.target.value)} placeholder="Exact name as shown in WhatsApp" />
-          </Field>
-          <div className="flex items-end">
-            <Button type="submit" variant="primary">Add</Button>
-          </div>
-        </form>
-      </Card>
-    </div>
-  );
-}
-
 function TasksSection({ state, act }: { state: EarnState; act: Act }) {
   const now = useNow(60_000);
   const [title, setTitle] = useState('');
@@ -601,10 +554,6 @@ export function Settings() {
         return <WebsitesSection state={state} act={act} />;
       case 'youtube':
         return <YouTubeSection state={state} act={act} />;
-      case 'whatsapp':
-        return <WhatsAppSection state={state} act={act} />;
-      case 'autoreply':
-        return <AutoReplySection state={state} act={act} />;
       case 'tasks':
         return <TasksSection state={state} act={act} />;
       case 'protection':

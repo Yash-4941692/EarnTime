@@ -19,7 +19,7 @@ export function freshState(setupDone = true): EarnState {
   state.settings.unlockCostMin = 10;
   state.rules = {
     productive: ['khanacademy.org'],
-    half: ['youtube.com', 'web.whatsapp.com'],
+    half: ['youtube.com'],
     unproductive: ['instagram.com'],
   };
   return state;
