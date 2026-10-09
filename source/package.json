@@ -1,12 +1,13 @@
 {
   "name": "earntime-extension",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "Source for the EarnTime Chrome extension (Manifest V3). Build output is written to the repository root.",
   "license": "MIT",
   "scripts": {
     "build": "node esbuild.config.js",
     "watch": "node esbuild.config.js --watch",
+    "package": "node scripts/package.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "npm run typecheck",
     "test:unit": "node test/run-unit.mjs",
