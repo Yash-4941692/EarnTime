@@ -27,10 +27,10 @@ By default **60 productive minutes earn 5 minutes**. The ratio, starting balance
 ## What it does
 
 - **Earn-to-use model.** Productive time earns screen time at your ratio. Unproductive time spends it.
-- **Three categories.** Productive (earns), half-productive (you choose the mode on each visit; YouTube is included by default) and unproductive (spends).
+- **Three categories.** Productive (earns), half-productive (you choose the mode on each visit; YouTube and WhatsApp are included by default) and unproductive (spends).
 - **Counts only active use.** Only the active tab of the focused Chrome window counts. Background tabs, minimised windows, idle time and locked screens do not.
 - **Debt.** If usage runs past your balance while EarnTime was not running (extension disabled, browser closed, computer asleep), the excess becomes debt, estimated from browser history. Debt restricts browsing to productive sites until it is repaid by studying.
-- **YouTube Productive Mode.** Blank homepage with study search. Results and videos show only when the channel name contains one of your keywords. Unsupported pages and non-study videos are covered without charging or crediting time; if YouTube’s layout cannot be verified, the filter fails closed.
+- **YouTube Productive Mode.** The homepage simply shows no videos (no banner over it). Search results stay fully visible — every channel, even unproductive ones — and a video's channel name is checked the moment it plays, on the first visit with no reload. Non-study videos are covered without charging or crediting time; if YouTube’s layout cannot be verified, the filter fails closed.
 - **Protection costs.** After setup, a change costs the unlock cost (default 10 min) only when it **lifts a restriction EarnTime was already enforcing** — dropping an unproductive or half-productive site, or moving a site to a more permissive list. Adding a site to any list is free, as are YouTube keywords because they do not gate access to a site. A change that costs is **quoted before it is charged**, so one click never spends your balance by accident. Setup runs once.
 - **Daily tasks.** Recurring or one-off tasks that pay screen time, once per day or once ever.
 - **Audit log.** Every credit, charge, debt, rule change and interruption is recorded. Export it as read-only JSON (hosts only, never page addresses).
@@ -62,9 +62,9 @@ cd source
 npm install
 npm run build          # esbuild → ../background.js, ../content.js, ../popup.*, ../settings.*, ../setup.*, ../block.*
 npm run typecheck      # tsc --strict over src/ and test/
-npm run test:unit      # 105 unit tests: accounting, reconciliation, rules, costs, migration, invariants
-npm run test:dom       # 11 jsdom tests: the real YouTube filter, covers and health states
-npm run test:sim       # 32 flow tests against a simulated browser (real controller, real chrome adapter)
+npm run test:unit      # 106 unit tests: accounting, reconciliation, rules, costs, migration, invariants
+npm run test:dom       # 13 jsdom tests: the real YouTube filter, covers and health states
+npm run test:sim       # 33 flow tests against a simulated browser (real controller, real chrome adapter)
 npm test               # typecheck + unit + dom + simulated-browser flow tests (no browser binary needed)
 CHROME_PATH=/path/to/chromium npm run test:browser   # built pages and content scripts in headless Chromium
 CHROME_PATH=/path/to/chromium npm run test:all       # everything

@@ -26,7 +26,6 @@ export type PageDirective =
       mode: HalfMode;
       filter: FilterKind | null;
       youtubeKeywords: string[];
-      grayscale: boolean;
     };
 
 export interface DirectiveResult {
@@ -72,7 +71,6 @@ export function pageDirective(state: EarnState, tabId: number | null, host: stri
       mode: session.mode,
       filter,
       youtubeKeywords: session.mode === 'productive' ? [...state.settings.youtubeKeywords] : [],
-      grayscale: session.mode === 'unproductive',
     },
     clearSession,
   };

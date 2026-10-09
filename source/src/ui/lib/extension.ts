@@ -63,6 +63,31 @@ export function useNow(intervalMs: number): number {
   return now;
 }
 
+/**
+ * Asks the service worker for a time checkpoint roughly once per second while the caller is
+ * mounted. The stored state (balance, today's totals, live role) then advances in real time, so
+ * the popup's numbers tick exactly one second per second instead of freezing between 30-second
+ * alarm ticks.
+ */
+export function useLiveTick(intervalMs = 1000): void {
+  useEffect(() => {
+    let alive = true;
+    const ask = () => {
+      if (!alive) return;
+      try {
+        void Promise.resolve(chrome.runtime.sendMessage({ type: 'ui.tick' })).catch(() => undefined);
+      } catch {
+        // Extension context gone: nothing to tick.
+      }
+    };
+    const id = window.setInterval(ask, intervalMs);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [intervalMs]);
+}
+
 export function openExtensionPage(path: string): void {
   void chrome.tabs.create({ url: chrome.runtime.getURL(path) });
 }

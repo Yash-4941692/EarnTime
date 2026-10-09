@@ -14,6 +14,7 @@ import {
   MAX_UNLOCK_COST_MIN,
   MINUTE_MS,
   SCHEMA_VERSION,
+  WHATSAPP_HOST,
 } from './constants';
 import { normalizeHostInput } from './domains';
 import type {
@@ -219,12 +220,14 @@ export function sanitizeState(raw: unknown, now: number): EarnState {
     half: Array.isArray(rulesRaw.half) ? cleanHostList(rulesRaw.half) : fresh.rules.half,
     unproductive: cleanHostList(rulesRaw.unproductive),
   });
-  // 2.1.1 shipped WhatsApp Web as a default filtered site. It has no filter in schema 3, so
-  // discard that legacy half-list entry rather than leave an ungated mode prompt behind.
-  const rules: Rules = {
-    ...sanitizedRules,
-    half: sanitizedRules.half.filter((host) => host !== 'web.whatsapp.com'),
-  };
+  // Schema 4 restores WhatsApp as a trust-based half-productive site (mode chooser, no content
+  // filter). Stored states written by schema ≤3 had it stripped on every load, so it is re-added
+  // exactly once here; from then on the stored list is authoritative and the user may remove it.
+  const storedSchema = typeof r.schema === 'number' && Number.isFinite(r.schema) ? r.schema : 0;
+  const rules: Rules =
+    storedSchema < SCHEMA_VERSION && !sanitizedRules.half.includes(WHATSAPP_HOST)
+      ? dedupeRules({ ...sanitizedRules, half: [...sanitizedRules.half, WHATSAPP_HOST] })
+      : sanitizedRules;
   const state: EarnState = {
     schema: SCHEMA_VERSION,
     setupDone: r.setupDone === true,
@@ -295,14 +298,15 @@ export function migrateLegacy(raw: Record<string, unknown>, now: number): EarnSt
   ];
   const unproductive = [...cleanHostList(categories.unproductive), ...cleanHostList(settings.blockedSites)];
   const rules = dedupeRules({ productive, half, unproductive });
-  const halfRules = rules.half.filter((host) => host !== 'web.whatsapp.com');
+  // WhatsApp belongs on the half-productive list (chooser, no filter): keep it whenever the
+  // legacy data had it, and fall back to the defaults otherwise.
   state.rules = {
     productive: rules.productive,
-    half: halfRules.length > 0 ? halfRules : [...DEFAULT_HALF_SITES],
+    half: rules.half.length > 0 ? rules.half : [...DEFAULT_HALF_SITES],
     unproductive: rules.unproductive,
   };
 
-  const listCount = rules.productive.length + halfRules.length + rules.unproductive.length;
+  const listCount = rules.productive.length + rules.half.length + rules.unproductive.length;
   state.setupDone = listCount > 0 || state.balanceMs > 0;
   addLedger(
     state,

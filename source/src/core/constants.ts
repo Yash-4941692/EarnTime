@@ -8,7 +8,7 @@ export const HOUR_MS = 60 * MINUTE_MS;
 export const DAY_MS = 24 * HOUR_MS;
 
 /** Storage schema version written into the single `state` key. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** Storage key holding the entire persisted state (one key = atomic writes). */
 export const STATE_KEY = 'state';
@@ -60,7 +60,9 @@ export const MAX_TITLE_LEN = 80;
 export const MAX_LIST_ITEMS = 200;
 
 export const DEFAULT_YOUTUBE_KEYWORDS = ['JEE', 'NDA', 'Study', 'Learn', 'Education', 'PW'] as const;
-export const DEFAULT_HALF_SITES = ['youtube.com'] as const;
+export const DEFAULT_HALF_SITES = ['youtube.com', 'web.whatsapp.com'] as const;
+/** Half-productive site that gets the mode chooser but never a content filter (trust based). */
+export const WHATSAPP_HOST = 'web.whatsapp.com';
 export const SUGGESTED_PRODUCTIVE_SITES = ['khanacademy.org', 'nptel.ac.in', 'pw.live'] as const;
 export const SUGGESTED_UNPRODUCTIVE_SITES = [
   'instagram.com',

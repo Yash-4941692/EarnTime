@@ -2,7 +2,7 @@
 
 **Status: source logic and simulated flows verified; not yet exercised in real Chrome.** The complete source test command passed on 2026-10-09. The separate Playwright/Chromium suite and the manual extension checklist were not run because this environment has no Chromium binary.
 
-> `cd source && npm test` passes **148 tests**: 105 unit + 11 jsdom DOM + 32 simulated-browser flow tests. It includes the strict TypeScript check. The browser suite contains 12 tests but requires `CHROME_PATH`; those results are not included in the 148.
+> `cd source && npm test` passes **152 tests**: 106 unit + 13 jsdom DOM + 33 simulated-browser flow tests. It includes the strict TypeScript check. The browser suite contains 12 tests but requires `CHROME_PATH`; those results are not included in the 152.
 
 ## Environment
 
@@ -35,7 +35,7 @@ The release build is verified separately with `npm run build`; browser-specific 
 - **Half-productive roles:** mode selection and YouTube-only filter selection; pending or failed YouTube filters fail closed. An intentional `covered` YouTube state is distinct from failure and neither earns nor spends time.
 - **Migration:** old storage formats and sanitisation, plus a realistic v2.1.1 state fixture proving balance, debt, daily totals, ledger, tasks, settings and non-retired site rules survive schema-3 migration. The retired integration settings/state and its old default half-list entry are removed.
 - **Protection and commands:** setup-once validation, starting-balance cap, free versus paid rule changes, confirmation before a paid change, debt restrictions, task rules, keyword matching, and audit export without page URLs.
-- **Worker message retry:** bounded retry timing, explicit refusal, and eventual success when the worker starts late.
+- **Worker message retry:** bounded retry timing, explicit refusal, eventual success when the worker starts late, and repeated asking (last pause held) until the budget runs out.
 - **Invariants:** 25 seeded random sequences (200 steps each) keep balance and debt non-negative and conserve value; a ledger-size limit test.
 
 ### DOM tests (`source/test/dom`, 11)

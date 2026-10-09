@@ -103,7 +103,7 @@ export function chooserCard(opts: {
     class: 'et-option productive',
     type: 'button',
     attrs: { 'data-et-mode': 'productive' },
-  }, el('strong', {}, 'Productive Mode'), el('span', {}, 'Only study content is visible here. Time counts toward earning screen time.'));
+  }, el('strong', {}, 'Productive Mode'), el('span', {}, 'Your time earns screen time at your ratio. On YouTube, only study content is shown.'));
   const unavailableText =
     opts.reason === 'debt'
       ? 'Locked while you are in debt mode. Study to repay first.'

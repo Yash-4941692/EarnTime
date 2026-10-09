@@ -97,14 +97,14 @@ function video(id: string, channel: string | null): string {
   return `<ytd-video-renderer id="${id}">${channel === null ? '' : `<ytd-channel-name><a>${channel}</a></ytd-channel-name>`}<a id="title">video</a></ytd-video-renderer>`;
 }
 
-test('search results show keyword channels and hide other, unreadable, and Shorts content', () => {
+test('search keeps every result visible — even unproductive channels — and only hides Shorts', () => {
   const h = makeYouTube('/results', searchPage(`${video('study', 'JEE Physics Academy')}${video('random', 'Random Vlogs')}${video('nameless', null)}<ytd-reel-shelf-renderer id="shorts">Shorts</ytd-reel-shelf-renderer>`));
   const run = start(h);
   try {
     const doc = h.dom.window.document;
     assert.notEqual((doc.querySelector('#study') as HTMLElement).style.display, 'none');
-    assert.equal((doc.querySelector('#random') as HTMLElement).style.display, 'none');
-    assert.equal((doc.querySelector('#nameless') as HTMLElement).style.display, 'none');
+    assert.notEqual((doc.querySelector('#random') as HTMLElement).style.display, 'none', 'unproductive-channel results stay in search');
+    assert.notEqual((doc.querySelector('#nameless') as HTMLElement).style.display, 'none', 'unreadable-channel results stay in search; they are judged at play time');
     assert.equal((doc.querySelector('#shorts') as HTMLElement).style.display, 'none');
     assert.deepEqual(run.filter.health(), { ok: true });
   } finally {
@@ -112,27 +112,36 @@ test('search results show keyword channels and hide other, unreadable, and Short
   }
 });
 
-test('YouTube rescans dynamic results when their channel names change', async () => {
+test('dynamically added search results appear without any channel filtering', async () => {
   const h = makeYouTube('/results', searchPage(video('changing', 'Random Vlogs')));
   const run = start(h);
   try {
-    const item = h.dom.window.document.querySelector('#changing') as HTMLElement;
-    assert.equal(item.style.display, 'none');
-    item.querySelector('a')!.textContent = 'Study With Me';
+    const doc = h.dom.window.document;
+    const item = doc.querySelector('#changing') as HTMLElement;
+    assert.notEqual(item.style.display, 'none', 'an unproductive channel result is not hidden');
+    const added = doc.createElement('ytd-video-renderer');
+    added.id = 'later';
+    added.innerHTML = '<ytd-channel-name><a>Random Vlogs</a></ytd-channel-name>';
+    doc.querySelector('#contents')!.append(added);
     await wait();
-    assert.notEqual(item.style.display, 'none');
+    assert.notEqual(added.style.display, 'none', 'new results are shown as they render');
   } finally {
     run.cleanup();
   }
 });
 
-test('the homepage becomes a study search with keyword shortcuts', () => {
-  const h = makeYouTube('/', '<ytd-app><div id="feed">regular recommendations</div></ytd-app>');
+test('the homepage shows no cover and no videos — the page itself stays usable', () => {
+  const h = makeYouTube(
+    '/',
+    '<ytd-app><ytd-rich-grid-renderer id="grid"><ytd-rich-section-renderer><ytd-rich-item-renderer id="feed-item"><a>Recommended video</a></ytd-rich-item-renderer></ytd-rich-section-renderer></ytd-rich-grid-renderer><div id="feed">masthead area</div></ytd-app>',
+  );
   const run = start(h);
   try {
-    assert.match(h.overlayText(), /Study search/);
-    assert.equal(h.dom.window.document.querySelector('#feed')?.textContent, 'regular recommendations');
-    assert.equal(h.currentOverlay()?.querySelectorAll('.et-chip').length, 2);
+    const doc = h.dom.window.document;
+    assert.equal(h.currentOverlay(), null, 'no blocking banner over the homepage');
+    assert.equal((doc.querySelector('#grid') as HTMLElement).style.display, 'none');
+    assert.equal((doc.querySelector('#feed-item') as HTMLElement).style.display, 'none', 'no video on the homepage');
+    assert.equal(doc.querySelector('#feed')?.textContent, 'masthead area', 'the page chrome stays visible');
     assert.deepEqual(run.filter.health(), { ok: true });
   } finally {
     run.cleanup();
@@ -204,6 +213,49 @@ test('a matching watch-channel name stays open and hides the up-next shelf', () 
     assert.deepEqual(run.filter.health(), { ok: true });
     assert.equal(h.currentOverlay(), null);
     assert.equal((h.dom.window.document.querySelector('#related') as HTMLElement).style.display, 'none');
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('navigating from the homepage to an unproductive video covers it on the first visit, no reload', async () => {
+  const h = makeYouTube('/', '<ytd-app><ytd-rich-grid-renderer id="grid">videos</ytd-rich-grid-renderer></ytd-app>');
+  const run = start(h);
+  try {
+    const doc = h.dom.window.document;
+    assert.equal((doc.querySelector('#grid') as HTMLElement).style.display, 'none', 'homepage starts with no videos');
+    assert.equal(h.currentOverlay(), null);
+    // What YouTube does on an in-page navigation: swap the DOM and fire yt-navigate-finish.
+    doc.querySelector('#grid')!.remove();
+    doc.body.insertAdjacentHTML(
+      'beforeend',
+      '<div id="owner"><ytd-video-owner-renderer><ytd-channel-name><a>Random Vlogs</a></ytd-channel-name></ytd-video-owner-renderer></div><video></video>',
+    );
+    Object.defineProperty(doc.querySelector('video')!, 'paused', { configurable: true, value: false });
+    h.dom.window.history.pushState({}, '', '/watch?v=1');
+    doc.dispatchEvent(new h.dom.window.Event('yt-navigate-finish'));
+    await wait();
+    assert.match(h.overlayText(), /Not on your study list/, 'the watch page is judged as a watch page immediately');
+    assert.match(h.overlayText(), /Random Vlogs/, 'the channel name was read on the first visit');
+    assert.ok(h.pauseCount() > 0, 'the video does not keep playing behind the cover');
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a video starting to play triggers the channel check immediately', () => {
+  const h = makeYouTube('/watch?v=9', '<ytd-app><video></video><div id="owner"><ytd-video-owner-renderer><ytd-channel-name><a>Study Chemistry</a></ytd-channel-name></ytd-video-owner-renderer></div></ytd-app>');
+  const run = start(h);
+  try {
+    const doc = h.dom.window.document;
+    assert.equal(h.currentOverlay(), null, 'the study channel starts open');
+    // The channel turns out to be unproductive; the user hits play before any debounce.
+    doc.querySelector('#owner a')!.textContent = 'Random Vlogs';
+    const video = doc.querySelector('video') as HTMLVideoElement;
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    video.dispatchEvent(new h.dom.window.Event('play'));
+    assert.match(h.overlayText(), /Not on your study list/, 'the check ran synchronously with the play event');
+    assert.ok(h.pauseCount() > 0, 'the video was paused the moment it started');
   } finally {
     run.cleanup();
   }

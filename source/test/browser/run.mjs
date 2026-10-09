@@ -295,7 +295,7 @@ try {
     await context.close();
   });
 
-  await test('YouTube: a mode must be chosen; Productive Mode shows only keyword channels', async () => {
+  await test('YouTube: a mode must be chosen; search shows every channel and hides only Shorts', async () => {
     const context = await youtubeContext(browser);
     await runSetup(context, 'https://www.youtube.com', SETUP_PAYLOAD, 20);
     const page = await newPage(context, { role: 'content', withContent: true, tab: 11 });
@@ -303,7 +303,7 @@ try {
     await page.getByRole('dialog', { name: /How to use youtube.com/ }).waitFor();
     await page.screenshot({ path: join(shots, 'youtube-chooser.png') });
     await page.locator('[data-et-mode="productive"]').click();
-    await page.waitForFunction(() => document.querySelector('#random-video')?.style.display === 'none');
+    await page.waitForFunction(() => document.querySelector('#shorts-shelf')?.style.display === 'none');
     const visibility = await page.evaluate(() => ({
       study: getComputedStyle(document.querySelector('#study-video')).display,
       random: getComputedStyle(document.querySelector('#random-video')).display,
@@ -311,15 +311,15 @@ try {
       shorts: getComputedStyle(document.querySelector('#shorts-shelf')).display,
     }));
     expect(visibility.study !== 'none', 'PW Live result is visible');
-    expect(visibility.random === 'none', 'Random Vlogs result is hidden');
-    expect(visibility.nameless === 'none', 'result with unknown channel is hidden (fail closed)');
+    expect(visibility.random !== 'none', 'unproductive-channel results stay in search; they are judged at play time');
+    expect(visibility.nameless !== 'none', 'unreadable-channel results stay in search');
     expect(visibility.shorts === 'none', 'Shorts shelf is hidden');
     await page.screenshot({ path: join(shots, 'youtube-results.png') });
     expect(page.__errors.length === 0, `no page errors: ${page.__errors.join('; ')}`);
     await context.close();
   });
 
-  await test('YouTube: the homepage is replaced by study search', async () => {
+  await test('YouTube: the homepage shows no videos and no banner', async () => {
     const context = await youtubeContext(browser);
     await runSetup(context, 'https://www.youtube.com', SETUP_PAYLOAD, 20);
     const page = await newPage(context, { role: 'content', withContent: true, tab: 12 });
@@ -328,7 +328,9 @@ try {
     await page.locator('[data-et-mode="productive"]').click();
     await page.getByText('Productive Mode').first().waitFor();
     await page.goto('https://www.youtube.com/');
-    await page.getByText('Study search').waitFor();
+    await page.waitForFunction(() => document.querySelector('#feed-item')?.style.display === 'none');
+    expect((await overlayText(page)).includes('Study search') === false, 'no study-search banner over the homepage');
+    expect((await overlayText(page)).includes('Not available in Productive Mode') === false, 'no blocking cover either');
     await page.screenshot({ path: join(shots, 'youtube-home.png') });
     await context.close();
   });
@@ -341,14 +343,14 @@ try {
     await page.getByRole('dialog', { name: /How to use youtube.com/ }).waitFor();
     await page.locator('[data-et-mode="productive"]').click();
     await page.getByText('Not on your study list').waitFor();
-    // Covered content is not study time: the stored status must say the filter is failing.
+    // Covered content is not study time: the live status must report the intentional cover.
     await page.waitForFunction(async () => {
       const values = await chrome.storage.local.get('state');
-      return values.state?.live?.degraded === true;
+      return values.state?.live?.why === 'filter-covered';
     }, null, { timeout: 10000 });
     expect(
-      (await overlayText(page)).includes('This time counts as unproductive.'),
-      'covered watch page says its time counts as unproductive',
+      (await overlayText(page)).includes('not charged or credited'),
+      'covered watch page says its time is not charged or credited',
     );
     // Moving to another video on the same site keeps the tab's Productive Mode (no second prompt).
     await page.goto('https://www.youtube.com/watch?v=study-1');
@@ -359,7 +361,7 @@ try {
     await context.close();
   });
 
-  await test('YouTube: Unproductive Mode is disabled while the balance is empty and greys the page when chosen', async () => {
+  await test('YouTube: Unproductive Mode is disabled while the balance is empty, and chosen mode never greys the page', async () => {
     const empty = await youtubeContext(browser);
     await runSetup(empty, 'https://www.youtube.com', SETUP_PAYLOAD, 0);
     const emptyPage = await newPage(empty, { role: 'content', withContent: true, tab: 14 });
@@ -375,9 +377,9 @@ try {
     await page.goto('https://www.youtube.com/results?search_query=jee');
     await page.getByRole('dialog', { name: /How to use youtube.com/ }).waitFor();
     await page.locator('[data-et-mode="unproductive"]').click();
-    await page.waitForFunction(() => getComputedStyle(document.documentElement).filter.includes('grayscale'), null, { timeout: 10000 });
+    await page.waitForFunction(() => (document.getElementById('earntime-root')?.shadowRoot?.textContent ?? '').includes('EarnTime · Unproductive Mode'), null, { timeout: 10000 });
     const filter = await page.evaluate(() => getComputedStyle(document.documentElement).filter);
-    expect(filter.includes('grayscale'), `grayscale applied (got ${filter})`);
+    expect(!filter.includes('grayscale'), `no greyscale in Unproductive Mode (got ${filter || 'none'})`);
     expect((await overlayText(page)).includes('EarnTime · Unproductive Mode'), 'banner shows Unproductive Mode');
     await funded.close();
   });

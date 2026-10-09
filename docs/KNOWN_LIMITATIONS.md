@@ -51,17 +51,16 @@ The audit export (Settings → Protection) records each reconciliation's window,
 ## 4. Half-productive filters
 
 - **YouTube keywords are substrings.** `pw` matches `Upwork`. Use longer keywords where that matters. The settings page has a checker.
-- **YouTube's layout can change.** If the page is not recognised, the results are hidden and the page is covered after eight seconds; that broken-filter time counts as unproductive until it loads correctly. Covers deliberately shown for Shorts, unsupported pages and non-study videos are reported separately and do not earn or spend time.
+- **YouTube's layout can change.** If the page is not recognised, nothing can be verified, so the page is covered after eight seconds and that broken-filter time counts as unproductive until it loads correctly. Covers deliberately shown for Shorts, unsupported pages and non-study videos are reported separately and do not earn or spend time.
 - **Embedded YouTube players** on other websites are not filtered.
-- **Other half-productive sites** (sites you add yourself) have no content filter. Choosing Productive Mode there is a trust decision.
-- **A page that opens while the service worker is still starting can be left unmanaged.** Chrome
+- **Other half-productive sites** (WhatsApp and the sites you add yourself) have no content filter. Choosing Productive Mode there is a trust decision; the page stays fully visible in both modes.
+- **A page that opens while the service worker is still starting used to be left unmanaged.** Chrome
   unloads the service worker when it has been idle and restarts it on demand, and that start is not
-  instant. A page that sends its first question before the worker is listening gets no answer back.
-  EarnTime now retries that question with a growing pause for about ten seconds, which covers the
-  normal case — but if every attempt fails, that one page load stays open with no mode chooser, no
-  filter, and no session, so its time is not charged. This is a fail-open gap and it is not closed:
-  it is bounded, not eliminated. Reloading the page is the workaround, and it works because the
-  worker is awake by then.
+  instant. Every message now has its own timeout, the question is retried for up to a minute, and
+  until an answer arrives the page is covered with a "Checking this site" card, so nothing is
+  watched or chosen before EarnTime has answered. If the extension is disabled, that card is
+  removed and the page is left alone. The only remaining gap is therefore an extension that was
+  disabled mid-load.
 
 ## 5. Debt and blocking
 

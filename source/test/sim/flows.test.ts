@@ -279,9 +279,32 @@ test('choosing Unproductive Mode on a half-productive site charges the full time
   const { tabId } = await openedWindowWithTab(b, url);
   const reply = await b.sendFromTab(tabId, { type: 'page.choose', url, mode: 'unproductive' });
   assert.equal(reply.ok, true);
-  assert.equal(reply.directive.grayscale, true);
+  assert.equal(reply.directive.kind, 'active');
+  if (reply.directive.kind === 'active') {
+    assert.equal('grayscale' in reply.directive, false, 'Unproductive Mode applies no greyscale');
+  }
   await b.runFor(2 * MIN);
   assert.equal(balanceMin(b), 8);
+});
+
+test('per-second ui.tick checkpoints charge exactly one second per second — never two', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  const url = 'https://instagram.com/';
+  const { tabId } = await openedWindowWithTab(b, url);
+  await b.sendFromTab(tabId, { type: 'ui.tick' });
+  const before = b.storedState().balanceMs;
+  // Thirty seconds of unproductive use, checkpointed once per second the way the popup does.
+  for (let i = 0; i < 30; i++) {
+    await b.sendFromTab(tabId, { type: 'ui.tick' });
+    await b.runFor(SEC);
+  }
+  await b.sendFromTab(tabId, { type: 'ui.tick' });
+  const charged = before - b.storedState().balanceMs;
+  assert.ok(
+    charged >= 29 * SEC && charged <= 31 * SEC,
+    `charged ${charged}ms for 30 seconds of use — one second in, one second out (a double charge would be ~60000)`,
+  );
 });
 
 test('leaving a half-productive site means choosing a mode again on return', async () => {

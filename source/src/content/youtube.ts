@@ -1,11 +1,13 @@
 /**
- * YouTube Productive Mode. Channel-based filtering: a result or video is shown only when its
- * channel NAME contains one of the keywords. Anything whose channel cannot be read is hidden.
- * Shorts, feeds, subscriptions, channel pages and the homepage are not available.
+ * YouTube Productive Mode. Channel-based filtering: a video is allowed only when its channel NAME
+ * contains one of the keywords, and that check runs when the content plays — on the first visit,
+ * with no reload. Search results themselves are NOT filtered: unproductive channels stay visible in
+ * search and are judged only at play time. Shorts, feeds, subscriptions and channel pages are not
+ * available, and the homepage shows no videos (but no blocking banner either).
  */
 
 import { channelAllowed, youtubePageKind } from '../core/matchers';
-import { coverCard, el, type Overlay } from './overlay';
+import { coverCard, type Overlay } from './overlay';
 
 const ITEM_SELECTOR = [
   'ytd-video-renderer',
@@ -25,23 +27,15 @@ const ALWAYS_HIDDEN = [
   'ytd-reel-shelf-renderer',
   'ytd-rich-shelf-renderer',
   'ytd-shorts',
+  'ytd-merch-shelf-renderer',
   'ytd-reel-video-renderer',
   'a[href^="/shorts"]',
   '#related',
   'ytd-watch-next-secondary-results-renderer',
-  'ytd-merch-shelf-renderer',
 ].join(',');
 
-const CHANNEL_SELECTORS = [
-  'ytd-channel-name a',
-  'ytd-channel-name #text',
-  '#channel-name a',
-  '#channel-name',
-  '#owner-text a',
-  '#byline a[href^="/@"]',
-  'a[href^="/@"]',
-  'a[href^="/channel/"]',
-];
+/** Homepage modules (grid sections that wrap shelves and their titles) hidden so home shows no videos. */
+const HOME_HIDDEN = ['ytd-rich-grid-renderer', 'ytd-rich-section-renderer'].join(',');
 
 const WATCH_CHANNEL_SELECTORS = [
   'ytd-video-owner-renderer ytd-channel-name a',
@@ -89,7 +83,6 @@ function pauseMedia(): void {
 
 /** Starts the YouTube filter for the current page. */
 export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
-  const kind = youtubePageKind(location.pathname);
   const started = Date.now();
   let healthy = true;
   let scheduled: number | null = null;
@@ -107,40 +100,6 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
   };
 
   const clearCover = () => setCover('', () => null);
-
-  const homeCover = () => {
-    const search = el('input', {
-      class: 'et-input',
-      type: 'search',
-      placeholder: 'Search for study videos',
-      attrs: { 'aria-label': 'Search study videos' },
-    });
-    const form = el(
-      'form',
-      {
-        onsubmit: (event: Event) => {
-          event.preventDefault();
-          const q = search.value.trim();
-          if (q) studySearch(q);
-        },
-      },
-      search,
-    );
-    const chips = el(
-      'div',
-      { class: 'et-chips' },
-      ...opts.keywords.slice(0, 12).map((kw) =>
-        el('button', { class: 'et-chip', type: 'button', onclick: () => studySearch(kw) }, kw),
-      ),
-    );
-    return coverCard({
-      eyebrow: 'EarnTime · Productive Mode',
-      title: 'Study search',
-      text: 'The YouTube homepage is blank in Productive Mode. Search for a topic or pick a keyword. Only channels whose name matches your study keywords are shown.',
-      actions: [{ label: 'Back', onClick: opts.leave, secondary: true }],
-      extra: el('div', {}, form, chips),
-    });
-  };
 
   const notStudyCover = (title: string, text: string) =>
     coverCard({
@@ -177,12 +136,17 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
     for (const node of document.querySelectorAll<HTMLElement>(ALWAYS_HIDDEN)) hideNode(node);
   };
 
-  const filterResults = () => {
+  /** Homepage: no cover, no banner over the page — simply no videos at all. */
+  const hideHomeFeed = () => {
     hideAlwaysHidden();
-    for (const item of document.querySelectorAll<HTMLElement>(ITEM_SELECTOR)) {
-      if (channelAllowed(readChannelName(item, CHANNEL_SELECTORS), opts.keywords)) showNode(item);
-      else hideNode(item);
-    }
+    for (const node of document.querySelectorAll<HTMLElement>(`${ITEM_SELECTOR}, ${HOME_HIDDEN}`)) hideNode(node);
+  };
+
+  /** Search: every result stays visible (even unproductive channels); judgement happens at play. */
+  const showSearchResults = () => {
+    for (const node of document.querySelectorAll<HTMLElement>(HOME_HIDDEN)) showNode(node);
+    for (const node of document.querySelectorAll<HTMLElement>(ITEM_SELECTOR)) showNode(node);
+    hideAlwaysHidden();
   };
 
   let healthDetail: string | undefined;
@@ -198,23 +162,28 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
 
   const scan = () => {
     scheduled = null;
+    // The page kind is read on EVERY scan: a single-page navigation (channel page → video,
+    // homepage → video, search → video) must be judged as what the page is right now, on the
+    // first visit, without a reload.
+    const kind = youtubePageKind(location.pathname);
     const elapsed = Date.now() - started;
     const layoutReady = Boolean(document.querySelector('ytd-app'));
     if (!layoutReady) {
-      // Layout not recognised: nothing can be verified. Fail closed once the grace period is over.
+      // Layout not recognised: nothing can be verified. Nothing may play while we wait either.
       const failed = elapsed >= LAYOUT_GRACE_MS;
       setHealthy(!failed);
+      pauseMedia();
       if (failed) {
         setCover('fail', failClosedCover);
-        pauseMedia();
       }
       return;
     }
 
     if (kind === 'home') {
-      // The study search is the one non-result page that counts as productive.
+      // Not a blocking banner: the page itself stays usable, it just contains no videos.
       setHealthy(true);
-      setCover('home', homeCover);
+      clearCover();
+      hideHomeFeed();
       return;
     }
     if (kind === 'shorts') {
@@ -234,10 +203,11 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
     if (kind === 'search') {
       setHealthy(true);
       clearCover();
-      filterResults();
+      showSearchResults();
       return;
     }
-    // Watch page: the channel is read from the page itself. Unknown channel = closed (fail closed).
+    // Watch page: the channel is read from the page itself the moment the video plays. Unknown
+    // channel = closed (fail closed).
     hideAlwaysHidden();
     const name = readChannelName(document, WATCH_CHANNEL_SELECTORS);
     if (channelAllowed(name, opts.keywords)) {
@@ -262,9 +232,19 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
     scheduled = window.setTimeout(scan, 250);
   };
 
+  /** A video starting to play is the moment the channel must be checked — scan immediately. */
+  const onMediaPlay = () => {
+    if (scheduled !== null) {
+      window.clearTimeout(scheduled);
+      scheduled = null;
+    }
+    scan();
+  };
+
   const observer = new MutationObserver(schedule);
   observer.observe(document.documentElement, { childList: true, subtree: true });
   document.addEventListener('yt-navigate-finish', schedule);
+  document.addEventListener('play', onMediaPlay, true);
   const interval = window.setInterval(schedule, 2000);
   // Until the first scan decides, the page is treated as productive during the grace period.
   scan();
@@ -273,7 +253,9 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
     stop() {
       observer.disconnect();
       window.clearInterval(interval);
+      if (scheduled !== null) window.clearTimeout(scheduled);
       document.removeEventListener('yt-navigate-finish', schedule);
+      document.removeEventListener('play', onMediaPlay, true);
     },
     health: () => (healthDetail === undefined ? { ok: healthy } : { ok: healthy, detail: healthDetail }),
   };

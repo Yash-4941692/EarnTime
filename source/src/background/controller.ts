@@ -494,6 +494,12 @@ export function createController(opts: ControllerOptions): Controller {
       if (message.type === 'ui.export') {
         return job('export', false, (state, now): Reply => ({ ok: true, data: auditExport(state, now) }));
       }
+      if (message.type === 'ui.tick') {
+        // The popup asks for a checkpoint every second while it is open, so the stored balance
+        // advances in real time: one second of use charges exactly one second — never more, and
+        // the numbers on screen change visibly every tick.
+        return job('ui.tick', true, (): Reply => ({ ok: true }));
+      }
     }
     return fail('unknown', 'Unrecognised message.');
   }

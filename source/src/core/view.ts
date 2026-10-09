@@ -1,5 +1,6 @@
 /** View model for the popup and settings pages. Pure; the UI supplies `now`. */
 
+import { creditFor } from './engine';
 import { dayKey } from './time';
 import { roleLabel } from './roles';
 import { debtProgress, emptyDayStats } from './wallet';
@@ -32,6 +33,10 @@ export interface DashboardView {
   lastReconcileAt: number | null;
   /** True while the balance is being consumed right now (drives a 1-second refresh in the UI). */
   spendingNow: boolean;
+  /** True while productive time is earning right now, so the popup can interpolate upward. */
+  earningNow: boolean;
+  /** Milliseconds the active tab's half-productive session has been running, or null. */
+  sessionMs: number | null;
 }
 
 /** Productive minutes needed to clear `debtMs`, rounded up, at the current ratio. */
@@ -64,17 +69,39 @@ function spendingNow(live: LiveStatus | null): boolean {
   return live.k === 'half' && (live.mode === 'unproductive' || live.degraded);
 }
 
+function earningNow(live: LiveStatus | null): boolean {
+  if (!live) return false;
+  if (live.k === 'productive') return true;
+  return live.k === 'half' && live.mode === 'productive' && !live.degraded;
+}
+
 export function dashboardView(state: EarnState, now: number): DashboardView {
   const today = state.days[dayKey(now)] ?? emptyDayStats();
   const progress = debtProgress(state);
   const moving = spendingNow(state.live) && state.debtMs === 0;
+  const earning = earningNow(state.live) && state.debtMs === 0;
 
-  // Between checkpoints (at most one tick apart) the balance is interpolated so it moves smoothly.
+  // Between checkpoints the display is interpolated from the last stored checkpoint, so the
+  // numbers move every second: spending subtracts exactly the elapsed time (never double — the
+  // next checkpoint charges the same interval only once) and earning credits it at the ratio.
   let balanceMs = state.balanceMs;
-  if (moving && state.lastAt !== null) {
+  let earnedToday = today.earnedMs;
+  let usedToday = today.usedMs;
+  if ((moving || earning) && state.lastAt !== null) {
     const elapsed = Math.min(MAX_INTERPOLATION_MS, Math.max(0, now - state.lastAt));
-    balanceMs = Math.max(0, balanceMs - elapsed);
+    if (moving) {
+      balanceMs = Math.max(0, balanceMs - elapsed);
+      usedToday += elapsed;
+    } else if (earning) {
+      const credit = creditFor(state, elapsed);
+      balanceMs += credit;
+      earnedToday += credit;
+    }
   }
+
+  const tabId = state.live?.tabId ?? null;
+  const session = tabId === null ? undefined : state.sessions[String(tabId)];
+  const sessionMs = session ? Math.max(0, now - session.since) : null;
 
   const mode = modeFromLive(state.live, state.debtMs > 0);
   return {
@@ -87,8 +114,8 @@ export function dashboardView(state: EarnState, now: number): DashboardView {
     requiredProductiveMs: requiredProductiveFor(state.debtMs, state.settings.earnFromMin, state.settings.earnToMin),
     ratioLabel: `${state.settings.earnFromMin} productive min → ${state.settings.earnToMin} min`,
     today,
-    earnedToday: today.earnedMs,
-    usedToday: today.usedMs,
+    earnedToday,
+    usedToday,
     productiveToday: today.prodMs,
     unproductiveToday: today.unprodMs,
     halfToday: today.halfProdMs + today.halfUnprodMs,
@@ -97,5 +124,7 @@ export function dashboardView(state: EarnState, now: number): DashboardView {
     currentHost: state.live?.host ?? null,
     lastReconcileAt: state.lastReconcile?.at ?? null,
     spendingNow: moving,
+    earningNow: earning,
+    sessionMs,
   };
 }
