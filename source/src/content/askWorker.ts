@@ -21,10 +21,10 @@
  */
 
 /** Pause before each retry. Growing, so a worker that is only just starting is given time to come up. */
-export const RETRY_PAUSES_MS = [250, 500, 1000, 2000, 3000];
+export const RETRY_PAUSES_MS = [100, 200, 400, 800, 1500, 3000];
 
 /** Default total time to keep retrying before leaving the page unmanaged. */
-export const DEFAULT_BUDGET_MS = 60_000;
+export const DEFAULT_BUDGET_MS = 90_000;
 
 export interface AskOptions {
   /** Total time to keep retrying before giving up. */

@@ -18,9 +18,9 @@ import { startYouTubeFilter, type YouTubeFilter } from './youtube';
 
 const HEALTH_INTERVAL_MS = 10_000;
 /** A single message must come back within this long, or it counts as no answer and is retried. */
-const SEND_TIMEOUT_MS = 3_000;
+const SEND_TIMEOUT_MS = 8_000;
 /** How long the page waits (fail closed) before covering itself until the worker answers. */
-const WAITING_COVER_MS = 2_000;
+const WAITING_COVER_MS = 300;
 
 interface Reply {
   ok: boolean;
@@ -66,9 +66,36 @@ function whenReady(fn: () => void): void {
   else document.addEventListener('readystatechange', () => document.documentElement && fn(), { once: true });
 }
 
+function hostMatches(host: string, entry: string): boolean {
+  return host === entry || host.endsWith(`.${entry}`);
+}
+
+function classifyHostLocal(host: string, rules: { productive: string[]; half: string[]; unproductive: string[] }): { kind: 'productive' | 'half' | 'unproductive' | 'neutral'; entry: string | null } {
+  const STRICTNESS: Record<string, number> = { unproductive: 3, half: 2, productive: 1 };
+  let best: { kind: 'productive' | 'half' | 'unproductive'; entry: string } | null = null;
+  for (const list of ['productive', 'half', 'unproductive'] as const) {
+    for (const entry of rules[list] ?? []) {
+      if (!hostMatches(host, entry)) continue;
+      if (!best || entry.length > best.entry.length || (entry.length === best.entry.length && STRICTNESS[list] > STRICTNESS[best.kind])) {
+        best = { kind: list, entry };
+      }
+    }
+  }
+  return best ? { kind: best.kind, entry: best.entry } : { kind: 'neutral', entry: null };
+}
+
+function currentHost(): string | null {
+  try {
+    const u = new URL(location.href);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return u.hostname.toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
 function start(): void {
   if (window.top !== window) return;
-  const url = location.href;
   let overlay: Overlay | null = null;
   let youtube: YouTubeFilter | null = null;
   let healthTimer: number | null = null;
@@ -116,8 +143,10 @@ function start(): void {
             canUnproductive: directive.canUnproductive,
             reason: directive.reason,
             onChoose: async (mode: HalfMode) => {
-              const reply = await send({ type: 'page.choose', url, mode });
-              if (!reply) return 'EarnTime is not responding. Reload the page to try again.';
+              // Use askWorker for the choice as well, so a cold worker at choose time still works without reload.
+              const href = location.href;
+              const reply = await askWorker<Reply>({ type: 'page.choose', url: href, mode }, send);
+              if (!reply) return 'EarnTime is not responding. Please wait a moment and try again.';
               if (!reply.ok) return reply.error?.message ?? 'That mode is not available right now.';
               applyDirective(reply.directive);
               return null;
@@ -196,14 +225,56 @@ function start(): void {
     answered = true;
   }, 1000);
 
+  // Fallback: if the worker never answers (cold start lost), read rules directly from storage
+  // and show the chooser for half-productive sites. This guarantees the prompt appears on the
+  // very first access, without requiring a reload.
+  const showFallbackChooserIfHalf = () => {
+    try {
+      const host = currentHost();
+      if (!host) return;
+      chrome.storage.local.get('state', (result: any) => {
+        try {
+          const state = result?.state;
+          if (!state || typeof state !== 'object') return;
+          const rules = state.rules;
+          if (!rules) return;
+          const cls = classifyHostLocal(host, rules);
+          if (cls.kind !== 'half' || !cls.entry) return;
+          // If we already have a directive, don't override.
+          if (lastKey !== '' && lastKey !== 'none') return;
+          const canUnproductive = state.balanceMs > 0 && state.debtMs === 0;
+          const reason = state.debtMs > 0 ? 'debt' : state.balanceMs <= 0 ? 'exhausted' : null;
+          applyDirective({
+            kind: 'choose',
+            host,
+            entry: cls.entry,
+            canUnproductive,
+            reason,
+            balanceMs: state.balanceMs ?? 0,
+            debtMs: state.debtMs ?? 0,
+          } as PageDirective);
+        } catch {
+          // ignore fallback errors
+        }
+      });
+    } catch {
+      // ignore
+    }
+  };
+
   // The service worker may still be starting when this page sends its first message, so the question
   // is retried until it answers. Without the retry, a page that loaded while the worker was asleep
   // was left with no chooser, no filter and no session — open, and uncharged.
-  void askWorker<Reply>({ type: 'page.init', url }, send).then((reply) => {
+  void askWorker<Reply>({ type: 'page.init', url: location.href }, send).then((reply) => {
     answered = true;
     window.clearTimeout(waitTimer);
     window.clearInterval(watchdog);
-    if (!reply || !reply.ok) return;
+    if (!reply || !reply.ok) {
+      // Worker never answered or errored — try local fallback so first visit still shows chooser.
+      if (!reply) showFallbackChooserIfHalf();
+      else if (reply.directive) applyDirective(reply.directive);
+      return;
+    }
     applyDirective(reply.directive);
   });
 }
