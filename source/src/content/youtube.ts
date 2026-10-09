@@ -68,14 +68,14 @@ export interface YouTubeOptions {
   keywords: string[];
   overlay: Overlay;
   leave: () => void;
-  /** Called whenever filter health changes. */
-  onHealth: (ok: boolean) => void;
+  /** Called whenever filter health or the current cover state changes. */
+  onHealth: (ok: boolean, detail?: string) => void;
 }
 
 export interface YouTubeFilter {
   stop(): void;
-  /** True when the current page is study content that may earn time (study search or an allowed video). */
-  healthy(): boolean;
+  /** Current technical health and, when intentionally covering content, its non-failure detail. */
+  health(): { ok: boolean; detail?: string };
 }
 
 const LAYOUT_GRACE_MS = 8000;
@@ -185,10 +185,14 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
     }
   };
 
-  const setHealthy = (next: boolean) => {
-    if (next !== healthy) {
+  let healthDetail: string | undefined;
+
+  const setHealthy = (next: boolean, detail?: string) => {
+    const nextDetail = next ? detail : undefined;
+    if (next !== healthy || nextDetail !== healthDetail) {
       healthy = next;
-      opts.onHealth(healthy);
+      healthDetail = nextDetail;
+      opts.onHealth(healthy, healthDetail);
     }
   };
 
@@ -214,15 +218,15 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
       return;
     }
     if (kind === 'shorts') {
-      setHealthy(false);
-      setCover('shorts', () => notStudyCover('Shorts are off', 'Short-form video is not part of Productive Mode. This time counts as unproductive.'));
+      setHealthy(true, 'covered');
+      setCover('shorts', () => notStudyCover('Shorts are off', 'Short-form video is not part of Productive Mode. This time is not charged or credited.'));
       pauseMedia();
       return;
     }
     if (kind === 'other') {
-      setHealthy(false);
+      setHealthy(true, 'covered');
       setCover('other', () =>
-        notStudyCover('Not available in Productive Mode', 'Only study searches and study videos are open in Productive Mode. This time counts as unproductive.'),
+        notStudyCover('Not available in Productive Mode', 'Only study searches and study videos are open in Productive Mode. This time is not charged or credited.'),
       );
       pauseMedia();
       return;
@@ -240,13 +244,13 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
       setHealthy(true);
       clearCover();
     } else {
-      setHealthy(false);
+      setHealthy(true, 'covered');
       setCover(`watch:${name ?? '?'}`, () =>
         notStudyCover(
           'Not on your study list',
           name
-            ? `The channel "${name}" does not match your YouTube keywords, so this video is closed in Productive Mode. This time counts as unproductive.`
-            : "EarnTime could not read this video's channel name, so it is closed in Productive Mode (fail closed). This time counts as unproductive.",
+            ? `The channel "${name}" does not match your YouTube keywords, so this video is closed in Productive Mode. This time is not charged or credited.`
+            : "EarnTime could not read this video's channel name, so it is closed in Productive Mode (fail closed). This time is not charged or credited.",
         ),
       );
       pauseMedia();
@@ -271,6 +275,6 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
       window.clearInterval(interval);
       document.removeEventListener('yt-navigate-finish', schedule);
     },
-    healthy: () => healthy,
+    health: () => (healthDetail === undefined ? { ok: healthy } : { ok: healthy, detail: healthDetail }),
   };
 }

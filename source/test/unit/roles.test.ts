@@ -49,6 +49,16 @@ test('roleOf: YouTube productive mode depends on the filter health', () => {
   assert.equal(bad.k === 'half' && bad.degraded, true);
 });
 
+test('roleOf: an intentional YouTube cover is not filter failure and is not counted', () => {
+  const state = freshState();
+  state.sessions['7'] = { entry: 'youtube.com', mode: 'productive', since: T0 };
+  assert.deepEqual(roleOf(state, obs({ at: T0, host: 'youtube.com', tabId: 7, filterState: 'covered' })), {
+    k: 'none',
+    why: 'filter-covered',
+    host: 'youtube.com',
+  });
+});
+
 test('roleOf: half sites without a dedicated filter are trusted in Productive Mode', () => {
   const state = freshState();
   state.rules.half.push('news.example');
@@ -56,7 +66,6 @@ test('roleOf: half sites without a dedicated filter are trusted in Productive Mo
   const role = roleOf(state, obs({ at: T0, host: 'news.example', tabId: 7, filterState: 'n/a' }));
   assert.equal(role.k === 'half' && role.degraded === false, true);
   assert.equal(filterStateNeeded('news.example'), false);
-  assert.equal(filterStateNeeded('web.whatsapp.com'), true);
   assert.equal(filterStateNeeded('m.youtube.com'), true);
 });
 
@@ -153,7 +162,7 @@ test('DNR rules: none while funded, redirect unproductive when empty, allow-list
   const block = debt.find((r) => r.action.type === 'redirect');
   assert.ok(allow && block);
   assert.ok(allow.priority > block.priority, 'allow must outrank block-all');
-  assert.deepEqual(allow.condition.requestDomains, ['khanacademy.org', 'youtube.com', 'web.whatsapp.com']);
+  assert.deepEqual(allow.condition.requestDomains, ['khanacademy.org', 'youtube.com']);
   assert.equal(block.condition.regexFilter, '^https?://');
 });
 

@@ -105,6 +105,17 @@ test('Productive Mode on YouTube pending the filter does not count; a failing fi
   assert.equal(state.days[dayKey(T0)].halfProdMs, 0);
 });
 
+test('an intentional YouTube cover is neither credited nor charged', () => {
+  const state = freshState();
+  state.balanceMs = 10 * MIN;
+  state.sessions['1'] = { entry: 'youtube.com', mode: 'productive', since: T0 };
+  started(state, T0, 'youtube.com', { at: T0, filterState: 'covered' });
+  advance(state, obs({ at: T0 + 60 * SEC, host: 'youtube.com', filterState: 'covered' }), 60 * SEC);
+  assert.equal(state.balanceMs, 10 * MIN);
+  assert.equal(state.days[dayKey(T0)], undefined, 'covered time does not create empty day stats');
+  assert.equal(liveFrom(state.last!).why, 'filter-covered');
+});
+
 test('a healthy Productive Mode on YouTube earns', () => {
   const state = freshState();
   state.sessions['1'] = { entry: 'youtube.com', mode: 'productive', since: T0 };

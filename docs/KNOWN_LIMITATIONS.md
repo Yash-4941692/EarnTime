@@ -51,9 +51,8 @@ The audit export (Settings → Protection) records each reconciliation's window,
 ## 4. Half-productive filters
 
 - **YouTube keywords are substrings.** `pw` matches `Upwork`. Use longer keywords where that matters. The settings page has a checker.
-- **YouTube's layout can change.** If the page is not recognised, the results are hidden, the page is covered after eight seconds, and the time counts as unproductive until it loads correctly.
+- **YouTube's layout can change.** If the page is not recognised, the results are hidden and the page is covered after eight seconds; that broken-filter time counts as unproductive until it loads correctly. Covers deliberately shown for Shorts, unsupported pages and non-study videos are reported separately and do not earn or spend time.
 - **Embedded YouTube players** on other websites are not filtered.
-- **WhatsApp Web chats** match exactly (after case and whitespace normalisation). WhatsApp's layout can change. If the chat list cannot be read, it is hidden and the time counts as unproductive.
 - **Other half-productive sites** (sites you add yourself) have no content filter. Choosing Productive Mode there is a trust decision.
 - **A page that opens while the service worker is still starting can be left unmanaged.** Chrome
   unloads the service worker when it has been idle and restarts it on demand, and that start is not
@@ -84,9 +83,9 @@ The audit export (Settings → Protection) records each reconciliation's window,
   confirmation, and a change made by editing storage directly bypasses it entirely.
 - Setup runs once. Its starting balance is capped at 30 minutes.
 - **A cost applies only when an existing restriction is lifted.** Adding a site to any list is free,
-  because a site on no list is already unrestricted; adding or removing YouTube keywords, WhatsApp
-  chats and WhatsApp groups is free, because those lists never gate access to a site. The
-  consequences are deliberate and worth knowing:
+  because a site on no list is already unrestricted; adding or removing YouTube keywords is free,
+  because that list never gates access to a site. The consequences are deliberate and worth
+  knowing:
   - You can mark any site productive without paying, and productive time earns screen time. The
     productive list is an honesty setting, not a lock.
   - A very broad YouTube keyword (a single letter, say) lets most of YouTube count as study time.
@@ -100,54 +99,14 @@ The audit export (Settings → Protection) records each reconciliation's window,
 - The audit export contains hostnames, minutes and settings. It contains no page addresses.
 - The extension makes no network requests.
 
-## 8. WhatsApp auto-reply
-
-- **WhatsApp Web must be open and logged in** in a Chrome tab. There is no other channel and EarnTime
-  does not use one: no WhatsApp Business API, no network requests, no phone pairing.
-- **Plain text only.** Media, stickers, GIFs, documents, voice notes, location, contacts, reactions,
-  replies to a specific message, mentions, and formatting (bold/italic/monospace) are not supported.
-  Message *content* is never read — only chat titles and unread counts.
-- **It drives WhatsApp's DOM**, because WhatsApp Web exposes no extension API. Every selector in
-  `source/src/content/whatsappSend.ts` is a guess about the current layout and **will** break when
-  WhatsApp ships a redesign. When it breaks, a send fails, the reason is logged, and after three
-  consecutive failures that tab stops until WhatsApp is reloaded. Nothing is retried in a tight loop
-  and the page is never left with a half-typed message that EarnTime reported as sent.
-- **Group detection is best effort.** A group without a custom photo carries a group icon EarnTime can
-  read; a group *with* a photo carries none. That is why the explicit group list in Settings is the
-  authoritative signal, and why a chat that cannot be classified is treated as a group and skipped by
-  fallback rules. A rule that *names* a group still messages it — naming is the override.
-- **Unread detection depends on the unread badge.** A message that arrives and is read elsewhere
-  (phone, another computer) before EarnTime's next scan may never be seen. Scans happen every 2.5 s in
-  a focused tab and roughly every 30 s in a background tab, where Chrome throttles timers and the
-  service worker has to nudge the page.
-- **A chat that was not on screen when the baseline was taken is judged by position, not by count.**
-  WhatsApp renders only the visible slice of a long chat list, so a chat that messages you from below
-  the fold first appears *already holding its badge* — there is no earlier count for it to grow from,
-  and comparing counts alone would silence it for good. Such a chat therefore counts as new when it
-  appears in the top six rows, which is where WhatsApp floats a conversation that just received a
-  message. The trade-off is positional and can be wrong in both directions: a chat that arrives in the
-  top rows for another reason (an unusual sort order, a pinned chat being re-rendered) may be
-  answered without a new message, and a genuine message that lands in a chat sitting below the top
-  six without moving it will not be seen until something else floats it up. Counts of chats that
-  scroll out of view are remembered, so scrolling an old thread away and back does not answer it
-  twice.
-- **Delivery is not instant in a background tab.** Task announcements are pushed immediately; incoming
-  -message replies can lag by up to about 30 seconds.
-- **Automated messaging may violate WhatsApp's terms of service** and could in principle get a number
-  restricted. Rate limits (cooldown, repeat mode, at most three messages per cycle with a pause
-  between them) reduce the risk; they do not remove it.
-- **Not supported:** sending to a chat that is not in the chat list *and* not findable by WhatsApp
-  search, archived or blocked chats, channels, communities, status, calls, and any chat whose exact
-  name you have not typed.
-
-## 9. Out of scope
+## 8. Out of scope
 
 - Chrome for Android, Firefox, Edge and other browsers have not been tested.
 - No sync across devices and no account.
-- No time-of-day schedules for *blocking* (auto-reply has time windows; site blocking does not) and no parental-control features.
+- No time-of-day schedules for *blocking* and no parental-control features.
 - No defence against a determined user with full control of the machine.
 
-## 10. Test gaps
+## 9. Test gaps
 
 No real Chrome browser was available for end-to-end testing. The following behaviours have **not** been exercised with a real Chrome extension runtime:
 
@@ -156,9 +115,6 @@ No real Chrome browser was available for end-to-end testing. The following behav
 - the `chrome://extensions` redirect and the flash it may cause;
 - disabling, reloading and removing the extension, and the reconciliation that follows;
 - real `chrome.history` visits, real idle timing, real notifications and real incognito gating;
-- YouTube and WhatsApp Web as they currently render (the browser tests use fixture pages, and the
-  auto-reply DOM tests use a hand-written fake WhatsApp layout);
-- a real auto-reply end to end: opening a real chat, typing into the real composer and actually
-  delivering a message to a real contact.
+- YouTube as it currently renders (the browser tests use fixture pages).
 
 `docs/TESTING.md` lists the manual checks to run before release.

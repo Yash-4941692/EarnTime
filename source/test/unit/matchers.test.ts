@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { channelAllowed, chatAllowed, filterKindForHost, matchingKeyword, normalizeName, youtubePageKind } from '../../src/core/matchers';
+import { channelAllowed, filterKindForHost, matchingKeyword, normalizeName, youtubePageKind } from '../../src/core/matchers';
 import { DEFAULT_YOUTUBE_KEYWORDS } from '../../src/core/constants';
 
 const KW = [...DEFAULT_YOUTUBE_KEYWORDS];
@@ -30,16 +30,6 @@ test('matchingKeyword reports which keyword allowed the channel', () => {
   assert.equal(matchingKeyword('Cooking', KW), null);
 });
 
-test('WhatsApp chat rule is an exact normalised match', () => {
-  const chats = ['Mom', 'Study Group  (JEE)'];
-  assert.equal(chatAllowed('mom', chats), true);
-  assert.equal(chatAllowed('  Study   Group (jee) ', chats), true);
-  assert.equal(chatAllowed('Mom2', chats), false);
-  assert.equal(chatAllowed('Moms', chats), false);
-  assert.equal(chatAllowed(null, chats), false);
-  assert.equal(chatAllowed('', chats), false);
-});
-
 test('YouTube page kinds: only home, search and watch are usable in Productive Mode', () => {
   assert.equal(youtubePageKind('/'), 'home');
   assert.equal(youtubePageKind('/results'), 'search');
@@ -52,8 +42,6 @@ test('YouTube page kinds: only home, search and watch are usable in Productive M
 test('filterKindForHost maps hosts to content filters', () => {
   assert.equal(filterKindForHost('www.youtube.com'), 'youtube');
   assert.equal(filterKindForHost('youtube.com'), 'youtube');
-  assert.equal(filterKindForHost('web.whatsapp.com'), 'whatsapp');
-  assert.equal(filterKindForHost('whatsapp.com'), null);
   assert.equal(filterKindForHost('example.com'), null);
   assert.equal(filterKindForHost(null), null);
 });

@@ -4,7 +4,7 @@
 
 EarnTime is a Chrome extension (Manifest V3) that turns study time into screen time. You study on productive sites and earn minutes. You spend those minutes on the sites you choose. If you overspend, you are in debt, and only productive sites open until you study the debt off.
 
-By default **60 productive minutes earn 5 minutes**. The ratio, starting balance, site lists, YouTube keywords, WhatsApp chats and daily tasks are all configurable during a one-time setup.
+By default **60 productive minutes earn 5 minutes**. The ratio, starting balance, site lists, YouTube keywords and daily tasks are configurable during a one-time setup.
 
 > **Honest scope.** EarnTime is a self-discipline tool. It cannot make itself unbypassable inside Chrome. Chrome does not allow an extension to fully control `chrome://` pages, and other limits are listed in [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md). Read that file before relying on it.
 
@@ -27,13 +27,11 @@ By default **60 productive minutes earn 5 minutes**. The ratio, starting balance
 ## What it does
 
 - **Earn-to-use model.** Productive time earns screen time at your ratio. Unproductive time spends it.
-- **Three categories.** Productive (earns), half-productive (you choose the mode on each visit; YouTube and WhatsApp Web are included by default) and unproductive (spends).
+- **Three categories.** Productive (earns), half-productive (you choose the mode on each visit; YouTube is included by default) and unproductive (spends).
 - **Counts only active use.** Only the active tab of the focused Chrome window counts. Background tabs, minimised windows, idle time and locked screens do not.
 - **Debt.** If usage runs past your balance while EarnTime was not running (extension disabled, browser closed, computer asleep), the excess becomes debt, estimated from browser history. Debt restricts browsing to productive sites until it is repaid by studying.
-- **YouTube Productive Mode.** Blank homepage with study search. Results and videos show only when the channel name contains one of your keywords. Unreadable channel names are hidden.
-- **WhatsApp Web Productive Mode.** Only the chats you list are shown, matched by exact name. If the layout cannot be read, the chat list is hidden.
-- **WhatsApp auto-reply.** EarnTime can send plain-text messages from your WhatsApp Web tab: a reply when someone messages you, an announcement when you tick off a task (`Yash Boss completed his today's {task}`), or a scheduled message during a time window. A rule that names chats sends to exactly those; a rule with no names answers **personal chats only** — never a group. Works with WhatsApp in a background tab. See the [user guide](docs/USER_GUIDE.md#whatsapp-auto-reply).
-- **Protection costs.** After setup, a change costs the unlock cost (default 10 min) only when it **lifts a restriction EarnTime was already enforcing** — dropping an unproductive or half-productive site, or moving a site to a more permissive list. Adding a site to any list is free, and so are YouTube keywords, WhatsApp chats and groups, because none of them gate access to a site. A change that costs is **quoted before it is charged**, so one click never spends your balance by accident. Setup runs once.
+- **YouTube Productive Mode.** Blank homepage with study search. Results and videos show only when the channel name contains one of your keywords. Unsupported pages and non-study videos are covered without charging or crediting time; if YouTube’s layout cannot be verified, the filter fails closed.
+- **Protection costs.** After setup, a change costs the unlock cost (default 10 min) only when it **lifts a restriction EarnTime was already enforcing** — dropping an unproductive or half-productive site, or moving a site to a more permissive list. Adding a site to any list is free, as are YouTube keywords because they do not gate access to a site. A change that costs is **quoted before it is charged**, so one click never spends your balance by accident. Setup runs once.
 - **Daily tasks.** Recurring or one-off tasks that pay screen time, once per day or once ever.
 - **Audit log.** Every credit, charge, debt, rule change and interruption is recorded. Export it as read-only JSON (hosts only, never page addresses).
 - **Local only.** No account, no network calls, no analytics. Data stays in `chrome.storage.local`.
@@ -64,9 +62,9 @@ cd source
 npm install
 npm run build          # esbuild → ../background.js, ../content.js, ../popup.*, ../settings.*, ../setup.*, ../block.*
 npm run typecheck      # tsc --strict over src/ and test/
-npm run test:unit      # pure logic: time accounting, reconciliation, rules, costs, auto-replies, migration, invariants
-npm run test:dom       # 8 jsdom tests: the real WhatsApp sender against a fake WhatsApp layout
-npm run test:sim       # 36 flow tests against a simulated browser (real controller, real chrome adapter)
+npm run test:unit      # 105 unit tests: accounting, reconciliation, rules, costs, migration, invariants
+npm run test:dom       # 11 jsdom tests: the real YouTube filter, covers and health states
+npm run test:sim       # 32 flow tests against a simulated browser (real controller, real chrome adapter)
 npm test               # typecheck + unit + dom + simulated-browser flow tests (no browser binary needed)
 CHROME_PATH=/path/to/chromium npm run test:browser   # built pages and content scripts in headless Chromium
 CHROME_PATH=/path/to/chromium npm run test:all       # everything
@@ -84,27 +82,15 @@ manifest.json              MV3 manifest (permissions: storage, tabs, alarms, idl
 background.js              service worker (built)
 content.js                 content script for half-productive pages (built)
 popup.* settings.* setup.* block.*   extension pages (built; *.html copied from source/pages)
-source/src/core/           pure logic: accounting, reconciliation, rules, costs, tasks, auto-replies, migration, view models
+source/src/core/           pure logic: accounting, reconciliation, rules, costs, tasks, migration, view models
 source/src/background/     service worker: controller (serial job queue), Chrome adapter, event wiring
-source/src/content/        content scripts: mode chooser, YouTube and WhatsApp filters, WhatsApp sender, overlays
+source/src/content/        content scripts: mode chooser, YouTube filter, overlays
 source/src/ui/             React pages (popup, settings, setup, block) and shared components
 source/test/               unit tests, simulated-browser flow tests, browser tests and fixtures
 docs/                      user guide, testing report, known limitations
 ```
 
 ---
-
-## WhatsApp auto-reply: honest scope
-
-Auto-reply drives WhatsApp Web's own interface, because WhatsApp offers no extension API. It sends
-**plain text only**, only while WhatsApp Web is open and logged in, and only to chats you name — a
-rule with no names answers personal chats and never a group. It can only see the chats WhatsApp has
-actually rendered, so a chat it has never scanned counts as new only when a message floats it into the
-top rows of the list. Every selector is a guess about
-WhatsApp's current layout, so a redesign will break it; when that happens a send fails, the reason is
-logged in Settings, and after three failures the tab stops until WhatsApp is reloaded. Automated
-messaging may be against WhatsApp's terms of service. Full list in
-[`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) section 8.
 
 ## Privacy
 

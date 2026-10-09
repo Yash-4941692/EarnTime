@@ -62,10 +62,9 @@ const SETUP_PAYLOAD = {
   unlockCostMin: 10,
   initialBalanceMin: 0,
   productive: ['khanacademy.org', 'coursera.org'],
-  half: ['youtube.com', 'web.whatsapp.com'],
+  half: ['youtube.com'],
   unproductive: ['instagram.com', 'reddit.com'],
   youtubeKeywords: ['JEE', 'NDA', 'Study', 'Learn', 'Education', 'PW'],
-  whatsappChats: ['Mom'],
   tasks: [],
 };
 
@@ -143,16 +142,6 @@ async function youtubeContext(browser) {
   return context;
 }
 
-async function whatsappContext(browser, variant = 'whatsapp.html') {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  await context.route('https://web.whatsapp.com/**', (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === '/__setup') return route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><html><body>setup</body></html>' });
-    return route.fulfill({ status: 200, contentType: 'text/html', body: readFileSync(join(fixtures, variant), 'utf8') });
-  });
-  return context;
-}
-
 const results = [];
 const filter = process.env.ET_FILTER ?? '';
 async function test(name, fn) {
@@ -217,7 +206,7 @@ try {
     const page = await newPage(context, { role: 'ui' });
     await page.goto(`${base}/setup.html`);
     await page.getByText('Study first, then spend').waitFor();
-    for (let i = 0; i < 7; i++) await page.getByRole('button', { name: 'Continue' }).click();
+    for (let i = 0; i < 6; i++) await page.getByRole('button', { name: 'Continue' }).click();
     await page.getByRole('button', { name: 'Finish setup' }).click();
     await page.getByText("You're set").waitFor();
     const stored = await page.evaluate(() => chrome.storage.local.get('state'));
@@ -406,37 +395,6 @@ try {
     await page.getByRole('dialog', { name: /How to use youtube.com/ }).waitFor();
     await page.locator('[data-et-mode="productive"]').click();
     await page.getByText('YouTube layout not recognised').waitFor({ timeout: 15000 });
-    await context.close();
-  });
-
-  await test('WhatsApp: only allowed chats are visible; a closed chat is covered', async () => {
-    const context = await whatsappContext(browser);
-    await runSetup(context, 'https://web.whatsapp.com', SETUP_PAYLOAD, 20);
-    const page = await newPage(context, { role: 'content', withContent: true, tab: 21 });
-    await page.goto('https://web.whatsapp.com/');
-    await page.getByRole('dialog', { name: /How to use web.whatsapp.com/ }).waitFor();
-    await page.locator('[data-et-mode="productive"]').click();
-    await page.waitForFunction(() => document.querySelector('#row-group')?.style.display === 'none');
-    const rows = await page.evaluate(() => ({
-      mom: getComputedStyle(document.querySelector('#row-mom')).display,
-      group: getComputedStyle(document.querySelector('#row-group')).display,
-      unknown: getComputedStyle(document.querySelector('#row-unknown')).display,
-    }));
-    expect(rows.mom !== 'none', 'allowed chat is visible');
-    expect(rows.group === 'none', 'other chat is hidden');
-    expect(rows.unknown === 'none', 'row with unreadable name is hidden');
-    await page.screenshot({ path: join(shots, 'whatsapp.png') });
-    await context.close();
-  });
-
-  await test('WhatsApp: an open conversation that is not on the list is covered', async () => {
-    const context = await whatsappContext(browser, 'whatsapp-other.html');
-    await runSetup(context, 'https://web.whatsapp.com', SETUP_PAYLOAD, 20);
-    const page = await newPage(context, { role: 'content', withContent: true, tab: 22 });
-    await page.goto('https://web.whatsapp.com/');
-    await page.getByRole('dialog', { name: /How to use web.whatsapp.com/ }).waitFor();
-    await page.locator('[data-et-mode="productive"]').click();
-    await page.getByText('Chat not on your list').waitFor();
     await context.close();
   });
 

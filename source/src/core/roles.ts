@@ -3,7 +3,7 @@
  * Pure: no Chrome APIs. The controller feeds it observations and applies the results.
  */
 
-import { GUARDED_PAGE_PREFIXES, WHATSAPP_HOST, YOUTUBE_HOST_SUFFIX } from './constants';
+import { GUARDED_PAGE_PREFIXES, YOUTUBE_HOST_SUFFIX } from './constants';
 import { classifyHost } from './domains';
 import type { EarnState, FilterState, HalfSession, Observation, Role } from './types';
 
@@ -33,7 +33,7 @@ export function isExhausted(state: EarnState): boolean {
  */
 export function filterStateNeeded(host: string | null): boolean {
   if (!host) return false;
-  return host === WHATSAPP_HOST || host === YOUTUBE_HOST_SUFFIX || host.endsWith(`.${YOUTUBE_HOST_SUFFIX}`);
+  return host === YOUTUBE_HOST_SUFFIX || host.endsWith(`.${YOUTUBE_HOST_SUFFIX}`);
 }
 
 /** Role of the active tab at the moment of observation. */
@@ -64,6 +64,7 @@ export function roleOf(state: EarnState, obs: Observation): Role {
         return { k: 'half', host, entry, mode: 'productive', degraded: false };
       }
       if (filter === 'ok') return { k: 'half', host, entry, mode: 'productive', degraded: false };
+      if (filter === 'covered') return { k: 'none', why: 'filter-covered', host };
       if (filter === 'pending') return { k: 'none', why: 'filter-pending', host };
       // Filter failing, unreported or unknown: fail closed. Time is charged as unproductive.
       return { k: 'half', host, entry, mode: 'productive', degraded: true };
@@ -149,6 +150,8 @@ export function roleLabel(role: { k: Role['k']; mode?: string | null; degraded?:
           return 'Choose a mode to continue';
         case 'filter-pending':
           return 'Checking site filter';
+        case 'filter-covered':
+          return 'Content closed · not counted';
         case 'untracked':
           return 'Not tracked';
         default:

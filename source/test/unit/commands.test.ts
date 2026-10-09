@@ -14,7 +14,6 @@ const setupBase: SetupPayload = {
   half: ['youtube.com'],
   unproductive: ['instagram.com'],
   youtubeKeywords: ['JEE'],
-  whatsappChats: ['Mom'],
   tasks: [],
 };
 
@@ -152,7 +151,6 @@ test('a free change is never quoted, so filling in a list stays one click per en
   );
   assert.equal(applyCommand(state, { type: 'site.add', list: 'unproductive', host: 'reddit.com' }, T0).ok, true);
   assert.equal(applyCommand(state, { type: 'youtube.add', keyword: 'Quantum' }, T0).ok, true);
-  assert.equal(applyCommand(state, { type: 'whatsapp.add', chat: 'Mom' }, T0).ok, true);
   assert.equal(state.balanceMs, 30 * MIN, 'no free change was charged');
 });
 
@@ -259,15 +257,6 @@ test('YouTube keywords: adding and removing are free, duplicates are refused cas
   assert.equal(state.balanceMs, 30 * MIN, 'keywords never gate a site, so adding one is free');
   assert.equal(applyCommand(state, { type: 'youtube.add', keyword: 'quantum' }, T0).ok === false, true);
   assert.equal(applyCommand(state, { type: 'youtube.remove', keyword: 'Quantum' }, T0).ok, true);
-  assert.equal(state.balanceMs, 30 * MIN);
-});
-
-test('WhatsApp chats: exact names, free to add and to remove', () => {
-  const state = freshState(true);
-  state.balanceMs = 30 * MIN;
-  assert.equal(applyCommand(state, { type: 'whatsapp.add', chat: 'Study Group' }, T0).ok, true);
-  assert.equal(state.balanceMs, 30 * MIN);
-  assert.equal(applyCommand(state, { type: 'whatsapp.remove', chat: 'Study Group' }, T0).ok, true);
   assert.equal(state.balanceMs, 30 * MIN);
 });
 

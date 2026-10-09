@@ -8,7 +8,7 @@ export const HOUR_MS = 60 * MINUTE_MS;
 export const DAY_MS = 24 * HOUR_MS;
 
 /** Storage schema version written into the single `state` key. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /** Storage key holding the entire persisted state (one key = atomic writes). */
 export const STATE_KEY = 'state';
@@ -59,17 +59,8 @@ export const MAX_TASK_REWARD_MIN = 60;
 export const MAX_TITLE_LEN = 80;
 export const MAX_LIST_ITEMS = 200;
 
-/** WhatsApp auto-reply limits (see core/autoreply.ts). */
-export const MAX_AUTOREPLY_RULES = 40;
-export const MAX_AUTOREPLY_MESSAGE_LEN = 700;
-export const MAX_AUTOREPLY_COOLDOWN_MIN = 24 * 60;
-/** How long a queued auto-reply waits for WhatsApp Web to be opened before it is dropped. */
-export const AUTOREPLY_TTL_MS = 6 * HOUR_MS;
-/** Send attempts kept in the activity log. */
-export const AUTOREPLY_LOG_LIMIT = 60;
-
 export const DEFAULT_YOUTUBE_KEYWORDS = ['JEE', 'NDA', 'Study', 'Learn', 'Education', 'PW'] as const;
-export const DEFAULT_HALF_SITES = ['youtube.com', 'web.whatsapp.com'] as const;
+export const DEFAULT_HALF_SITES = ['youtube.com'] as const;
 export const SUGGESTED_PRODUCTIVE_SITES = ['khanacademy.org', 'nptel.ac.in', 'pw.live'] as const;
 export const SUGGESTED_UNPRODUCTIVE_SITES = [
   'instagram.com',
@@ -81,8 +72,6 @@ export const SUGGESTED_UNPRODUCTIVE_SITES = [
 
 /** Host suffix that receives the YouTube channel filter in Productive Mode. */
 export const YOUTUBE_HOST_SUFFIX = 'youtube.com';
-/** Exact host that receives the WhatsApp chat filter in Productive Mode. */
-export const WHATSAPP_HOST = 'web.whatsapp.com';
 
 /** Chrome-internal pages that EarnTime redirects (see guard.ts). */
 export const GUARDED_PAGE_PREFIXES = ['chrome://extensions', 'chrome://settings/extensions'] as const;

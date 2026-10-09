@@ -1,17 +1,14 @@
-# Testing report
+# Test report
 
-**Status: partially verified.** Everything below was run in the sandbox described in *Environment*. The extension was **not** run in a real Chrome browser, because the sandbox could not obtain a Chromium build that supports extensions (see *Real-browser gap*). Chrome-specific behaviour must be checked with the manual checklist before release.
+**Status: source logic and simulated flows verified; not yet exercised in real Chrome.** The complete source test command passed on 2026-10-09. The separate Playwright/Chromium suite and the manual extension checklist were not run because this environment has no Chromium binary.
 
-> **2026-10-09 update.** The cost model, the setup redirect and WhatsApp auto-reply were added since
-> the browser suite was last run. `npm test` (type check + 126 unit + 12 jsdom DOM tests + 37 flow
-> tests) passes. The browser suite was not re-run — no Chromium binary was obtainable — so steps 20–25
-> of the manual checklist below are the ones that still need a real Chrome.
+> `cd source && npm test` passes **148 tests**: 105 unit + 11 jsdom DOM + 32 simulated-browser flow tests. It includes the strict TypeScript check. The browser suite contains 12 tests but requires `CHROME_PATH`; those results are not included in the 148.
 
 ## Environment
 
 - Debian 12 sandbox, Node 22.22.3, npm 10.9.8, 2 CPU, no display.
 - Tests run with `TZ=Asia/Kolkata`. The simulated clock starts at 2026-10-08 09:00 local.
-- Browser tests use **Chromium 153.0.8010.0** (headless shell extracted from `@sparticuz/chromium`), driven through `playwright-core` 1.64.0. That build has **no extension support** (see *Real-browser gap*).
+- Browser tests use `playwright-core` and require a separately installed Chromium/Chrome binary. No compatible binary was available (`CHROME_PATH` unset, nothing on `PATH`).
 - Build and source: TypeScript 5.9 (strict), esbuild 0.25, React 18.3, Tailwind 3.4.
 
 ## Results
@@ -20,162 +17,91 @@
 | --- | --- | --- |
 | Type check (strict, `noUnusedLocals`) | `npm run typecheck` | **pass** |
 | Build (root artifacts) | `npm run build` | **pass** |
-| Unit tests | `npm run test:unit` | **126 / 126 pass** |
-| DOM tests (jsdom, WhatsApp sender) | `npm run test:dom` | **12 / 12 pass** |
-| Flow tests (simulated browser) | `npm run test:sim` | **37 / 37 pass** |
-| Browser tests (headless Chromium) | `npm run test:browser` | **14 / 14 pass** |
+| Unit tests | `npm run test:unit` | **105 / 105 pass** |
+| DOM tests (jsdom, YouTube filter) | `npm run test:dom` | **11 / 11 pass** |
+| Flow tests (simulated browser) | `npm run test:sim` | **32 / 32 pass** |
+| Complete source suite | `npm test` | **148 / 148 pass**, including type check |
+| Browser tests (Playwright + Chromium) | `npm run test:browser` | **12 available; not run** |
 | Real Chrome extension end-to-end | manual checklist below | **not run** |
 
-The type checker and the build report no warnings. The extension logs a warning only on a failure path (for example, a failing history query).
+The release build is verified separately with `npm run build`; browser-specific behaviours still need a real Chrome profile before relying on them.
 
 ## What each suite covers
 
-### Unit tests (`source/test/unit`, 126)
+### Unit tests (`source/test/unit`, 105)
 
-- **Host handling**: input normalisation (`https://www.` stripped, punycode, rejects `chrome://`, `javascript:` and malformed names), subdomain matching, most-specific entry wins, strictest list wins on ties, migration de-duplication.
-- **Time**: local day keys, splitting intervals at local midnight, compact formatting.
-- **Matchers**: YouTube channel rule (substring, case and NFKC normalisation, fails closed on unknown names), WhatsApp exact-name rule, YouTube path classification, filter selection.
-- **Engine**: 60 productive minutes earn exactly 5 minutes; unproductive use drains but never creates debt live; background, minimised, unfocused, locked and internal pages are not counted; a 15-second idle detection window is not charged; audible media counts while idle; half-productive pending and degraded states; a backwards clock never produces negative time and charges only observed monotonic time; gaps over 120 seconds are handed to reconciliation; ledger merging; midnight splits.
-- **Reconciliation**: the specification example (balance 10 min, 40 min of unproductive use gives debt 30 min); the single-visit cap; the continuation cap; productive time repaying debt first; half-productive visits charged during interruptions; the 7-day window; browser-start cut; neutral sites never charged.
-- **Roles and blocking**: role for every observation state; block predicates for zero balance and debt; the half-productive session rules; page directives; the declarativeNetRequest rule builder (allow outranks block-all); guarded `chrome://` URLs; the exact required wording of the limitation sentence.
-- **Tasks**: once per local day for recurring tasks, once ever for one-off tasks, undo does not revoke, re-tick does not pay twice, rewards repay debt first.
-- **Protection and commands**: setup once only, setup validation (including the 30-minute starting-balance cap), free changes before setup, **adding a site to any list is free**, **keywords and chats are free both ways**, a cost only when an existing restriction is lifted (removing an unproductive or half-productive site, or moving a site up the ladder), refusal when the balance cannot pay (with no side effect), refusal while in debt, cost of lowering the unlock cost, audit export contains hosts but no URLs. Confirmation-before-charge: **a costing change is quoted on the first call and charged only on the confirmed second one**, the quote itself moves nothing and spends nothing, asking twice without confirming still charges nothing, a change the balance cannot pay is refused rather than quoted, and a free change is never quoted at all.
-- **`page.init` retry** (`askWorker.test.ts`, 7): an immediate answer is returned with no pause; a page that loads while the worker is starting is answered once the worker is up, with growing pauses between attempts; an explicit refusal is an answer and is never retried; a slow worker exhausts the budget and the page is told there is no answer; a zero budget stops the retrying at once; the whole pause schedule fits inside the default budget; and a worker that never comes up costs exactly one attempt per scheduled pause.
-- **Auto-reply** (`autoreply.test.ts`, 22): clock parsing and formatting; time windows including one that crosses midnight; validation (a task or scheduled rule must name its chats, half-written and zero-length windows refused, de-duplication); `{task}`/`{time}` rendering; **a fallback reaches personal chats only — never a group, never a Productive Mode chat, never a chat it cannot classify**; a rule that names a group does reach that group; named rules claim a chat so fallbacks do not double-fire; every matching fallback fires in order; disabled and out-of-window rules never fire; repeat modes (every / once a day / once ever); cooldowns; per-trigger planning; the queue hands over a few jobs at a time and expires the rest; a manual test send does not consume a repeat slot; the activity log is capped.
-- **Migration**: legacy root-extension and React-prototype storage; balance and ratio preserved; the nuclear password is not carried over; corrupted storage is sanitised.
-- **Invariants**: 25 seeded random sequences (200 steps each) of checkpoints, reconciliations, task toggles and backwards clock jumps. Balance and debt stay non-negative, debt origin never falls below debt, and net worth moves exactly by credits minus charges. A ledger-size limit test.
+- **Host handling:** input normalisation, subdomain matching, most-specific entry wins, strictest list wins on ties, and list de-duplication.
+- **Time and accounting:** local day keys, splitting at midnight, formatting, the 60:5 earning example, unproductive spending, idle/background/internal pages, audible media, clock changes, checkpoints, and reconciliation boundaries.
+- **Half-productive roles:** mode selection and YouTube-only filter selection; pending or failed YouTube filters fail closed. An intentional `covered` YouTube state is distinct from failure and neither earns nor spends time.
+- **Migration:** old storage formats and sanitisation, plus a realistic v2.1.1 state fixture proving balance, debt, daily totals, ledger, tasks, settings and non-retired site rules survive schema-3 migration. The retired integration settings/state and its old default half-list entry are removed.
+- **Protection and commands:** setup-once validation, starting-balance cap, free versus paid rule changes, confirmation before a paid change, debt restrictions, task rules, keyword matching, and audit export without page URLs.
+- **Worker message retry:** bounded retry timing, explicit refusal, and eventual success when the worker starts late.
+- **Invariants:** 25 seeded random sequences (200 steps each) keep balance and debt non-negative and conserve value; a ledger-size limit test.
 
-### DOM tests (`source/test/dom`, 12)
+### DOM tests (`source/test/dom`, 11)
 
-These run the **real** `content/whatsappSend.ts` against a hand-written fake WhatsApp Web layout in
-jsdom, so the selectors, unread detection, group detection, composer automation and failure reporting
-are all exercised without a browser binary. `document.execCommand` is stubbed (jsdom has none) to
-behave as Chrome does.
+These exercise the real `src/content/youtube.ts` filter against jsdom YouTube fixture layouts:
 
-- The first scan is a baseline: unread messages that were already there are not answered, even when
-  the chat sits near the top of the list.
-- The group icon is recognised and reported with the poll.
-- A chat that gains an unread badge while the page stays open is reported once, and not again.
-- The four cases the windowed chat list creates, driven by rendering and un-rendering rows as
-  scrolling does: **a chat that was below the fold when the baseline was taken is answered once a
-  message floats it to the top** (this is the case that was silently broken); an old thread scrolled
-  into view further down is not treated as new; a chat that scrolls out of the rendered list and back
-  is not answered a second time; and a chat that gains messages while it is unrendered is answered
-  when it comes back.
-- A queued message is typed into the composer, the send button is pressed, the composer ends up empty,
-  and the conversation the user was reading is put back.
-- A chat that does not exist fails with a readable reason and leaves no half-typed draft.
-- A composer that keeps the text is reported as **not sent**.
-- A page with no chat list reports that WhatsApp is not logged in.
-- Three consecutive failures stop the tab with an explanation instead of retrying.
+- search results keep keyword channels and hide other, unreadable, and Shorts content;
+- dynamic channel-name changes are rescanned;
+- the homepage becomes a study search with keyword shortcuts;
+- Shorts, unsupported sections, non-study watch pages, and unreadable channel names report deliberate covers;
+- deliberate covers pause media where applicable and report a healthy `covered` status;
+- matching watch pages remain usable while the related shelf stays hidden;
+- an absent page layout waits through the grace period, then fails closed and reports unhealthy; a layout appearing during the grace period is not treated as failure;
+- stopping the filter disconnects its observer.
 
-What these cannot prove is that today's real WhatsApp Web still uses those selectors. See the manual
-checklist below.
+### Flow tests on a simulated browser (`source/test/sim`, 32)
 
-### Flow tests on a simulated browser (`source/test/sim`, 37)
+The simulator (`test/sim/fakeBrowser.ts`) exposes a Chrome-shaped object and runs the real Chrome adapter, event wiring and controller. Time is virtual. It models tabs and windows, focus, minimise, idle with a 15-second detection interval, audible tabs, history, declarativeNetRequest rules, service-worker suspension and restart, extension disable and enable, browser restart, wall-clock changes, and incognito gating. It does not model Chrome's own internals.
 
-The simulator (`test/sim/fakeBrowser.ts`) exposes a `chrome`-shaped object and runs the **real** Chrome adapter, event wiring and controller. Time is virtual. It models: tabs and windows, focus, minimise, idle with a 15-second detection interval, audible tabs, history, declarativeNetRequest main-frame rules with priorities, service-worker suspension and restart, extension disable and enable, browser restart with new tab ids, wall-clock changes, and incognito gating. It does **not** model Chrome's own internals.
+Scenarios cover install and setup; 60:5 earning; spending and blocking; background tabs, focus, idle and audible media; worker/browser restarts; interruption reconciliation and debt; protected Chrome-page redirects; YouTube mode choice, intentional covers (no credit or charge), and actual filter failure (charged fail-closed); half-productive mode lifetimes; recurring tasks; legacy migration; clock changes; incognito; audit export; unlock quotes; tab replacement; and setup reopening.
 
-Scenarios: install and setup; one productive hour (exact 5 minutes); unproductive use until the balance is empty and blocking of open and new tabs; background tabs and multiple or minimised windows; switching tabs; idle time and audible media; worker restart mid-session; browser restart; **disable for 40 minutes, re-enable, debt of about 30 minutes** (balance 10); debt restrictions and repayment (7 hours at 60:5 clears 30 minutes of debt); `chrome://extensions` redirect including typed navigation; YouTube mode choice and health (credit only with a healthy filter, charge when unhealthy); Unproductive Mode on a half-productive site; leaving a half-productive site asks again; Unproductive sessions ending at zero balance; recurring task once per day; legacy migration with the legacy keys removed; backwards clock; forward clock jump reconciled; incognito invisible unless allowed; audit export has no URLs; costs for loosening and refusal with no side effect; tab replacement keeps its session; closing a tab ends its session; a fresh install opens the setup wizard and an update does not; repeated worker restarts do not duplicate rules.
+### Browser tests (`source/test/browser`, 12 available)
 
-Auto-reply flows: a fallback answers personal chats but never a group and never an allowed chat; a rule
-naming a group reaches that group and only it; ticking a task queues an announcement **and pushes it to
-the WhatsApp tab immediately** (the worker's `tabs.sendMessage` nudge, which is what makes a throttled
-background tab work), while un-ticking and re-ticking does not announce twice; a scheduled rule sends
-once a local day; a queued message waits for WhatsApp and **only a WhatsApp tab is ever handed the
-composer**; a failed send is logged and pausing a rule cancels what it had queued. Setup flows: an
-unfinished setup reopens on every browser start (exactly one tab per start), an update that finds setup
-unfinished reopens it, and a finished setup is never reopened.
+The Playwright harness builds the extension pages and content script, serves fixture pages for YouTube, and injects a simulated-browser/controller harness. It covers popup, settings, setup, mode chooser and cover presentation. It does **not** load the extension into Chrome and does not replace the real-browser checks below. The current suite was not run because no Chromium executable was available.
 
-### Browser tests (`source/test/browser`, 14)
+## Regression checks added for this change
 
-These run the **built** extension pages and the **built** content script in headless Chromium. Each page gets an in-page harness that runs the same simulated browser and controller. Fixture pages stand in for YouTube and WhatsApp Web (Playwright routes `https://www.youtube.com/**` and `https://web.whatsapp.com/**`).
-
-- Popup: dashboard after setup; DEBT MODE with the amount, repayment progress and required study time; task toggle pays once.
-- Setup wizard: all eight steps, one save, default ratio and default half-productive sites stored.
-- Settings: loosening changes are refused at zero balance with the cost shown; adding an unproductive site is free; the exact limitation wording is shown; the YouTube keyword checker.
-- Block page: exhausted, debt, and the extensions variant with the exact wording.
-- YouTube: mode chooser; Productive Mode shows only keyword channels and hides unknown channels and Shorts; blank homepage replaced by study search; a non-keyword watch page is covered, the stored status becomes degraded (so the time is not credited), and no second prompt is shown on the same site; Unproductive Mode is disabled at zero balance and greys the page when chosen; a missing YouTube layout fails closed after the grace period.
-- WhatsApp: only allowed chats visible, unreadable row hidden; an open conversation not on the list is covered.
-- Four of the browser tests (popup, setup wizard, settings, YouTube results) also fail on any uncaught page error. The other tests do not check for page errors.
-
-## Bugs found and fixed during testing
-
-These were found by the tests above and fixed before this report was written:
-
-1. Adding an unproductive site charged the unlock cost. Adding to a stricter list must be free. (Unit test added.)
-2. Intervals that did not count still created empty day records. (Fixed; the test now checks for absence.)
-3. The mode chooser showed `www.youtube.com` instead of the list entry `youtube.com`, so its accessible name and heading were wrong. (Browser test caught it.)
-4. A covered YouTube watch page kept reporting a healthy filter, so audio playing behind the cover was credited as productive. Covered pages now count as unproductive and pause media. (Browser test asserts the degraded status.)
-5. A health change waited for the next 30-second checkpoint, and a startup report could overwrite a covered-page report. Health changes now trigger a checkpoint, and the startup report reflects the filter's current state.
-6. Debt started at the end of the charged interval instead of when the balance ran out. (Unit test now checks the start.)
-7. The "Debt cleared" notification implied unproductive sites were open again, which is not true at zero balance. Reworded.
-8. Setup could grant up to 600 minutes. Capped at 30 minutes, because reinstalling restarts setup.
-9. The README and user guide said setup opens on first run, but nothing opened it. A fresh install now opens the setup wizard (flow test added).
-
-**Fixed in 2.1.1**, reported from real use rather than caught by the suites above. Each has a regression test:
-
-10. **Auto-reply answered nobody.** `takeUnread()` reported a chat only when its unread count *grew
-    from a count it had already recorded*. WhatsApp renders only the visible slice of the chat list,
-    so a chat that messaged you from below the fold first appeared **already holding its badge**, with
-    no baseline to grow from — and was silenced for good. A chat no previous scan has seen now counts
-    when it appears in the top six rows, where WhatsApp floats a conversation that has just received a
-    message; counts of chats that scroll out of view are remembered so an old thread cannot be
-    answered twice. (Four DOM tests, two of which fail against the old code.)
-11. **A page that loaded while the service worker was starting got no chooser and charged no time.**
-    `page.init` was sent once and a missing answer was treated as "nothing to do". It is now retried
-    with a growing pause for about ten seconds. This narrows the fail-open gap rather than closing it;
-    what remains is documented in `KNOWN_LIMITATIONS.md` section 4. (Seven unit tests.)
-12. **A loosening change spent ten minutes on a single click, with no warning anywhere.** The service
-    worker now refuses the first attempt with the price and the balance, charging and changing
-    nothing, and the UI re-issues the identical command only once the cost is accepted. Free changes
-    are untouched. (Three unit tests and one flow test.)
-
-Simulator defects (not product bugs) were also corrected while writing the tests: new tabs were placed in the first window rather than the focused one, declarativeNetRequest rules were not applied to tabs opened directly at a blocked address, and the settle logic could return before a queued job had saved. Each was fixed in the simulator to match Chrome's behaviour; no expectation was loosened to make a test pass.
+- Schema-3 migration loads a realistic v2.1.1 state, preserves the wallet and history fields (including the ledger and task records), keeps non-retired rules, removes obsolete messaging data, and drops the old default half-list entry.
+- An expected YouTube cover reports `detail: 'covered'`; controller accounting does not charge it as a filter failure or credit it as study time.
+- A genuinely unrecognised YouTube layout still fails closed after its grace period and is charged as unproductive.
+- The DOM tests exercise both state transitions on representative pages; the simulator tests verify their accounting effects.
 
 ## Real-browser gap
 
-The browser suite was **not re-run** for the auto-reply and cost-model work: no Chromium binary was
-available in the sandbox used for it (`CHROME_PATH` unset, nothing on `PATH`). `npm test` — type check,
-126 unit tests, 12 DOM tests and 37 flow tests — was run and passes. The browser tests below therefore
-reflect the earlier run and do not yet cover auto-reply.
+The automated source tests passed, but the browser suite and manual checklist were not run. The fixture-based Playwright harness is not a Chrome extension runtime. The following require a real Chrome profile:
 
-Attempts to obtain an extension-capable Chromium in the sandbox:
-
-- `@sparticuz/chromium` 153: headless shell. Verified in this sandbox: no extension targets, `chrome://extensions` renders blank, and the binary has no `load-extension` switch.
-- npm and PyPI scans for full Chromium builds: none found that are usable.
-- GitHub release assets (ungoogled-chromium 154, Electron): the download host resets the TLS connection from this sandbox.
-
-As a result the following have **not** been verified with a real Chrome extension runtime. See `KNOWN_LIMITATIONS.md` section 9.
+- service-worker suspension/restart and real idle transitions;
+- declarativeNetRequest blocking, Chrome-page redirects, and any redirect flash;
+- disabling, reloading and removing the extension, followed by real-history reconciliation;
+- real history visits, OS notifications, incognito gating and the current live YouTube layout;
+- a real upgrade from v2.1.1 storage.
 
 ## Manual checklist (run in real Chrome before release)
 
-Use a dedicated Chrome profile. Because EarnTime redirects `chrome://extensions`, reloading or removing the extension during development means using **Remove from Chrome** (toolbar right-click) and **Load unpacked** again, which resets its data.
+Use a dedicated Chrome profile. EarnTime redirects `chrome://extensions`, so reloading or removing the extension during development means using **Remove from Chrome** (toolbar right-click) and **Load unpacked** again; removing it resets extension data.
 
-1. **Load unpacked** from the folder that contains `manifest.json`. The setup wizard opens. Finish setup with defaults.
-2. **Study rate**: open `khanacademy.org` as the active tab for 2 minutes. Remaining increases by 10 seconds (60:5).
-3. **Spend**: open `instagram.com` as the active tab for 2 minutes. Remaining drops by about 2 minutes. The badge follows.
-4. **Background and windows**: leave Instagram in a background tab, or in a minimised window, for 2 minutes. Nothing changes.
-5. **Idle**: stop all input on Instagram for 1 minute. Nothing changes after about 15 seconds. Start a silent-audio tab and check counting resumes only when audible.
-6. **Worker restart**: open `chrome://extensions`, the EarnTime card, *Inspect views: service worker*, and stop it while Instagram is active. Time continues from the same balance without a double charge.
-7. **Chrome restart**: quit and reopen Chrome. Balance persists. Sessions are cleared. No time is charged for the closed period.
-8. **Redirect**: type `chrome://extensions` and `chrome://settings/extensions` in tabs. Each redirects to the EarnTime block page. Note the flash, if any. Check the "Manage extensions" route from the extensions menu too.
-9. **Known bypass check**: right-click the toolbar icon, choose *Remove from Chrome*. Confirm it removes the extension (documented limitation).
-10. **Interruption and debt (real sleep)**: with balance 10 minutes, keep Instagram as the active tab, close the laptop lid for 40 minutes, then reopen it. Chrome's worker is not running during sleep, so the next checkpoint reconciles from history. Expected: the audit export records a reconciliation for the window with the charged minutes and the debt added. Because a single visit is capped at 15 minutes, a long continuous visit produces a smaller debt than the time away (see `KNOWN_LIMITATIONS.md`, section 3). Open Instagram tabs go to the block page, and the popup explains the debt. Disabling EarnTime from `chrome://extensions` is not possible while the redirect is active, so the disable-and-re-enable path is covered by the simulator tests only.
-11. **Debt**: only productive sites open. New tabs to Instagram or unlisted sites are redirected. Study 7 hours at 60:5 (or set a short test ratio in a test profile). Debt clears and rules return.
-12. **YouTube**: open a watch page with a non-keyword channel; choose Productive Mode; the cover appears and audio pauses. Search `jee`; only keyword channels remain. Homepage shows study search. Shorts are closed. Unproductive Mode is disabled at zero balance.
-13. **WhatsApp Web**: log in with a real account. Only allowed chats show. Open a non-allowed chat; it is covered. Confirm the chat list reads correctly after a reload.
-14. **Incognito**: with access off, incognito Instagram does not count. Allow EarnTime in incognito and confirm it counts.
-15. **Clock**: while Instagram is active, set the system clock back 5 minutes. Balance never goes negative and the ledger records the clock change.
-16. **Notifications**: reaching zero and reaching debt each show one OS notification.
-17. **Export**: download the audit JSON. Confirm it contains hostnames and minutes, and no page addresses. Confirm the reconciliation entry from step 10.
-18. **Uninstall and reinstall**: confirm a fresh setup, and that the starting balance is limited to 30 minutes (known bypass).
-19. **Layout**: check the popup, settings and setup pages at 100% and 125% zoom, and the chooser and cover on a narrow window.
-20. **Setup reopens**: finish nothing, close the setup tab, restart Chrome. Setup opens again. Finish it and restart once more — it does not.
-21. **Free changes**: after setup, add a productive site, a YouTube keyword and a WhatsApp chat. None of them asks for the unlock cost. Then remove an unproductive site — that does cost.
-22. **Auto-reply, personal only**: with a rule that has no names, have a friend message you. The reply goes out. Have a group you did *not* name message you — nothing is sent. Check *Recent activity* for both.
-23. **Auto-reply, named group**: add a rule naming one group. Complete a task with `{task}` in the message. The announcement appears in that group only.
-24. **Auto-reply in a background tab**: keep WhatsApp Web open but unfocused. Tick a task. The message goes out within a couple of seconds; an incoming-message reply may take up to about 30.
-25. **Auto-reply failure path**: add a rule naming a chat that does not exist and press **Test**. *Recent activity* shows the failure and the reason; WhatsApp is left usable and no draft is stranded.
+1. **Load unpacked and setup:** select the folder containing `manifest.json`, finish the seven-step wizard, and verify the setup tab closes.
+2. **Study rate:** keep `khanacademy.org` active for 2 minutes. Remaining should increase by about 10 seconds at 60:5.
+3. **Spend:** keep `instagram.com` active for 2 minutes. Remaining should drop by about 2 minutes and the badge should follow.
+4. **Background and windows:** leave an unproductive page in a background tab or minimised window for 2 minutes. Nothing should change.
+5. **Idle and audible media:** stop all input for 1 minute; counting should stop after the idle threshold. Audible media should continue to count while away.
+6. **Worker restart:** stop the service worker while an unproductive page is active. Time should continue without a duplicate charge.
+7. **Chrome restart:** quit and reopen Chrome. Balance should persist, sessions should clear, and the closed period should not be charged live.
+8. **Protected-page redirects:** type `chrome://extensions` and `chrome://settings/extensions`; both should redirect to the block page. Note any flash and test the extensions-menu route.
+9. **Known bypass:** remove EarnTime from Chrome using the toolbar menu; confirm the documented limitation.
+10. **Interruption and debt:** in a test profile with 10 minutes, leave Instagram active and interrupt Chrome for 40 minutes. Check the reconciliation audit entry, debt explanation, and blocking (noting the per-visit cap).
+11. **Debt repayment:** verify only productive sites open while in debt; productive time should repay debt before growing the balance.
+12. **YouTube:** choose Productive Mode. Verify study search, keyword-only channels and homepage shortcuts. Shorts, unsupported sections and a non-matching video should be covered without changing charged or credited totals. Verify Unproductive Mode is unavailable at zero balance.
+13. **Incognito:** with incognito access off, activity should not count; allow EarnTime in incognito and verify it does.
+14. **Clock change:** move the system clock backwards while a tracked page is active. Usage must not be erased; inspect the clock ledger entry.
+15. **Notifications:** verify the notifications for reaching zero and entering debt.
+16. **Audit export:** download the JSON and verify it has hostnames/minutes but no page addresses.
+17. **Upgrade migration:** upgrade a v2.1.1 profile and verify balance, days, ledger, tasks, YouTube keywords and other site rules remain intact; removed integration settings are absent.
+18. **Uninstall/reinstall:** verify a reinstall opens setup and the starting balance is capped at 30 minutes.
+19. **Layout:** inspect popup, settings and setup at 100% and 125% zoom, plus the chooser and cover in a narrow window.
+20. **Setup recovery:** close setup unfinished and restart Chrome; setup should reopen. Finish it and restart again; it should not reopen.
+21. **Free changes:** after setup, add a productive site and a YouTube keyword; neither should ask for the unlock cost. Removing an unproductive site should ask for confirmation.
 
-Record the result of each step, the Chrome version and the date in the pull request.
+Record the result of each step, Chrome version and date before release.

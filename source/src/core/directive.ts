@@ -26,7 +26,6 @@ export type PageDirective =
       mode: HalfMode;
       filter: FilterKind | null;
       youtubeKeywords: string[];
-      whatsappChats: string[];
       grayscale: boolean;
     };
 
@@ -73,7 +72,6 @@ export function pageDirective(state: EarnState, tabId: number | null, host: stri
       mode: session.mode,
       filter,
       youtubeKeywords: session.mode === 'productive' ? [...state.settings.youtubeKeywords] : [],
-      whatsappChats: session.mode === 'productive' ? [...state.settings.whatsappChats] : [],
       grayscale: session.mode === 'unproductive',
     },
     clearSession,
