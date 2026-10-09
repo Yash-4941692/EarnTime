@@ -7,6 +7,8 @@ EarnTime turns study time into screen time. You study on productive sites, earn 
 1. Open `chrome://extensions` and turn on **Developer mode**.
 2. Click **Load unpacked** and select the EarnTime folder (or the folder from the ZIP).
 3. Pin EarnTime to the toolbar. The badge shows your remaining minutes (or `DEBT`).
+4. The setup wizard opens by itself. If you close it, it opens again the next time Chrome starts, and
+   the popup keeps a *Finish setup* button until it is done.
 
 ## Setup (once)
 
@@ -17,7 +19,7 @@ The setup wizard opens the first time. It has eight steps:
 3. **Starting balance**: default 0. Setup runs once, so the starting balance cannot be reset later.
 4. **Websites**: productive sites (earn), half-productive sites (you choose the mode each visit; YouTube and WhatsApp Web are included by default), and unproductive sites (spend time; Instagram, Facebook, X, Reddit and Netflix are suggested).
 5. **YouTube keywords**: default `JEE`, `NDA`, `Study`, `Learn`, `Education`, `PW`.
-6. **WhatsApp chats**: the exact chat names that stay visible in Productive Mode.
+6. **WhatsApp chats**: the exact chat names that stay visible in Productive Mode, plus your group names (used by Auto-reply to tell groups from personal chats).
 7. **Daily tasks** (optional): goals that pay screen time.
 8. **Review**, then **Finish setup**.
 
@@ -59,6 +61,51 @@ The setup wizard opens the first time. It has eight steps:
 - Productive time and task rewards repay debt before they add to the balance.
 - *Why this debt exists* in the popup shows the interruption window and the charged and credited minutes.
 
+## WhatsApp auto-reply
+
+*Settings → Auto-reply*. EarnTime can send plain-text WhatsApp messages for you from your WhatsApp Web
+tab:
+
+- **Someone messages me** — reply when a new message arrives.
+- **I tick off a task** — announce it. `{task}` in the message becomes the task name, so one rule
+  covers every task: `Yash Boss completed his today's {task}`.
+- **A time of day arrives** — a scheduled message, once a day while the window is open.
+
+Each rule also has a daily time window (may cross midnight), a per-chat cooldown, and a repeat mode:
+**every time**, **once a day per chat**, or **once ever per chat** (that last one is how you send a
+first-time introduction).
+
+### Who can be messaged
+
+- A rule that **names chats** sends to exactly those chats, group or personal. Name `Progress Check`
+  and only `Progress Check` gets it.
+- A rule with **no names** is a fallback: it answers **personal chats only**. It never sends to a
+  group, and never to a chat on your Productive Mode list. A chat EarnTime cannot classify is treated
+  as a group and skipped, so an unknown chat is never messaged by accident.
+- List your group names under *Which chats are groups*. That list is the authoritative signal; the
+  page's own detection of WhatsApp's group icon is only a second opinion, and a group with a custom
+  photo gives no icon at all.
+- Task and scheduled rules **must** name their chats, so they can never message your whole contact
+  list.
+
+### What it needs, and what it will not do
+
+- **WhatsApp Web must be open and logged in** in a Chrome tab. A background tab is enough — it does
+  not need focus. EarnTime nudges it every 30 seconds and the instant you tick a task, because Chrome
+  throttles timers in unfocused tabs.
+- If WhatsApp Web is closed, task and scheduled messages **wait in a queue** (6 hours) and go out when
+  you next open it.
+- **Plain text only.** Media, stickers, documents, reactions, voice notes, replying to a specific
+  message, and reading message content are not supported — see `docs/KNOWN_LIMITATIONS.md`.
+- WhatsApp Web has no extension API, so EarnTime drives its interface. When WhatsApp changes its
+  layout a send fails, the reason is written to *Recent activity*, and after **three failures in a
+  row** that tab stops trying until you reload WhatsApp. It never retries in a tight loop.
+- Use the **Test** button on a rule before relying on it.
+
+> Automated messaging can be against WhatsApp's terms of service and, in principle, could get a number
+> restricted. Keep the volume low (that is what the cooldown and repeat modes are for) and use it on
+> your own chats at your own risk.
+
 ## Daily tasks
 
 - Tick a task to pay its reward. A recurring task pays once per local day. A one-off task pays once.
@@ -69,11 +116,30 @@ The setup wizard opens the first time. It has eight steps:
 
 After setup, any change that makes usage easier costs the **unlock cost** (default 10 min) from your balance. Changes that make things stricter are free.
 
+The rule is one sentence: **a change costs only when it lifts a restriction EarnTime was already
+enforcing.**
+
 | Costs the unlock cost | Free |
 | --- | --- |
-| Adding a site to Productive or Half-productive; removing a half-productive or unproductive site; moving a site to a more permissive list | Adding a site to Unproductive; removing a productive site; moving a site to a stricter list |
-| Raising the earn ratio; lowering the unlock cost (charged at the current price) | Lowering the earn ratio; raising the unlock cost |
-| Adding a YouTube keyword or a WhatsApp chat; adding a task; raising a task reward | Removing a keyword or chat; deleting a task |
+| Removing a half-productive or unproductive site (it becomes untracked, so always open) | Adding a site to *any* list, including Productive |
+| Moving a site to a more permissive list (unproductive → half → productive) | Moving a site to a stricter list |
+| Raising the earn ratio; lowering the unlock cost (charged at the current price) | Removing a productive site; lowering the earn ratio; raising the unlock cost |
+| Adding a task; raising a task reward | Deleting a task; lowering a task reward |
+| — | Adding or removing a YouTube keyword, a WhatsApp chat or a WhatsApp group |
+| — | Everything in Auto-reply |
+
+Why adding a site is free: a site that is on no list is **not restricted at all** — it already opens
+freely and simply is not tracked. Putting it on a list can only add tracking, never make a blocked
+site reachable, so there is nothing to unlock. You can fill in all three lists after setup without
+paying for each entry.
+
+Keywords and chats are free for the same reason: they never control access to a site. YouTube and
+WhatsApp Web are half-productive, so the mode prompt is what gates them; a keyword only decides which
+channels count as study inside a Productive Mode you already chose. *Trade-off to be aware of:* a very
+broad keyword (like `a`) would let most of YouTube count as study time. Keywords are an honesty
+setting, not a lock.
+
+Adding a task still costs, because a task is a button that pays you minutes on demand.
 
 If the balance cannot pay, the change is refused and nothing changes. Changes are refused while you are in debt.
 
@@ -89,7 +155,8 @@ See `docs/KNOWN_LIMITATIONS.md` section 1 for the API this uses, what has been t
 
 ## Troubleshooting
 
-- **"Setup isn't finished"**: open the popup and choose *Finish setup*.
+- **"Setup isn't finished"**: open the popup and choose *Finish setup*. It also reopens on every browser start until you finish it.
+- **An auto-reply did not go out**: check *Settings → Auto-reply → Recent activity* for the reason. The usual causes are WhatsApp Web being closed, the chat name not matching exactly, or WhatsApp having changed its layout (reload the WhatsApp tab and try the rule's **Test** button).
 - **Time is not counting**: check that the EarnTime tab is the active tab in the focused window, and that you are not in an incognito window without access.
 - **YouTube shows a blank page**: that is Productive Mode's study search. Pick a keyword or search for a topic.
 - **"Filter unavailable"**: the site changed its layout. Time on that page is counted as unproductive until it loads correctly. Reload the page.

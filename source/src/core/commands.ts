@@ -4,6 +4,7 @@
  */
 
 import {
+  MAX_AUTOREPLY_RULES,
   MAX_EARN_FROM_MIN,
   MAX_LIST_ITEMS,
   MAX_SETUP_BALANCE_MIN,
@@ -11,12 +12,13 @@ import {
   MINUTE_MS,
   SCHEMA_VERSION,
 } from './constants';
+import { enqueueManual, enqueueTaskReplies, newAutoReplyId, pruneAutoReplyState, validateAutoReply } from './autoreply';
 import { cleanHostList, dedupeRules } from './state';
 import { normalizeHostInput, listOfEntry } from './domains';
 import { normalizeName } from './matchers';
 import { payUnlock, ratioLoosens, siteChangeLoosens } from './protection';
 import { newTaskId, toggleTask, validateTask } from './tasks';
-import type { Checked, EarnState, ListName, RuleErrorCode, RuleResult, Settings, Task } from './types';
+import type { AutoReplyRule, Checked, EarnState, ListName, RuleErrorCode, RuleResult, Settings, Task } from './types';
 import { addLedger, pruneDays } from './wallet';
 
 export interface SetupPayload {
@@ -29,6 +31,8 @@ export interface SetupPayload {
   unproductive: string[];
   youtubeKeywords: string[];
   whatsappChats: string[];
+  /** Group chats, so auto-reply fallbacks know which chats to keep away from. Optional. */
+  whatsappGroups?: string[];
   tasks: Array<{ title: string; rewardMin: number; recurring: boolean }>;
 }
 
@@ -43,10 +47,31 @@ export type Command =
   | { type: 'youtube.remove'; keyword: string }
   | { type: 'whatsapp.add'; chat: string }
   | { type: 'whatsapp.remove'; chat: string }
+  | { type: 'wagroup.add'; chat: string }
+  | { type: 'wagroup.remove'; chat: string }
   | { type: 'task.add'; title: string; rewardMin: number; recurring: boolean }
   | { type: 'task.update'; id: string; title?: string; rewardMin?: number; recurring?: boolean }
   | { type: 'task.delete'; id: string }
-  | { type: 'task.toggle'; id: string };
+  | { type: 'task.toggle'; id: string }
+  | { type: 'autoreply.add'; rule: AutoReplyDraft }
+  | { type: 'autoreply.update'; id: string; rule: Partial<AutoReplyDraft> }
+  | { type: 'autoreply.delete'; id: string }
+  | { type: 'autoreply.toggle'; id: string }
+  | { type: 'autoreply.test'; id: string; chat?: string };
+
+/** User-supplied shape of an auto-reply rule (see core/autoreply.ts for validation). */
+export interface AutoReplyDraft {
+  name?: string;
+  trigger?: string;
+  targets?: string[];
+  message?: string;
+  taskTitles?: string[];
+  from?: string;
+  to?: string;
+  cooldownMin?: number;
+  oncePerDay?: boolean;
+  enabled?: boolean;
+}
 
 const LIST_LABEL: Record<ListName, string> = {
   productive: 'Productive',
@@ -94,6 +119,7 @@ function applySite(state: EarnState, now: number, cmd: Extract<Command, { type: 
     if (current === cmd.list) return fail('duplicate', `${host} is already in ${LIST_LABEL[cmd.list].toLowerCase()} sites.`);
     if (current) return fail('duplicate', `${host} is already in ${LIST_LABEL[current].toLowerCase()} sites. Move it instead.`);
     if (state.rules[cmd.list].length >= MAX_LIST_ITEMS) return fail('limit', 'That list is full.');
+    // A host that was on no list was already unrestricted, so listing it costs nothing.
     const cost = siteChangeLoosens('neutral', cmd.list) ? state.settings.unlockCostMin : 0;
     const paid = payUnlock(state, cost, now, `add ${host} to ${cmd.list}`);
     if (!paid.ok) return paid;
@@ -130,12 +156,13 @@ function applySite(state: EarnState, now: number, cmd: Extract<Command, { type: 
 function applyListItem(
   state: EarnState,
   now: number,
-  kind: 'keyword' | 'chat',
+  kind: 'keyword' | 'chat' | 'group',
   value: string,
   add: boolean,
 ): RuleResult {
-  const list = kind === 'keyword' ? state.settings.youtubeKeywords : state.settings.whatsappChats;
-  const label = kind === 'keyword' ? 'YouTube keyword' : 'WhatsApp chat';
+  const list =
+    kind === 'keyword' ? state.settings.youtubeKeywords : kind === 'chat' ? state.settings.whatsappChats : state.settings.whatsappGroups;
+  const label = kind === 'keyword' ? 'YouTube keyword' : kind === 'chat' ? 'WhatsApp chat' : 'WhatsApp group';
   const trimmed = value.trim();
   if (!trimmed) return fail('invalid', `Enter a ${label.toLowerCase()}.`);
   if (trimmed.length > 80) return fail('invalid', `${label} names can be at most 80 characters.`);
@@ -151,8 +178,8 @@ function applyListItem(
 
   if (index >= 0) return fail('duplicate', `That ${label.toLowerCase()} is already in the list.`);
   if (list.length >= MAX_LIST_ITEMS) return fail('limit', 'That list is full.');
-  const paid = payUnlock(state, state.settings.unlockCostMin, now, `add ${label.toLowerCase()} "${trimmed}"`);
-  if (!paid.ok) return paid;
+  // Free: these lists never gate access to a site, only what counts as study inside a mode the user
+  // already chose. See filterListLoosens in protection.ts.
   list.push(trimmed);
   addLedger(state, 'rule', now, 0, `Added ${label.toLowerCase()} "${trimmed}"`);
   return { ok: true };
@@ -206,10 +233,75 @@ function applyTaskCommand(state: EarnState, now: number, cmd: Extract<Command, {
       addLedger(state, 'rule', now, 0, 'Task deleted');
       return { ok: true };
     }
-    case 'task.toggle':
-      return toggleTask(state, cmd.id, now);
+    case 'task.toggle': {
+      const task = state.tasks.find((t) => t.id === cmd.id);
+      const result = toggleTask(state, cmd.id, now);
+      // Announce the task only when it actually paid, so un-ticking and re-ticking does not resend.
+      if (result.ok && result.data?.completed && result.data.rewardedMs > 0 && task) {
+        const jobs = enqueueTaskReplies(state, task.title, now);
+        if (jobs.length > 0) {
+          addLedger(state, 'rule', now, 0, `Queued ${jobs.length} WhatsApp message(s) for task "${task.title}"`);
+        }
+      }
+      return result;
+    }
   }
   return fail('invalid', 'Unknown task command.');
+}
+
+function applyAutoReplyCommand(
+  state: EarnState,
+  now: number,
+  cmd: Extract<Command, { type: `autoreply.${string}` }>,
+): RuleResult {
+  // Auto-replies change what EarnTime sends, never what it restricts, so they cost nothing.
+  switch (cmd.type) {
+    case 'autoreply.add': {
+      if (state.autoReplies.length >= MAX_AUTOREPLY_RULES) return fail('limit', 'You have reached the auto-reply limit.');
+      const valid = validateAutoReply(cmd.rule);
+      if (!valid.ok) return valid;
+      const rule: AutoReplyRule = { id: newAutoReplyId(now), ...valid.data };
+      state.autoReplies.push(rule);
+      addLedger(state, 'rule', now, 0, `WhatsApp auto-reply added: ${rule.name}`);
+      return { ok: true, data: rule.id };
+    }
+    case 'autoreply.update': {
+      const rule = state.autoReplies.find((r) => r.id === cmd.id);
+      if (!rule) return fail('not-found', 'That auto-reply no longer exists.');
+      const valid = validateAutoReply({ ...rule, ...cmd.rule });
+      if (!valid.ok) return valid;
+      Object.assign(rule, valid.data);
+      addLedger(state, 'rule', now, 0, `WhatsApp auto-reply updated: ${rule.name}`);
+      return { ok: true };
+    }
+    case 'autoreply.delete': {
+      const before = state.autoReplies.length;
+      state.autoReplies = state.autoReplies.filter((r) => r.id !== cmd.id);
+      if (state.autoReplies.length === before) return fail('not-found', 'That auto-reply no longer exists.');
+      state.autoReplyQueue = state.autoReplyQueue.filter((job) => job.ruleId !== cmd.id);
+      pruneAutoReplyState(state, state.autoReplies.map((r) => r.id));
+      addLedger(state, 'rule', now, 0, 'WhatsApp auto-reply deleted');
+      return { ok: true };
+    }
+    case 'autoreply.test': {
+      const rule = state.autoReplies.find((r) => r.id === cmd.id);
+      if (!rule) return fail('not-found', 'That auto-reply no longer exists.');
+      const chat = (cmd.chat ?? '').trim() || rule.targets[0] || '';
+      if (!chat) return fail('invalid', 'Name a chat to send the test message to.');
+      const job = enqueueManual(state, rule, chat, now);
+      addLedger(state, 'rule', now, 0, `Queued a WhatsApp test message for "${chat}"`);
+      return { ok: true, data: job.id };
+    }
+    case 'autoreply.toggle': {
+      const rule = state.autoReplies.find((r) => r.id === cmd.id);
+      if (!rule) return fail('not-found', 'That auto-reply no longer exists.');
+      rule.enabled = !rule.enabled;
+      if (!rule.enabled) state.autoReplyQueue = state.autoReplyQueue.filter((job) => job.ruleId !== rule.id);
+      addLedger(state, 'rule', now, 0, `WhatsApp auto-reply ${rule.enabled ? 'enabled' : 'paused'}: ${rule.name}`);
+      return { ok: true };
+    }
+  }
+  return fail('invalid', 'Unknown auto-reply command.');
 }
 
 /** Applies a setup payload exactly once. Re-running setup would be a way to reset the balance, so it is refused. */
@@ -262,6 +354,7 @@ export function applySetup(state: EarnState, payload: SetupPayload, now: number)
     unlockCostMin: cost,
     youtubeKeywords: payload.youtubeKeywords.map((k) => k.trim()).filter(Boolean).slice(0, 60),
     whatsappChats: payload.whatsappChats.map((c) => c.trim()).filter(Boolean).slice(0, MAX_LIST_ITEMS),
+    whatsappGroups: (payload.whatsappGroups ?? []).map((c) => c.trim()).filter(Boolean).slice(0, MAX_LIST_ITEMS),
   };
   state.settings = settings;
   state.rules = { productive: deduped.productive, half: deduped.half, unproductive: deduped.unproductive };
@@ -314,11 +407,21 @@ export function applyCommand(state: EarnState, cmd: Command, now: number): RuleR
       return applyListItem(state, now, 'chat', cmd.chat, true);
     case 'whatsapp.remove':
       return applyListItem(state, now, 'chat', cmd.chat, false);
+    case 'wagroup.add':
+      return applyListItem(state, now, 'group', cmd.chat, true);
+    case 'wagroup.remove':
+      return applyListItem(state, now, 'group', cmd.chat, false);
     case 'task.add':
     case 'task.update':
     case 'task.delete':
     case 'task.toggle':
       return applyTaskCommand(state, now, cmd);
+    case 'autoreply.add':
+    case 'autoreply.update':
+    case 'autoreply.delete':
+    case 'autoreply.toggle':
+    case 'autoreply.test':
+      return applyAutoReplyCommand(state, now, cmd);
   }
   return fail('invalid', 'Unknown command.');
 }
@@ -345,5 +448,6 @@ export function auditExport(state: EarnState, now: number): Record<string, unkno
       note: e.note,
     })),
     tasks: state.tasks,
+    autoReplies: state.autoReplies.map((rule) => ({ ...rule, message: rule.message.slice(0, 40) })),
   };
 }

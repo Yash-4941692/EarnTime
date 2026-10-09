@@ -4,11 +4,15 @@
  */
 
 import {
+  AUTOREPLY_LOG_LIMIT,
+  AUTOREPLY_TTL_MS,
   DEFAULT_EARN_FROM_MIN,
   DEFAULT_EARN_TO_MIN,
   DEFAULT_HALF_SITES,
   DEFAULT_UNLOCK_COST_MIN,
   DEFAULT_YOUTUBE_KEYWORDS,
+  MAX_AUTOREPLY_MESSAGE_LEN,
+  MAX_AUTOREPLY_RULES,
   MAX_EARN_FROM_MIN,
   MAX_LIST_ITEMS,
   MAX_UNLOCK_COST_MIN,
@@ -16,7 +20,20 @@ import {
   SCHEMA_VERSION,
 } from './constants';
 import { normalizeHostInput } from './domains';
-import type { DayStats, EarnState, HalfSession, LedgerEntry, Rules, Settings, Snapshot, Task } from './types';
+import { validateAutoReply } from './autoreply';
+import type {
+  AutoReplyJob,
+  AutoReplyLogEntry,
+  AutoReplyRule,
+  DayStats,
+  EarnState,
+  HalfSession,
+  LedgerEntry,
+  Rules,
+  Settings,
+  Snapshot,
+  Task,
+} from './types';
 import { addLedger, emptyDayStats } from './wallet';
 
 export function createInitialState(now: number): EarnState {
@@ -30,6 +47,7 @@ export function createInitialState(now: number): EarnState {
       unlockCostMin: DEFAULT_UNLOCK_COST_MIN,
       youtubeKeywords: [...DEFAULT_YOUTUBE_KEYWORDS],
       whatsappChats: [],
+      whatsappGroups: [],
     },
     rules: { productive: [], half: [...DEFAULT_HALF_SITES], unproductive: [] },
     balanceMs: 0,
@@ -37,6 +55,11 @@ export function createInitialState(now: number): EarnState {
     debtOriginMs: 0,
     debtSince: null,
     tasks: [],
+    autoReplies: [],
+    autoReplyQueue: [],
+    autoReplyLog: [],
+    nextAutoReplyLogId: 1,
+    autoReplySent: {},
     days: {},
     ledger: [],
     nextLedgerId: 1,
@@ -108,6 +131,7 @@ function sanitizeSettings(raw: unknown): Settings {
     unlockCostMin: clampInt(r.unlockCostMin, 0, MAX_UNLOCK_COST_MIN, base.unlockCostMin),
     youtubeKeywords: stringList(r.youtubeKeywords, 60),
     whatsappChats: stringList(r.whatsappChats, MAX_LIST_ITEMS),
+    whatsappGroups: stringList(r.whatsappGroups, MAX_LIST_ITEMS),
   };
 }
 
@@ -163,6 +187,73 @@ function sanitizeLedger(raw: unknown): LedgerEntry[] {
     };
     if (typeof e.host === 'string') entry.host = e.host.slice(0, 253);
     out.push(entry);
+  }
+  return out;
+}
+
+function sanitizeAutoReplies(raw: unknown): AutoReplyRule[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AutoReplyRule[] = [];
+  for (const item of raw.slice(0, MAX_AUTOREPLY_RULES)) {
+    if (!item || typeof item !== 'object') continue;
+    const r = item as Record<string, unknown>;
+    if (typeof r.id !== 'string' || !r.id) continue;
+    const valid = validateAutoReply(r);
+    if (!valid.ok) continue;
+    out.push({ id: r.id, ...valid.data });
+  }
+  return out;
+}
+
+function sanitizeAutoReplyQueue(raw: unknown, now: number): AutoReplyJob[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AutoReplyJob[] = [];
+  for (const item of raw.slice(-100)) {
+    if (!item || typeof item !== 'object') continue;
+    const j = item as Record<string, unknown>;
+    if (typeof j.id !== 'string' || typeof j.chat !== 'string' || typeof j.message !== 'string') continue;
+    if (!j.chat.trim() || !j.message.trim()) continue;
+    const trigger = j.trigger === 'task' || j.trigger === 'window' ? j.trigger : 'incoming';
+    out.push({
+      id: j.id,
+      ruleId: typeof j.ruleId === 'string' ? j.ruleId : '',
+      chat: j.chat.slice(0, 80),
+      message: j.message.slice(0, MAX_AUTOREPLY_MESSAGE_LEN),
+      trigger,
+      createdAt: finiteNumber(j.createdAt, now),
+      expiresAt: finiteNumber(j.expiresAt, now + AUTOREPLY_TTL_MS),
+    });
+  }
+  return out;
+}
+
+function sanitizeAutoReplyLog(raw: unknown): AutoReplyLogEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AutoReplyLogEntry[] = [];
+  for (const item of raw.slice(-AUTOREPLY_LOG_LIMIT)) {
+    if (!item || typeof item !== 'object') continue;
+    const e = item as Record<string, unknown>;
+    if (typeof e.chat !== 'string' || typeof e.detail !== 'string') continue;
+    out.push({
+      id: finiteNumber(e.id, 0),
+      at: finiteNumber(e.at, 0),
+      chat: e.chat.slice(0, 80),
+      ruleId: typeof e.ruleId === 'string' ? e.ruleId : '',
+      ok: e.ok === true,
+      detail: e.detail.slice(0, 200),
+    });
+  }
+  return out;
+}
+
+function sanitizeAutoReplySent(raw: unknown): Record<string, { at: number; day: string }> {
+  const out: Record<string, { at: number; day: string }> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>).slice(0, 500)) {
+    if (!value || typeof value !== 'object') continue;
+    const v = value as Record<string, unknown>;
+    if (typeof v.day !== 'string') continue;
+    out[key] = { at: finiteNumber(v.at, 0), day: v.day };
   }
   return out;
 }
@@ -223,6 +314,11 @@ export function sanitizeState(raw: unknown, now: number): EarnState {
     debtOriginMs: Math.max(0, Math.round(finiteNumber(r.debtOriginMs, 0))),
     debtSince: typeof r.debtSince === 'number' ? r.debtSince : null,
     tasks: sanitizeTasks(r.tasks, now),
+    autoReplies: sanitizeAutoReplies(r.autoReplies),
+    autoReplyQueue: [],
+    autoReplyLog: sanitizeAutoReplyLog(r.autoReplyLog),
+    nextAutoReplyLogId: Math.max(1, finiteNumber(r.nextAutoReplyLogId, 1)),
+    autoReplySent: sanitizeAutoReplySent(r.autoReplySent),
     days: sanitizeDays(r.days),
     ledger: sanitizeLedger(r.ledger),
     nextLedgerId: Math.max(1, finiteNumber(r.nextLedgerId, 1)),
@@ -235,6 +331,9 @@ export function sanitizeState(raw: unknown, now: number): EarnState {
     browserStartAt: typeof r.browserStartAt === 'number' ? r.browserStartAt : null,
     revision: Math.max(0, Math.floor(finiteNumber(r.revision, 0))),
   };
+  // The queue is restored only once the rules it belongs to are known to be valid.
+  const ruleIds = new Set(state.autoReplies.map((rule) => rule.id));
+  state.autoReplyQueue = sanitizeAutoReplyQueue(r.autoReplyQueue, now).filter((job) => ruleIds.has(job.ruleId));
   if (state.debtMs === 0) {
     state.debtSince = null;
     state.debtOriginMs = 0;

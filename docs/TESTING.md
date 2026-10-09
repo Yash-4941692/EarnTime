@@ -2,6 +2,11 @@
 
 **Status: partially verified.** Everything below was run in the sandbox described in *Environment*. The extension was **not** run in a real Chrome browser, because the sandbox could not obtain a Chromium build that supports extensions (see *Real-browser gap*). Chrome-specific behaviour must be checked with the manual checklist before release.
 
+> **2026-10-09 update.** The cost model, the setup redirect and WhatsApp auto-reply were added since
+> the browser suite was last run. `npm test` (type check + 116 unit + 8 jsdom DOM tests + 36 flow
+> tests) passes. The browser suite was not re-run — no Chromium binary was obtainable — so steps 20–25
+> of the manual checklist below are the ones that still need a real Chrome.
+
 ## Environment
 
 - Debian 12 sandbox, Node 22.22.3, npm 10.9.8, 2 CPU, no display.
@@ -15,8 +20,9 @@
 | --- | --- | --- |
 | Type check (strict, `noUnusedLocals`) | `npm run typecheck` | **pass** |
 | Build (root artifacts) | `npm run build` | **pass** |
-| Unit tests | `npm run test:unit` | **92 / 92 pass** |
-| Flow tests (simulated browser) | `npm run test:sim` | **28 / 28 pass** |
+| Unit tests | `npm run test:unit` | **116 / 116 pass** |
+| DOM tests (jsdom, WhatsApp sender) | `npm run test:dom` | **8 / 8 pass** |
+| Flow tests (simulated browser) | `npm run test:sim` | **36 / 36 pass** |
 | Browser tests (headless Chromium) | `npm run test:browser` | **14 / 14 pass** |
 | Real Chrome extension end-to-end | manual checklist below | **not run** |
 
@@ -24,7 +30,7 @@ The type checker and the build report no warnings. The extension logs a warning 
 
 ## What each suite covers
 
-### Unit tests (`source/test/unit`, 92)
+### Unit tests (`source/test/unit`, 116)
 
 - **Host handling**: input normalisation (`https://www.` stripped, punycode, rejects `chrome://`, `javascript:` and malformed names), subdomain matching, most-specific entry wins, strictest list wins on ties, migration de-duplication.
 - **Time**: local day keys, splitting intervals at local midnight, compact formatting.
@@ -33,15 +39,45 @@ The type checker and the build report no warnings. The extension logs a warning 
 - **Reconciliation**: the specification example (balance 10 min, 40 min of unproductive use gives debt 30 min); the single-visit cap; the continuation cap; productive time repaying debt first; half-productive visits charged during interruptions; the 7-day window; browser-start cut; neutral sites never charged.
 - **Roles and blocking**: role for every observation state; block predicates for zero balance and debt; the half-productive session rules; page directives; the declarativeNetRequest rule builder (allow outranks block-all); guarded `chrome://` URLs; the exact required wording of the limitation sentence.
 - **Tasks**: once per local day for recurring tasks, once ever for one-off tasks, undo does not revoke, re-tick does not pay twice, rewards repay debt first.
-- **Protection and commands**: setup once only, setup validation (including the 30-minute starting-balance cap), free changes before setup, costs for each loosening change, refusal when the balance cannot pay (with no side effect), refusal while in debt, cost of lowering the unlock cost, audit export contains hosts but no URLs.
+- **Protection and commands**: setup once only, setup validation (including the 30-minute starting-balance cap), free changes before setup, **adding a site to any list is free**, **keywords and chats are free both ways**, a cost only when an existing restriction is lifted (removing an unproductive or half-productive site, or moving a site up the ladder), refusal when the balance cannot pay (with no side effect), refusal while in debt, cost of lowering the unlock cost, audit export contains hosts but no URLs.
+- **Auto-reply** (`autoreply.test.ts`, 22): clock parsing and formatting; time windows including one that crosses midnight; validation (a task or scheduled rule must name its chats, half-written and zero-length windows refused, de-duplication); `{task}`/`{time}` rendering; **a fallback reaches personal chats only — never a group, never a Productive Mode chat, never a chat it cannot classify**; a rule that names a group does reach that group; named rules claim a chat so fallbacks do not double-fire; every matching fallback fires in order; disabled and out-of-window rules never fire; repeat modes (every / once a day / once ever); cooldowns; per-trigger planning; the queue hands over a few jobs at a time and expires the rest; a manual test send does not consume a repeat slot; the activity log is capped.
 - **Migration**: legacy root-extension and React-prototype storage; balance and ratio preserved; the nuclear password is not carried over; corrupted storage is sanitised.
 - **Invariants**: 25 seeded random sequences (200 steps each) of checkpoints, reconciliations, task toggles and backwards clock jumps. Balance and debt stay non-negative, debt origin never falls below debt, and net worth moves exactly by credits minus charges. A ledger-size limit test.
 
-### Flow tests on a simulated browser (`source/test/sim`, 28)
+### DOM tests (`source/test/dom`, 8)
+
+These run the **real** `content/whatsappSend.ts` against a hand-written fake WhatsApp Web layout in
+jsdom, so the selectors, unread detection, group detection, composer automation and failure reporting
+are all exercised without a browser binary. `document.execCommand` is stubbed (jsdom has none) to
+behave as Chrome does.
+
+- The first scan is a baseline: unread messages that were already there are not answered.
+- The group icon is recognised and reported with the poll.
+- A chat that gains an unread badge while the page stays open is reported once, and not again.
+- A queued message is typed into the composer, the send button is pressed, the composer ends up empty,
+  and the conversation the user was reading is put back.
+- A chat that does not exist fails with a readable reason and leaves no half-typed draft.
+- A composer that keeps the text is reported as **not sent**.
+- A page with no chat list reports that WhatsApp is not logged in.
+- Three consecutive failures stop the tab with an explanation instead of retrying.
+
+What these cannot prove is that today's real WhatsApp Web still uses those selectors. See the manual
+checklist below.
+
+### Flow tests on a simulated browser (`source/test/sim`, 36)
 
 The simulator (`test/sim/fakeBrowser.ts`) exposes a `chrome`-shaped object and runs the **real** Chrome adapter, event wiring and controller. Time is virtual. It models: tabs and windows, focus, minimise, idle with a 15-second detection interval, audible tabs, history, declarativeNetRequest main-frame rules with priorities, service-worker suspension and restart, extension disable and enable, browser restart with new tab ids, wall-clock changes, and incognito gating. It does **not** model Chrome's own internals.
 
 Scenarios: install and setup; one productive hour (exact 5 minutes); unproductive use until the balance is empty and blocking of open and new tabs; background tabs and multiple or minimised windows; switching tabs; idle time and audible media; worker restart mid-session; browser restart; **disable for 40 minutes, re-enable, debt of about 30 minutes** (balance 10); debt restrictions and repayment (7 hours at 60:5 clears 30 minutes of debt); `chrome://extensions` redirect including typed navigation; YouTube mode choice and health (credit only with a healthy filter, charge when unhealthy); Unproductive Mode on a half-productive site; leaving a half-productive site asks again; Unproductive sessions ending at zero balance; recurring task once per day; legacy migration with the legacy keys removed; backwards clock; forward clock jump reconciled; incognito invisible unless allowed; audit export has no URLs; costs for loosening and refusal with no side effect; tab replacement keeps its session; closing a tab ends its session; a fresh install opens the setup wizard and an update does not; repeated worker restarts do not duplicate rules.
+
+Auto-reply flows: a fallback answers personal chats but never a group and never an allowed chat; a rule
+naming a group reaches that group and only it; ticking a task queues an announcement **and pushes it to
+the WhatsApp tab immediately** (the worker's `tabs.sendMessage` nudge, which is what makes a throttled
+background tab work), while un-ticking and re-ticking does not announce twice; a scheduled rule sends
+once a local day; a queued message waits for WhatsApp and **only a WhatsApp tab is ever handed the
+composer**; a failed send is logged and pausing a rule cancels what it had queued. Setup flows: an
+unfinished setup reopens on every browser start (exactly one tab per start), an update that finds setup
+unfinished reopens it, and a finished setup is never reopened.
 
 ### Browser tests (`source/test/browser`, 14)
 
@@ -72,6 +108,11 @@ These were found by the tests above and fixed before this report was written:
 Simulator defects (not product bugs) were also corrected while writing the tests: new tabs were placed in the first window rather than the focused one, declarativeNetRequest rules were not applied to tabs opened directly at a blocked address, and the settle logic could return before a queued job had saved. Each was fixed in the simulator to match Chrome's behaviour; no expectation was loosened to make a test pass.
 
 ## Real-browser gap
+
+The browser suite was **not re-run** for the auto-reply and cost-model work: no Chromium binary was
+available in the sandbox used for it (`CHROME_PATH` unset, nothing on `PATH`). `npm test` — type check,
+116 unit tests, 8 DOM tests and 36 flow tests — was run and passes. The browser tests below therefore
+reflect the earlier run and do not yet cover auto-reply.
 
 Attempts to obtain an extension-capable Chromium in the sandbox:
 
@@ -104,5 +145,11 @@ Use a dedicated Chrome profile. Because EarnTime redirects `chrome://extensions`
 17. **Export**: download the audit JSON. Confirm it contains hostnames and minutes, and no page addresses. Confirm the reconciliation entry from step 10.
 18. **Uninstall and reinstall**: confirm a fresh setup, and that the starting balance is limited to 30 minutes (known bypass).
 19. **Layout**: check the popup, settings and setup pages at 100% and 125% zoom, and the chooser and cover on a narrow window.
+20. **Setup reopens**: finish nothing, close the setup tab, restart Chrome. Setup opens again. Finish it and restart once more — it does not.
+21. **Free changes**: after setup, add a productive site, a YouTube keyword and a WhatsApp chat. None of them asks for the unlock cost. Then remove an unproductive site — that does cost.
+22. **Auto-reply, personal only**: with a rule that has no names, have a friend message you. The reply goes out. Have a group you did *not* name message you — nothing is sent. Check *Recent activity* for both.
+23. **Auto-reply, named group**: add a rule naming one group. Complete a task with `{task}` in the message. The announcement appears in that group only.
+24. **Auto-reply in a background tab**: keep WhatsApp Web open but unfocused. Tick a task. The message goes out within a couple of seconds; an incoming-message reply may take up to about 30.
+25. **Auto-reply failure path**: add a rule naming a chat that does not exist and press **Test**. *Recent activity* shows the failure and the reason; WhatsApp is left usable and no draft is stranded.
 
 Record the result of each step, the Chrome version and the date in the pull request.

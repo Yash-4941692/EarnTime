@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { CHROME_LIMITATION_SENTENCE, MAX_EARN_FROM_MIN, MAX_UNLOCK_COST_MIN } from '../../core/constants';
-import type { Command } from '../../core/commands';
 import { matchingKeyword, channelAllowed } from '../../core/matchers';
 import { normalizeHostInput } from '../../core/domains';
 import { siteChangeLoosens, ratioLoosens } from '../../core/protection';
@@ -9,15 +8,18 @@ import { dayKey, formatDuration } from '../../core/time';
 import { dashboardView } from '../../core/view';
 import type { EarnState, LedgerEntry, ListName, Task } from '../../core/types';
 import { Button, Card, Empty, Field, InlineCode, Notice } from '../components';
-import { exportAudit, incognitoAllowed, runCommand, useNow, useStoredState } from '../lib/extension';
+import { exportAudit, incognitoAllowed, useNow, useStoredState } from '../lib/extension';
+import { AutoReplySection } from './AutoReply';
+import { createAct, type Act } from './useAct';
 
-type SectionId = 'time' | 'websites' | 'youtube' | 'whatsapp' | 'tasks' | 'protection';
+type SectionId = 'time' | 'websites' | 'youtube' | 'whatsapp' | 'autoreply' | 'tasks' | 'protection';
 
 const SECTIONS: Array<{ id: SectionId; label: string; hint: string }> = [
   { id: 'time', label: 'Time rules', hint: 'Earn ratio, balance, unlock cost' },
   { id: 'websites', label: 'Websites', hint: 'Productive, half and unproductive lists' },
   { id: 'youtube', label: 'YouTube', hint: 'Channel keywords for Productive Mode' },
   { id: 'whatsapp', label: 'WhatsApp', hint: 'Chats visible in Productive Mode' },
+  { id: 'autoreply', label: 'Auto-reply', hint: 'WhatsApp messages EarnTime sends for you' },
   { id: 'tasks', label: 'Daily tasks', hint: 'Goals that pay screen time' },
   { id: 'protection', label: 'Protection', hint: 'What is enforced and its limits' },
 ];
@@ -34,23 +36,11 @@ const LIST_HELP: Record<ListName, string> = {
   unproductive: 'Spends your balance. Blocked when the balance is empty or you are in debt.',
 };
 
-function useAct(setNotice: (n: { tone: 'success' | 'error'; text: string } | null) => void) {
-  return async (command: Command, success?: string): Promise<boolean> => {
-    const result = await runCommand(command);
-    if (result.ok) {
-      setNotice(success ? { tone: 'success', text: success } : null);
-      return true;
-    }
-    setNotice({ tone: 'error', text: result.message ?? 'That change was not saved.' });
-    return false;
-  };
-}
-
 function costText(minutes: number): string {
   return minutes > 0 ? `costs ${minutes} min` : 'free';
 }
 
-function TimeSection({ state, act }: { state: EarnState; act: ReturnType<typeof useAct> }) {
+function TimeSection({ state, act }: { state: EarnState; act: Act }) {
   const [from, setFrom] = useState(String(state.settings.earnFromMin));
   const [to, setTo] = useState(String(state.settings.earnToMin));
   const [cost, setCost] = useState(String(state.settings.unlockCostMin));
@@ -145,7 +135,7 @@ function TimeSection({ state, act }: { state: EarnState; act: ReturnType<typeof 
   );
 }
 
-function WebsitesSection({ state, act }: { state: EarnState; act: ReturnType<typeof useAct> }) {
+function WebsitesSection({ state, act }: { state: EarnState; act: Act }) {
   const [draft, setDraft] = useState('');
   const [target, setTarget] = useState<ListName>('unproductive');
   const [filter, setFilter] = useState('');
@@ -170,7 +160,7 @@ function WebsitesSection({ state, act }: { state: EarnState; act: ReturnType<typ
     <div className="space-y-5">
       <Card className="space-y-3">
         <form onSubmit={addSite} className="grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[1fr_180px_auto]">
-          <Field label="Add a website" htmlFor="site-add" hint={localError ?? (setupDone ? 'Adding to Productive or Half-productive costs the unlock cost. Adding to Unproductive is free.' : 'Free until setup is complete.')}>
+          <Field label="Add a website" htmlFor="site-add" hint={localError ?? (setupDone ? 'Adding a site is free. Removing an unproductive or half-productive one costs the unlock cost.' : 'Free until setup is complete.')}>
             <input id="site-add" className="field" placeholder="e.g. khanacademy.org" value={draft} onChange={(e) => setDraft(e.target.value)} />
           </Field>
           <Field label="List" htmlFor="site-list">
@@ -250,7 +240,7 @@ function WebsitesSection({ state, act }: { state: EarnState; act: ReturnType<typ
   );
 }
 
-function YouTubeSection({ state, act }: { state: EarnState; act: ReturnType<typeof useAct> }) {
+function YouTubeSection({ state, act }: { state: EarnState; act: Act }) {
   const [keyword, setKeyword] = useState('');
   const [test, setTest] = useState('');
   const keywords = state.settings.youtubeKeywords;
@@ -292,7 +282,7 @@ function YouTubeSection({ state, act }: { state: EarnState; act: ReturnType<type
             if (keyword.trim()) void act({ type: 'youtube.add', keyword }, `Added "${keyword.trim()}".`).then((ok) => ok && setKeyword(''));
           }}
         >
-          <Field label="Add a keyword" htmlFor="yt-kw" hint={state.setupDone ? 'Adding costs the unlock cost.' : undefined}>
+          <Field label="Add a keyword" htmlFor="yt-kw" hint="Free to add and remove: keywords never unlock a site.">
             <input id="yt-kw" className="field" value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="e.g. Organic Chemistry" />
           </Field>
           <div className="flex items-end">
@@ -314,7 +304,7 @@ function YouTubeSection({ state, act }: { state: EarnState; act: ReturnType<type
   );
 }
 
-function WhatsAppSection({ state, act }: { state: EarnState; act: ReturnType<typeof useAct> }) {
+function WhatsAppSection({ state, act }: { state: EarnState; act: Act }) {
   const [chat, setChat] = useState('');
   const chats = state.settings.whatsappChats;
   return (
@@ -346,7 +336,7 @@ function WhatsAppSection({ state, act }: { state: EarnState; act: ReturnType<typ
             if (chat.trim()) void act({ type: 'whatsapp.add', chat }, `Added "${chat.trim()}".`).then((ok) => ok && setChat(''));
           }}
         >
-          <Field label="Add a chat name" htmlFor="wa-chat" hint={state.setupDone ? 'Adding costs the unlock cost.' : undefined}>
+          <Field label="Add a chat name" htmlFor="wa-chat" hint="Free to add and remove: this list never unlocks a site.">
             <input id="wa-chat" className="field" value={chat} onChange={(e) => setChat(e.target.value)} placeholder="Exact name as shown in WhatsApp" />
           </Field>
           <div className="flex items-end">
@@ -358,7 +348,7 @@ function WhatsAppSection({ state, act }: { state: EarnState; act: ReturnType<typ
   );
 }
 
-function TasksSection({ state, act }: { state: EarnState; act: ReturnType<typeof useAct> }) {
+function TasksSection({ state, act }: { state: EarnState; act: Act }) {
   const now = useNow(60_000);
   const [title, setTitle] = useState('');
   const [reward, setReward] = useState('5');
@@ -591,7 +581,7 @@ export function Settings() {
     return SECTIONS.some((s) => s.id === hash) ? hash : 'time';
   });
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
-  const act = useAct(setNotice);
+  const act = createAct(setNotice);
 
   useEffect(() => {
     const onHash = () => {
@@ -613,6 +603,8 @@ export function Settings() {
         return <YouTubeSection state={state} act={act} />;
       case 'whatsapp':
         return <WhatsAppSection state={state} act={act} />;
+      case 'autoreply':
+        return <AutoReplySection state={state} act={act} />;
       case 'tasks':
         return <TasksSection state={state} act={act} />;
       case 'protection':

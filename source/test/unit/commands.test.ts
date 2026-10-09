@@ -58,23 +58,42 @@ test('before setup, changes are free', () => {
   assert.equal(state.balanceMs, 0);
 });
 
-test('after setup, adding a productive site costs the unlock cost; adding an unproductive site is free', () => {
+test('after setup, adding a site to any list is free: it was untracked, so nothing is unlocked', () => {
   const state = freshState(true);
   state.balanceMs = 30 * MIN;
-  assert.equal(applyCommand(state, { type: 'site.add', list: 'unproductive', host: 'reddit.com' }, T0).ok, true);
-  assert.equal(state.balanceMs, 30 * MIN);
-  const result = applyCommand(state, { type: 'site.add', list: 'productive', host: 'nptel.ac.in' }, T0);
-  assert.equal(result.ok, true);
-  assert.equal(state.balanceMs, 20 * MIN);
+  for (const list of ['productive', 'half', 'unproductive'] as const) {
+    const host = { productive: 'nptel.ac.in', half: 'medium.com', unproductive: 'reddit.com' }[list];
+    assert.equal(applyCommand(state, { type: 'site.add', list, host }, T0).ok, true, list);
+  }
+  assert.equal(state.balanceMs, 30 * MIN, 'no unlock cost for listing a site');
   assert.ok(state.rules.productive.includes('nptel.ac.in'));
+  assert.equal(state.ledger.some((e) => e.kind === 'unlock'), false, 'no unlock was charged');
+});
+
+test('removing a restricted site costs the unlock cost; removing a productive site is free', () => {
+  const state = freshState(true);
+  state.balanceMs = 30 * MIN;
+  assert.equal(applyCommand(state, { type: 'site.remove', host: 'instagram.com' }, T0).ok, true);
+  assert.equal(state.balanceMs, 20 * MIN, 'dropping an unproductive site lifts a block, so it costs');
+  assert.equal(applyCommand(state, { type: 'site.remove', host: 'khanacademy.org' }, T0).ok, true);
+  assert.equal(state.balanceMs, 20 * MIN, 'dropping a productive site is stricter, so it is free');
   assert.ok(state.ledger.some((e) => e.kind === 'unlock' && e.ms === 10 * MIN));
+});
+
+test('marking an unproductive site productive costs; marking it unproductive again is free', () => {
+  const state = freshState(true);
+  state.balanceMs = 30 * MIN;
+  assert.equal(applyCommand(state, { type: 'site.move', host: 'instagram.com', to: 'productive' }, T0).ok, true);
+  assert.equal(state.balanceMs, 20 * MIN, 'unproductive → productive costs');
+  assert.equal(applyCommand(state, { type: 'site.move', host: 'instagram.com', to: 'unproductive' }, T0).ok, true);
+  assert.equal(state.balanceMs, 20 * MIN, 'the way back is free');
 });
 
 test('an insufficient balance refuses the change without mutating anything', () => {
   const state = freshState(true);
   state.balanceMs = 4 * MIN;
   const before = JSON.stringify(state.rules);
-  const result = applyCommand(state, { type: 'site.add', list: 'productive', host: 'nptel.ac.in' }, T0);
+  const result = applyCommand(state, { type: 'site.remove', host: 'instagram.com' }, T0);
   assert.equal(result.ok, false);
   assert.equal(result.ok === false && result.code, 'insufficient');
   assert.equal(result.ok === false && result.needMs, 10 * MIN);
@@ -87,22 +106,30 @@ test('debt blocks every loosening change', () => {
   state.balanceMs = 0;
   state.debtMs = 5 * MIN;
   state.debtOriginMs = 5 * MIN;
-  const result = applyCommand(state, { type: 'site.add', list: 'productive', host: 'nptel.ac.in' }, T0);
+  const result = applyCommand(state, { type: 'site.remove', host: 'instagram.com' }, T0);
   assert.equal(result.ok === false && result.code, 'debt');
-  // Tightening is still possible.
+  assert.equal(applyCommand(state, { type: 'site.move', host: 'instagram.com', to: 'productive' }, T0).ok === false, true);
+  // Tightening is still possible, and so is listing a new site.
   assert.equal(applyCommand(state, { type: 'site.add', list: 'unproductive', host: 'reddit.com' }, T0).ok, true);
+  assert.equal(applyCommand(state, { type: 'site.add', list: 'productive', host: 'nptel.ac.in' }, T0).ok, true);
 });
 
-test('site cost rules: removing productive is free, removing unproductive or half costs', () => {
-  assert.equal(siteChangeLoosens('productive', 'neutral'), false);
+test('site cost rules: listing a site is always free, lifting a restriction costs', () => {
+  // A host on no list is not restricted, so putting it on a list unlocks nothing.
+  assert.equal(siteChangeLoosens('neutral', 'productive'), false);
+  assert.equal(siteChangeLoosens('neutral', 'half'), false);
+  assert.equal(siteChangeLoosens('neutral', 'unproductive'), false);
+  // Removing a site that was gated, or moving one up the ladder, costs.
   assert.equal(siteChangeLoosens('unproductive', 'neutral'), true);
   assert.equal(siteChangeLoosens('half', 'neutral'), true);
-  assert.equal(siteChangeLoosens('neutral', 'unproductive'), false);
-  assert.equal(siteChangeLoosens('neutral', 'half'), true);
   assert.equal(siteChangeLoosens('unproductive', 'half'), true);
-  assert.equal(siteChangeLoosens('half', 'unproductive'), false);
+  assert.equal(siteChangeLoosens('unproductive', 'productive'), true);
   assert.equal(siteChangeLoosens('half', 'productive'), true);
+  // Every downward move is stricter and free.
+  assert.equal(siteChangeLoosens('productive', 'neutral'), false);
   assert.equal(siteChangeLoosens('productive', 'half'), false);
+  assert.equal(siteChangeLoosens('productive', 'unproductive'), false);
+  assert.equal(siteChangeLoosens('half', 'unproductive'), false);
 });
 
 test('moving a site to a stricter list is free; to a looser list costs', () => {
@@ -149,23 +176,23 @@ test('unlock cost: lowering it costs the current price, raising it is free', () 
   assert.equal(state.settings.unlockCostMin, 5);
 });
 
-test('YouTube keywords: adding costs, removing is free, duplicates are refused case-insensitively', () => {
+test('YouTube keywords: adding and removing are free, duplicates are refused case-insensitively', () => {
   const state = freshState(true);
   state.balanceMs = 30 * MIN;
   assert.equal(applyCommand(state, { type: 'youtube.add', keyword: 'Quantum' }, T0).ok, true);
-  assert.equal(state.balanceMs, 20 * MIN);
+  assert.equal(state.balanceMs, 30 * MIN, 'keywords never gate a site, so adding one is free');
   assert.equal(applyCommand(state, { type: 'youtube.add', keyword: 'quantum' }, T0).ok === false, true);
   assert.equal(applyCommand(state, { type: 'youtube.remove', keyword: 'Quantum' }, T0).ok, true);
-  assert.equal(state.balanceMs, 20 * MIN);
+  assert.equal(state.balanceMs, 30 * MIN);
 });
 
-test('WhatsApp chats: exact names, costs to add, free to remove', () => {
+test('WhatsApp chats: exact names, free to add and to remove', () => {
   const state = freshState(true);
   state.balanceMs = 30 * MIN;
   assert.equal(applyCommand(state, { type: 'whatsapp.add', chat: 'Study Group' }, T0).ok, true);
-  assert.equal(state.balanceMs, 20 * MIN);
+  assert.equal(state.balanceMs, 30 * MIN);
   assert.equal(applyCommand(state, { type: 'whatsapp.remove', chat: 'Study Group' }, T0).ok, true);
-  assert.equal(state.balanceMs, 20 * MIN);
+  assert.equal(state.balanceMs, 30 * MIN);
 });
 
 test('tasks: adding and raising rewards costs, deleting and lowering is free', () => {

@@ -374,25 +374,36 @@ test('the audit export lists hosts and minutes but never page URLs', async () =>
   assert.equal(text.includes('https://'), false);
 });
 
-test('a rule change that loosens the rules costs live balance; tightening is free', async () => {
+test('listing a site is free on every list; lifting a restriction costs live balance', async () => {
   const b = newBrowser();
   await installAndSetup(b, { initialBalanceMin: 30 });
   let r = await command(b, { type: 'site.add', list: 'productive', host: 'coursera.org' });
   assert.equal(r.ok, true, JSON.stringify(r));
-  assert.equal(balanceMin(b), 20, 'adding a productive site costs the 10-minute unlock cost');
+  assert.equal(balanceMin(b), 30, 'adding a productive site is free');
   r = await command(b, { type: 'site.add', list: 'unproductive', host: 'tiktok.com' });
   assert.equal(r.ok, true);
-  assert.equal(balanceMin(b), 20, 'adding an unproductive site is free');
+  assert.equal(balanceMin(b), 30, 'adding an unproductive site is free');
+  r = await command(b, { type: 'youtube.add', keyword: 'Organic Chemistry' });
+  assert.equal(r.ok, true);
+  r = await command(b, { type: 'whatsapp.add', chat: 'Study Group' });
+  assert.equal(r.ok, true);
+  assert.equal(balanceMin(b), 30, 'keywords and chats are free to add');
+  r = await command(b, { type: 'site.move', host: 'tiktok.com', to: 'productive' });
+  assert.equal(r.ok, true);
+  assert.equal(balanceMin(b), 20, 'making an unproductive site productive costs the unlock cost');
+  r = await command(b, { type: 'site.remove', host: 'instagram.com' });
+  assert.equal(r.ok, true);
+  assert.equal(balanceMin(b), 10, 'dropping an unproductive site lifts a block, so it costs');
 });
 
 test('a changed setting that the balance cannot pay is refused without side effects', async () => {
   const b = newBrowser();
   await installAndSetup(b, { initialBalanceMin: 4 });
-  const r = await command(b, { type: 'site.add', list: 'productive', host: 'coursera.org' });
+  const r = await command(b, { type: 'site.move', host: 'instagram.com', to: 'productive' });
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'insufficient');
   assert.equal(balanceMin(b), 4);
-  assert.ok(!b.storedState().rules.productive.includes('coursera.org'));
+  assert.ok(b.storedState().rules.unproductive.includes('instagram.com'));
 });
 
 test('an open study tab that is replaced keeps its YouTube mode', async () => {
@@ -443,4 +454,188 @@ test('a fresh install opens the setup wizard; updates do not reopen it', async (
   await command(b, { type: 'setup.complete', payload: setupPayload({ initialBalanceMin: 5 }) });
   await b.installExtension('update');
   assert.equal(setupTabs().length, 1, 'an update after setup does not open setup again');
+});
+
+// ------------------------------------------------------------------ WhatsApp auto-reply
+
+test('auto-reply: a fallback answers personal chats, never a group and never an allowed chat', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  const added = await command(b, {
+    type: 'autoreply.add',
+    rule: { trigger: 'incoming', targets: [], message: 'I am Jarvis, messaging in place of Yash.', repeat: 'once' },
+  });
+  assert.equal(added.ok, true, JSON.stringify(added));
+  const tabId = await b.openTab('https://web.whatsapp.com/', { active: true });
+
+  // Rahul is a personal chat; "Progress Check" is a group; "Mom" is on the Productive Mode list.
+  let reply = await b.sendFromTab(tabId, {
+    type: 'wa.poll',
+    unread: ['Rahul', 'Progress Check', 'Mom'],
+    groups: ['Progress Check'],
+  });
+  assert.equal(reply.ok, true);
+  assert.deepEqual(reply.jobs.map((j: any) => j.chat), ['Rahul']);
+  assert.equal(reply.jobs[0].message, 'I am Jarvis, messaging in place of Yash.');
+
+  // "Once ever" means the next message from Rahul gets nothing.
+  reply = await b.sendFromTab(tabId, { type: 'wa.poll', unread: ['Rahul'] });
+  assert.deepEqual(reply.jobs, []);
+
+  // Another personal chat still gets its first (and only) introduction.
+  reply = await b.sendFromTab(tabId, { type: 'wa.poll', unread: ['Priya'] });
+  assert.deepEqual(reply.jobs.map((j: any) => j.chat), ['Priya']);
+});
+
+test('auto-reply: a rule naming a group does reach that group, and only it', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  await command(b, {
+    type: 'autoreply.add',
+    rule: { trigger: 'incoming', targets: ['Progress Check'], message: 'Noted, will reply later.', repeat: 'daily' },
+  });
+  const tabId = await b.openTab('https://web.whatsapp.com/', { active: true });
+  let reply = await b.sendFromTab(tabId, { type: 'wa.poll', unread: ['progress check'], groups: ['progress check'] });
+  assert.deepEqual(reply.jobs.map((j: any) => j.chat), ['progress check'], 'matching ignores letter case');
+
+  reply = await b.sendFromTab(tabId, { type: 'wa.poll', unread: ['Another Group'], groups: ['Another Group'] });
+  assert.deepEqual(reply.jobs, [], 'a named rule is not a fallback for other groups');
+});
+
+test('auto-reply: ticking a task queues an announcement and nudges the WhatsApp tab at once', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 30 });
+  await command(b, { type: 'task.add', title: 'Chemistry Lecture', rewardMin: 5, recurring: true });
+  await command(b, {
+    type: 'autoreply.add',
+    rule: { trigger: 'task', targets: ['Progress Check'], message: "Yash Boss completed his today's {task}", repeat: 'daily' },
+  });
+  const taskId = b.storedState().tasks[0].id;
+  const tabId = await b.openTab('https://web.whatsapp.com/', { active: true });
+
+  const nudgesBefore = b.tabMessages.length;
+  const toggle = await command(b, { type: 'task.toggle', id: taskId });
+  assert.equal(toggle.ok, true);
+  assert.ok(b.tabMessages.length > nudgesBefore, 'the worker pushed to the WhatsApp tab without waiting for its throttled timer');
+  assert.deepEqual(b.tabMessages[b.tabMessages.length - 1].message, { type: 'wa.push' });
+
+  const reply = await b.sendFromTab(tabId, { type: 'wa.poll', unread: [] });
+  assert.equal(reply.jobs.length, 1);
+  assert.equal(reply.jobs[0].chat, 'Progress Check');
+  assert.equal(reply.jobs[0].message, "Yash Boss completed his today's Chemistry Lecture");
+
+  await b.sendFromTab(tabId, {
+    type: 'wa.result',
+    jobId: reply.jobs[0].id,
+    chat: reply.jobs[0].chat,
+    ruleId: reply.jobs[0].ruleId,
+    ok: true,
+    text: reply.jobs[0].message,
+  });
+  const log = b.storedState().autoReplyLog;
+  assert.equal(log.length, 1);
+  assert.equal(log[0].ok, true);
+  assert.ok(log[0].detail.includes('Chemistry Lecture'), log[0].detail);
+
+  // Un-ticking and re-ticking the same day must not announce it twice.
+  await command(b, { type: 'task.toggle', id: taskId });
+  await command(b, { type: 'task.toggle', id: taskId });
+  const again = await b.sendFromTab(tabId, { type: 'wa.poll', unread: [] });
+  assert.deepEqual(again.jobs, [], 'a task that paid nothing announces nothing');
+});
+
+test('auto-reply: a scheduled rule sends once a day while WhatsApp is open inside its window', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  // The simulated day starts at 09:00 local time.
+  await command(b, {
+    type: 'autoreply.add',
+    rule: { trigger: 'window', targets: ['Progress Check'], message: 'Good morning', from: '08:00', to: '10:00', repeat: 'every' },
+  });
+  const tabId = await b.openTab('https://web.whatsapp.com/', { active: true });
+  let reply = await b.sendFromTab(tabId, { type: 'wa.poll', unread: [] });
+  assert.deepEqual(reply.jobs.map((j: any) => j.message), ['Good morning']);
+  reply = await b.sendFromTab(tabId, { type: 'wa.poll', unread: [] });
+  assert.deepEqual(reply.jobs, [], 'a scheduled rule fires once per local day, whatever its repeat setting');
+});
+
+test('auto-reply: a queued message waits for WhatsApp and only a WhatsApp tab may drive it', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 30 });
+  await command(b, {
+    type: 'autoreply.add',
+    rule: { trigger: 'task', targets: ['Progress Check'], message: 'Done', repeat: 'daily' },
+  });
+  await command(b, { type: 'task.add', title: 'DPP', rewardMin: 5, recurring: true });
+  await command(b, { type: 'task.toggle', id: b.storedState().tasks[0].id });
+  assert.equal(b.storedState().autoReplyQueue.length, 1, 'the message waits because WhatsApp is not open');
+
+  const other = await b.openTab('https://www.khanacademy.org/', { active: true });
+  const refused = await b.sendFromTab(other, { type: 'wa.poll', unread: [] });
+  assert.deepEqual(refused.jobs, [], 'a non-WhatsApp tab is never handed the composer');
+  assert.equal(b.storedState().autoReplyQueue.length, 1);
+
+  const wa = await b.openTab('https://web.whatsapp.com/', { active: true });
+  const reply = await b.sendFromTab(wa, { type: 'wa.poll', unread: [] });
+  assert.deepEqual(reply.jobs.map((j: any) => j.chat), ['Progress Check']);
+  assert.equal(b.storedState().autoReplyQueue.length, 0);
+});
+
+test('auto-reply: a failed send is logged, and pausing a rule cancels what it had queued', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  const added = await command(b, {
+    type: 'autoreply.add',
+    rule: { trigger: 'incoming', targets: [], message: 'Studying.', repeat: 'every' },
+  });
+  const ruleId = added.data;
+  const tabId = await b.openTab('https://web.whatsapp.com/', { active: true });
+  const reply = await b.sendFromTab(tabId, { type: 'wa.poll', unread: ['Rahul'] });
+  assert.equal(reply.jobs.length, 1);
+  await b.sendFromTab(tabId, {
+    type: 'wa.result',
+    jobId: reply.jobs[0].id,
+    chat: 'Rahul',
+    ruleId,
+    ok: false,
+    error: 'No WhatsApp chat or group is named exactly "Rahul"',
+  });
+  const log = b.storedState().autoReplyLog;
+  assert.equal(log[0].ok, false);
+  assert.ok(log[0].detail.includes('named exactly'), log[0].detail);
+
+  await command(b, { type: 'autoreply.toggle', id: ruleId });
+  assert.equal(b.storedState().autoReplies[0].enabled, false);
+  const after = await b.sendFromTab(tabId, { type: 'wa.poll', unread: ['Someone New'] });
+  assert.deepEqual(after.jobs, [], 'a paused rule sends nothing');
+});
+
+// ------------------------------------------------------------------ setup
+
+test('an unfinished setup is offered again on every browser start', async () => {
+  const b = newBrowser();
+  await b.installExtension('install');
+  const setupTabs = () => [...b.tabs.values()].filter((t) => t.url === `${EXT_ORIGIN}/setup.html`);
+  assert.equal(setupTabs().length, 1, 'setup opened on install');
+
+  await b.closeTab(setupTabs()[0].id as number);
+  assert.equal(setupTabs().length, 0, 'the user closed the wizard without finishing');
+
+  await b.restartBrowser();
+  assert.equal(setupTabs().length, 1, 'the next browser start reopens it');
+  await b.restartBrowser();
+  assert.equal(setupTabs().length, 1, 'one setup tab per browser start, never two');
+
+  await command(b, { type: 'setup.complete', payload: setupPayload({ initialBalanceMin: 5 }) });
+  await b.restartBrowser();
+  assert.equal(setupTabs().length, 0, 'a finished setup is never reopened');
+});
+
+test('an update that finds setup unfinished reopens the wizard instead of skipping it', async () => {
+  const b = newBrowser();
+  await b.installExtension('install');
+  const setupTabs = () => [...b.tabs.values()].filter((t) => t.url === `${EXT_ORIGIN}/setup.html`);
+  await b.closeTab(setupTabs()[0].id as number);
+  await b.installExtension('update');
+  assert.equal(setupTabs().length, 1, 'reloading an unpacked extension reports "update" and must not strand the user');
 });

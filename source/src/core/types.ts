@@ -15,6 +15,11 @@ export interface Settings {
   unlockCostMin: number;
   youtubeKeywords: string[];
   whatsappChats: string[];
+  /**
+   * Group chats, by exact name. Auto-reply fallback rules never message a group, and this list is
+   * how EarnTime knows which chats are groups; the page's own detection is only a second signal.
+   */
+  whatsappGroups: string[];
 }
 
 export interface Rules {
@@ -33,6 +38,68 @@ export interface Task {
   completedOn: string | null;
   /** Local day key of the last reward (recurring) or the first and only reward (one-off). */
   rewardedOn: string | null;
+}
+
+/**
+ * What makes a WhatsApp auto-reply fire.
+ *  - `incoming`: a new message arrived in a matching chat.
+ *  - `task`: a daily task was ticked off.
+ *  - `window`: WhatsApp Web is open inside the rule's time-of-day window.
+ */
+export type AutoReplyTrigger = 'incoming' | 'task' | 'window';
+
+/** How often one rule may message one chat: every trigger, once a local day, or once ever. */
+export type AutoReplyRepeat = 'every' | 'daily' | 'once';
+
+export interface AutoReplyRule {
+  id: string;
+  /** Label shown in settings. */
+  name: string;
+  enabled: boolean;
+  trigger: AutoReplyTrigger;
+  /**
+   * Exact chat/group names (matched like the Productive Mode chat list). A rule that names chats
+   * sends to exactly those, group or personal.
+   *
+   * Empty makes the rule a *fallback*: it answers personal chats that no named rule claimed, never
+   * a group and never a chat on the Productive Mode list. Only `incoming` rules may be fallbacks,
+   * so a task or scheduled rule can never message the whole contact list.
+   */
+  targets: string[];
+  /** Message body. `{task}` becomes the task just completed and `{time}` the local clock time. */
+  message: string;
+  /** For `task`: only these task names fire the rule. Empty means any completed task. */
+  taskTitles: string[];
+  /** Start of the daily time-of-day window, "HH:MM" local. Empty means always on. */
+  from: string;
+  /** End of the window, "HH:MM" local. A window may cross midnight (for example 22:00–06:00). */
+  to: string;
+  /** Minimum minutes between two sends to the same chat under this rule (0 disables the cooldown). */
+  cooldownMin: number;
+  /** How often this rule may message one chat. */
+  repeat: AutoReplyRepeat;
+}
+
+/** A message waiting to be handed to a WhatsApp Web tab. */
+export interface AutoReplyJob {
+  id: string;
+  ruleId: string;
+  chat: string;
+  message: string;
+  trigger: AutoReplyTrigger;
+  createdAt: number;
+  /** The job is dropped after this instant, so a closed browser cannot queue sends forever. */
+  expiresAt: number;
+}
+
+export interface AutoReplyLogEntry {
+  id: number;
+  at: number;
+  chat: string;
+  ruleId: string;
+  ok: boolean;
+  /** Message sent, or the reason the send failed. */
+  detail: string;
 }
 
 export interface DayStats {
@@ -166,6 +233,15 @@ export interface EarnState {
   debtOriginMs: number;
   debtSince: number | null;
   tasks: Task[];
+  /** WhatsApp auto-reply rules (see core/autoreply.ts). */
+  autoReplies: AutoReplyRule[];
+  /** Messages waiting for a WhatsApp Web tab to collect and send them. */
+  autoReplyQueue: AutoReplyJob[];
+  /** Most recent send attempts, newest last. */
+  autoReplyLog: AutoReplyLogEntry[];
+  nextAutoReplyLogId: number;
+  /** Per rule+chat delivery bookkeeping, keyed `ruleId|normalised chat name`. */
+  autoReplySent: Record<string, { at: number; day: string }>;
   days: Record<string, DayStats>;
   ledger: LedgerEntry[];
   nextLedgerId: number;
