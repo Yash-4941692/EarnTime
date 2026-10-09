@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { analyticsView } from '../../core/analytics';
 import { CHROME_LIMITATION_SENTENCE, MAX_EARN_FROM_MIN, MAX_UNLOCK_COST_MIN } from '../../core/constants';
 import { matchingKeyword, channelAllowed } from '../../core/matchers';
 import { normalizeHostInput } from '../../core/domains';
@@ -7,17 +8,19 @@ import { isDoneToday } from '../../core/tasks';
 import { dayKey, formatDuration } from '../../core/time';
 import { dashboardView } from '../../core/view';
 import type { EarnState, LedgerEntry, ListName, Task } from '../../core/types';
-import { Button, Card, Empty, Field, InlineCode, Notice } from '../components';
-import { exportAudit, incognitoAllowed, useNow, useStoredState } from '../lib/extension';
+import { EstimateNote, SiteList, StudyShare, TrendChart, deltaLabel, trendSentence } from '../analytics';
+import { Button, Card, Empty, Field, InlineCode, Notice, Stat } from '../components';
+import { exportAudit, incognitoAllowed, screenTimeAccess, setScreenTimeAccess, useLiveTick, useNow, useStoredState } from '../lib/extension';
 import { createAct, type Act } from './useAct';
 
-type SectionId = 'time' | 'websites' | 'youtube' | 'tasks' | 'protection';
+type SectionId = 'time' | 'websites' | 'youtube' | 'tasks' | 'analytics' | 'protection';
 
 const SECTIONS: Array<{ id: SectionId; label: string; hint: string }> = [
   { id: 'time', label: 'Time rules', hint: 'Earn ratio, balance, unlock cost' },
   { id: 'websites', label: 'Websites', hint: 'Productive, half and unproductive lists' },
   { id: 'youtube', label: 'YouTube', hint: 'Channel keywords for Productive Mode' },
   { id: 'tasks', label: 'Daily tasks', hint: 'Goals that pay screen time' },
+  { id: 'analytics', label: 'Analytics', hint: 'Screen time per site and your trend' },
   { id: 'protection', label: 'Protection', hint: 'What is enforced and its limits' },
 ];
 
@@ -406,6 +409,183 @@ function TasksSection({ state, act }: { state: EarnState; act: Act }) {
   );
 }
 
+/**
+ * Screen time and analytics.
+ *
+ * Two different questions are answered here, and they are labelled differently because they are
+ * measured differently: what EarnTime charged (exact, and what moves the balance) and where the day
+ * actually went (screen time per site, part of which can be an estimate reconstructed from browsing
+ * history after an interruption).
+ */
+function AnalyticsSection({ state }: { state: EarnState }) {
+  const now = useNow(1000);
+  // The account figures keep ticking while this page is open, exactly like the popup.
+  useLiveTick(1000);
+  const analytics = useMemo(() => analyticsView(state, now), [state, now]);
+  const view = dashboardView(state, now);
+  const [granted, setGranted] = useState<boolean | null>(state.historyGranted);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void screenTimeAccess().then((value) => {
+      if (alive) setGranted(value);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const ask = async (next: boolean) => {
+    setBusy(true);
+    setError(null);
+    // Must be called straight from the click: Chrome only shows the prompt during a user gesture.
+    const result = await setScreenTimeAccess(next);
+    setBusy(false);
+    if (result === null) {
+      setError('EarnTime did not respond. Try again in a moment.');
+      return;
+    }
+    setGranted(result);
+  };
+
+  const accessKnown = granted !== null;
+  const accessOn = granted === true;
+
+  return (
+    <div className="space-y-5">
+      <Card className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold text-slate-50">Screen-time access</h2>
+            <p className="mt-1 max-w-prose text-[12.5px] leading-snug text-slate-400">
+              Chrome's optional <span className="font-mono text-[11.5px] text-slate-300">history</span> permission. With it, EarnTime can
+              reconstruct the time it could not watch itself — a suspended worker, a closed browser, the extension disabled — and show which
+              sites that time went to. Without it, only time EarnTime observed live is counted, and gaps are charged conservatively from the
+              last checkpoint.
+            </p>
+          </div>
+          <div className="shrink-0">
+            {accessOn ? (
+              <Button variant="danger" onClick={() => void ask(false)} disabled={busy}>
+                {busy ? 'Working…' : 'Remove access'}
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={() => void ask(true)} disabled={busy}>
+                {busy ? 'Asking Chrome…' : 'Grant access'}
+              </Button>
+            )}
+          </div>
+        </div>
+        <p className="text-[12.5px] text-slate-400">
+          Current status:{' '}
+          {!accessKnown ? (
+            <span className="text-slate-500">checking…</span>
+          ) : accessOn ? (
+            <span className="text-emerald-300">granted — history fills the gaps</span>
+          ) : (
+            <span className="text-amber-200">not granted — live counting only</span>
+          )}
+          {accessKnown && accessOn !== state.historyGranted ? (
+            <span className="text-slate-500"> (recorded state says {state.historyGranted ? 'granted' : 'not granted'}; the worker corrects it on its next start)</span>
+          ) : null}
+        </p>
+        {error ? <Notice tone="error">{error}</Notice> : null}
+        <p className="text-[11.5px] leading-snug text-slate-500">
+          EarnTime stores hostnames and minutes only — never page addresses, titles or search terms — and it makes no network requests.
+        </p>
+      </Card>
+
+      <Card className="space-y-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-[15px] font-semibold text-slate-50">Today · {analytics.dayKey}</h2>
+          <span className="text-[12px] text-slate-500">{trendSentence(analytics)}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Stat label="Screen time" value={formatDuration(analytics.screenMs)} tone="info" hint="in the foreground" />
+          <Stat label="Study time" value={formatDuration(analytics.today.prodMs + analytics.today.halfProdMs)} tone="productive" hint="credited" />
+          <Stat label="Charged" value={formatDuration(analytics.today.usedMs)} tone="unproductive" hint="spent balance" />
+          <Stat label="Earned" value={formatDuration(analytics.today.earnedMs)} tone="productive" hint="incl. task rewards" />
+        </div>
+        <StudyShare analytics={analytics} />
+        <div className="grid grid-cols-2 gap-2 text-[12px] text-slate-400 sm:grid-cols-4">
+          <span>
+            Billed <strong className="tabular-nums text-slate-200">{formatDuration(analytics.billedMs)}</strong>
+          </span>
+          <span>
+            Unbilled <strong className="tabular-nums text-slate-200">{formatDuration(analytics.unbilledMs)}</strong>
+          </span>
+          <span>
+            Exact <strong className="tabular-nums text-slate-200">{formatDuration(analytics.exactScreenMs)}</strong>
+          </span>
+          <span>
+            Estimated <strong className="tabular-nums text-slate-200">{formatDuration(analytics.estimatedScreenMs)}</strong>
+          </span>
+        </div>
+        <EstimateNote analytics={analytics} />
+        {!analytics.historyGranted ? (
+          <Notice tone="warn">
+            Screen-time access is off, so gaps EarnTime could not observe are missing from these numbers rather than estimated. Grant it above to
+            fill them in.
+          </Notice>
+        ) : null}
+      </Card>
+
+      <Card className="space-y-3">
+        <div>
+          <h2 className="text-[15px] font-semibold text-slate-50">Screen time by site</h2>
+          <p className="mt-1 text-[12.5px] text-slate-400">
+            Every site that was in the foreground today, including the ones EarnTime does not bill. Colour shows how the site is classified right
+            now.
+          </p>
+        </div>
+        <SiteList sites={analytics.sites} totalMs={analytics.screenMs} otherMs={analytics.otherSitesMs} otherCount={analytics.otherSitesCount} />
+      </Card>
+
+      <Card className="space-y-3">
+        <div>
+          <h2 className="text-[15px] font-semibold text-slate-50">Last {analytics.trend.length} days</h2>
+          <p className="mt-1 text-[12.5px] text-slate-400">Screen time per day, stacked by how it was counted. Days EarnTime has no record of are empty.</p>
+        </div>
+        <TrendChart points={analytics.trend} ariaLabel={`Screen time per day for the last ${analytics.trend.length} days`} />
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Stat
+            compact
+            label="vs yesterday"
+            value={analytics.deltaVsYesterdayMs === null ? '—' : deltaLabel(analytics.deltaVsYesterdayMs)}
+            tone={analytics.deltaVsYesterdayMs !== null && analytics.deltaVsYesterdayMs > 0 ? 'unproductive' : 'productive'}
+            hint="screen time"
+          />
+          <Stat
+            compact
+            label={`vs ${analytics.trend.length}-day average`}
+            value={analytics.deltaVsAverageMs === null ? '—' : deltaLabel(analytics.deltaVsAverageMs)}
+            tone={analytics.deltaVsAverageMs !== null && analytics.deltaVsAverageMs > 0 ? 'unproductive' : 'productive'}
+            hint={`avg ${formatDuration(analytics.averageScreenMs)}`}
+          />
+          <Stat compact label="Earned (window)" value={formatDuration(analytics.totals.earnedMs)} tone="productive" hint="study + tasks" />
+          <Stat compact label="Used (window)" value={formatDuration(analytics.totals.usedMs)} tone="unproductive" hint="charged" />
+        </div>
+      </Card>
+
+      <Card className="space-y-3">
+        <h2 className="text-[15px] font-semibold text-slate-50">Your account right now</h2>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Stat label="Remaining" value={formatDuration(view.balanceMs)} tone={view.balanceMs > 0 ? 'productive' : 'paused'} hint="spendable screen time" />
+          <Stat label="Debt" value={formatDuration(view.debtMs)} tone={view.debtMs > 0 ? 'debt' : 'neutral'} hint={view.debtMs > 0 ? 'only productive sites open' : 'none'} />
+          <Stat label="Earned today" value={formatDuration(view.earnedToday)} tone="productive" hint="live" />
+          <Stat label="Used today" value={formatDuration(view.usedToday)} tone="unproductive" hint="live" />
+        </div>
+        <p className="text-[11.5px] leading-snug text-slate-500">
+          These four figures move while this page is open: the popup and this page ask the worker for a checkpoint once a second, and opening an
+          EarnTime page no longer pauses the counting.
+        </p>
+      </Card>
+    </div>
+  );
+}
+
 function ProtectionSection({ state }: { state: EarnState }) {
   const [incognito, setIncognito] = useState<boolean | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -556,6 +736,8 @@ export function Settings() {
         return <YouTubeSection state={state} act={act} />;
       case 'tasks':
         return <TasksSection state={state} act={act} />;
+      case 'analytics':
+        return <AnalyticsSection state={state} />;
       case 'protection':
         return <ProtectionSection state={state} />;
     }

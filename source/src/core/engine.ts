@@ -9,7 +9,7 @@
 import { IDLE_DETECTION_MS, RECONCILE_GAP_MS } from './constants';
 import { dayKey, splitByLocalDay } from './time';
 import { countsForAccounting, roleOf } from './roles';
-import { addLedger, creditEarned, incurDebt, spendFromBalance, statsFor, pruneDays } from './wallet';
+import { addLedger, addScreenTime, creditEarned, incurDebt, spendFromBalance, statsFor, pruneDays } from './wallet';
 import type { EarnState, LiveStatus, Observation, Role, Snapshot } from './types';
 
 export type AdvanceResult =
@@ -45,9 +45,29 @@ export function creditFor(state: EarnState, ms: number): number {
  * mode 'live': spending is capped at the balance (no debt).
  * mode 'gap' : spending beyond the balance becomes debt (reconciliation only).
  */
-function chargeSlice(state: EarnState, role: Role, from: number, to: number, mode: 'live' | 'gap'): SliceResult {
+function chargeSlice(
+  state: EarnState,
+  role: Role,
+  from: number,
+  to: number,
+  mode: 'live' | 'gap',
+  observedHost?: string | null,
+): SliceResult {
   const ms = to - from;
-  if (ms <= 0 || role.k === 'none' || role.k === 'neutral') return { ...ZERO_SLICE };
+  if (ms <= 0) return { ...ZERO_SLICE };
+  // Screen time is recorded before the billing rules are applied, so a day's per-site breakdown also
+  // covers the sites EarnTime does not charge for. Time reconstructed from history after an
+  // interruption is marked as estimated: it is capped per visit and cannot be exact.
+  //
+  // "Not at the screen" is not screen time: a background window, an idle user and a locked screen
+  // are excluded, exactly as they are excluded from billing. A page that is in front of the user but
+  // not classifiable (an internal page, a half-productive site with no mode chosen yet, content
+  // closed by the YouTube filter) IS screen time — that is the honest answer to "where did the day
+  // go", and it is why this number can be larger than the time EarnTime charged.
+  const away = role.k === 'none' && (role.why === 'background' || role.why === 'idle' || role.why === 'locked');
+  const screenHost = 'host' in role && role.host ? role.host : (observedHost ?? null);
+  if (screenHost && !away) addScreenTime(state, dayKey(from), screenHost, ms, mode === 'gap');
+  if (role.k === 'none' || role.k === 'neutral') return { ...ZERO_SLICE };
   const at = to;
   const stats = statsFor(state, dayKey(from));
   const mergeable = mode === 'live';
@@ -95,11 +115,18 @@ function chargeSlice(state: EarnState, role: Role, from: number, to: number, mod
 }
 
 /** Charges [from, to) to a role, splitting at local midnights. */
-export function chargeInterval(state: EarnState, role: Role, from: number, to: number, mode: 'live' | 'gap'): SliceResult {
+export function chargeInterval(
+  state: EarnState,
+  role: Role,
+  from: number,
+  to: number,
+  mode: 'live' | 'gap',
+  observedHost?: string | null,
+): SliceResult {
   const total: SliceResult = { ...ZERO_SLICE };
   if (to <= from) return total;
   for (const slice of splitByLocalDay(from, to)) {
-    const part = chargeSlice(state, role, slice.from, slice.to, mode);
+    const part = chargeSlice(state, role, slice.from, slice.to, mode, observedHost);
     total.creditMs += part.creditMs;
     total.chargedMs += part.chargedMs;
     total.debtAddedMs += part.debtAddedMs;
@@ -134,7 +161,7 @@ export function advance(state: EarnState, obs: Observation, monoDeltaMs: number 
     let chargedMs = 0;
     if (monoDeltaMs !== null && monoDeltaMs > 0 && countsForAccounting(prev.role)) {
       const span = Math.min(monoDeltaMs, RECONCILE_GAP_MS);
-      chargedMs = chargeInterval(state, prev.role, now - span, now, 'live').chargedMs;
+      chargedMs = chargeInterval(state, prev.role, now - span, now, 'live', prev.host).chargedMs;
     }
     addLedger(
       state,
@@ -158,7 +185,7 @@ export function advance(state: EarnState, obs: Observation, monoDeltaMs: number 
     end = now - IDLE_DETECTION_MS;
   }
   if (end < lastAt) end = lastAt;
-  chargeInterval(state, prev.role, lastAt, end, 'live');
+  chargeInterval(state, prev.role, lastAt, end, 'live', prev.host);
   setLast(state, makeSnapshot(state, obs));
   pruneDays(state);
   return { kind: 'ok' };

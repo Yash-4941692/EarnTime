@@ -26,6 +26,8 @@ export function setupPayload(overrides: Partial<SetupPayload> = {}): SetupPayloa
     unproductive: ['instagram.com', 'reddit.com'],
     youtubeKeywords: ['JEE', 'NDA', 'Study', 'Learn', 'Education', 'PW'],
     tasks: [],
+    // The simulated user accepts screen-time access during setup unless a test says otherwise.
+    screenTimeAccess: true,
     ...overrides,
   };
 }

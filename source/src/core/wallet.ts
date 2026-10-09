@@ -19,6 +19,9 @@ export function emptyDayStats(): DayStats {
     repaidMs: 0,
     taskMs: 0,
     usedMs: 0,
+    hosts: {},
+    screenMs: 0,
+    estimatedScreenMs: 0,
   };
 }
 
@@ -29,6 +32,30 @@ export function statsFor(state: EarnState, key: string): DayStats {
     state.days[key] = stats;
   }
   return stats;
+}
+
+/** Maximum number of per-site rows kept for one day, so storage cannot grow without bound. */
+export const MAX_DAY_HOSTS = 60;
+
+/**
+ * Adds foreground screen time for one host. Screen time is recorded for every site, including the
+ * neutral ones EarnTime does not charge, because the analytics answer "where did the day go" — which
+ * is a bigger question than "what did EarnTime bill".
+ */
+export function addScreenTime(state: EarnState, key: string, host: string | null | undefined, ms: number, estimated: boolean): void {
+  if (ms <= 0) return;
+  const stats = statsFor(state, key);
+  stats.screenMs += ms;
+  if (estimated) stats.estimatedScreenMs += ms;
+  if (!host) return;
+  const hosts = stats.hosts ?? (stats.hosts = {});
+  hosts[host] = (hosts[host] ?? 0) + ms;
+  const keys = Object.keys(hosts);
+  if (keys.length <= MAX_DAY_HOSTS) return;
+  // Drop the smallest entries: a day is summarised by its biggest sites, not its long tail.
+  for (const smallest of keys.sort((a, b) => hosts[a] - hosts[b]).slice(0, keys.length - MAX_DAY_HOSTS)) {
+    delete hosts[smallest];
+  }
 }
 
 /** Keeps only the most recent DAY_RETENTION day buckets. */

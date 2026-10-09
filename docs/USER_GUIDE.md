@@ -12,19 +12,21 @@ EarnTime turns study time into screen time. You study on productive sites, earn 
 
 ## Setup (once)
 
-The setup wizard opens the first time. It has seven steps:
+The setup wizard opens the first time. It has eight steps:
 
 1. **Welcome**: the loop is Study → Earn → Use → Overspend → Repay.
 2. **Earn rule**: default **60 productive minutes earn 5 minutes**. Also set the **unlock cost** (default 10 min, see *Protection* below).
 3. **Starting balance**: default 0. Setup runs once, so the starting balance cannot be reset later.
-4. **Websites**: productive sites (earn), half-productive sites (you choose the mode each visit; YouTube and WhatsApp are included by default), and unproductive sites (spend time; Instagram, Facebook, X, Reddit and Netflix are suggested).
-5. **YouTube keywords**: default `JEE`, `NDA`, `Study`, `Learn`, `Education`, `PW`.
-6. **Daily tasks** (optional): goals that pay screen time.
-7. **Review**, then **Finish setup**.
+4. **Screen-time access**: EarnTime asks Chrome for the optional `history` permission. Granting it lets EarnTime reconstruct the time it could not watch itself and show per-site screen time (see *Screen time and analytics*). Declining is fully supported and setup continues either way.
+5. **Websites**: productive sites (earn), half-productive sites (you choose the mode each visit; YouTube and WhatsApp are included by default), and unproductive sites (spend time; Instagram, Facebook, X, Reddit and Netflix are suggested).
+6. **YouTube keywords**: default `JEE`, `NDA`, `Study`, `Learn`, `Education`, `PW`.
+7. **Daily tasks** (optional): goals that pay screen time.
+8. **Review**, then **Finish setup**.
 
 ## How time is counted
 
 - Only the **active tab of the focused Chrome window** counts. Background tabs, minimised windows, other apps and idle time do not.
+- **EarnTime's own popup counts too.** Opening the popup takes focus away from the page, so it used to freeze the numbers until you closed it. The popup now beats once a second and the timer keeps falling while you watch it.
 - A tab playing audio counts even while you are away from the keyboard (for example, a video you are watching).
 - A locked screen does not count.
 - Incognito windows are **not tracked** unless you allow EarnTime in incognito (`chrome://extensions` → EarnTime → *Allow in Incognito*). The popup warns you when they are not tracked.
@@ -34,7 +36,7 @@ The setup wizard opens the first time. It has seven steps:
 | List | What happens |
 | --- | --- |
 | Productive | Time earns screen time at your ratio. Always open. |
-| Half-productive | A prompt asks **Productive Mode** or **Unproductive Mode** each visit. Productive earns; Unproductive spends. |
+| Half-productive | A prompt asks **Productive Mode** or **Unproductive Mode** each visit — shown over the page as it loads, so nothing is usable before you answer. Productive earns; Unproductive spends. |
 | Unproductive | Time spends your balance. Blocked when the balance is empty or you are in debt. |
 | Not listed | Not tracked and not blocked (unless you are in debt, when only productive sites open). |
 
@@ -50,6 +52,35 @@ The setup wizard opens the first time. It has seven steps:
 
 - You get the same **Productive / Unproductive Mode** chooser on every visit; nothing on the page is hidden or blanked in either mode.
 - It is trust based: what you pick is what the time counts as. Productive earns at your ratio, Unproductive is charged to your balance.
+
+## The gate: no first-visit bypass
+
+EarnTime checks the address **while the page loads**, not after it has finished. From the first byte, a page is held closed behind its own verdict:
+
+- a **half-productive** site shows the Productive / Unproductive chooser immediately, over the first paint;
+- a **productive** or **unproductive** site shows its status card (and unproductive sites are blocked outright when the balance is empty);
+- a site EarnTime cannot classify yet shows **"Checking this site…"** until the worker answers.
+
+Answering the chooser applies straight away — **no reload needed**. The check repeats on every navigation, including in-page ones (single-page apps, `pushState`, clicking through YouTube or WhatsApp chats), and on every revisit: a half-productive mode is per tab, so leaving a site and coming back asks again.
+
+If EarnTime's worker is asleep, disabled or simply not answering, the page **stays closed**. The only thing that releases a held page is EarnTime detecting that the extension itself is gone (disabled, reloaded or removed), because then there is nothing left to enforce a verdict.
+
+## Screen time and analytics
+
+With screen-time access granted, EarnTime keeps a **per-site, per-day** record of the time each site was in front of you, and every daily figure — earned, used, debt, productive minutes — is measured from that day's screen time.
+
+**Where to look:**
+
+- **Popup → *Screen time today***: today's total, the three biggest sites as bars, the study share, and a link to the full analytics. The numbers move while the popup is open.
+- **Settings → Analytics**: today's screen time, study time, charged and earned; the full per-site breakdown for the day with "other sites" rolled up; a **14-day trend** so you can see progress or degradation; today against yesterday and against your average; and the screen-time access switch.
+
+**What counts as screen time:** only time the site was actually **in front of you** — the active tab of a focused, non-minimised window. Background tabs, idle time and a locked screen are excluded. Time on a deliberately covered YouTube page, on EarnTime's own pages, or while a mode choice is pending is counted as screen time but is **not billed**. Sites that are on no list are measured and shown, and cost nothing.
+
+**Estimated vs. exact:** time EarnTime watched live is exact. Time it had to reconstruct after an interruption (from history) is marked as **estimated** and shown separately, so you always know which numbers are hard and which are inferred. Without screen-time access, gaps are charged conservatively from the last checkpoint, the per-site breakdown only covers what was observed live, and the analytics say so.
+
+**Privacy:** hostnames and minutes only. No page addresses, no titles, no search terms, and no network requests — ever. A day keeps at most 60 sites (the smallest are rolled into the totals), and days are pruned after the retention window.
+
+**Granting and removing access:** setup asks once; *Settings → Analytics* can grant or remove it at any time. Because Chrome only shows the permission prompt during a real click, that button must be pressed by you — EarnTime cannot grant it to itself. If you revoke `history` in `chrome://extensions` instead, EarnTime notices at the next window focus or worker start, records the change in the ledger, and stops reconstructing gaps.
 
 ## Balance, debt and repayment
 
@@ -120,6 +151,9 @@ See `docs/KNOWN_LIMITATIONS.md` section 1 for the API this uses, what has been t
 
 - **"Setup isn't finished"**: open the popup and choose *Finish setup*. It also reopens on every browser start until you finish it.
 - **Time is not counting**: check that the EarnTime tab is the active tab in the focused window, and that you are not in an incognito window without access.
+- **A half-productive site shows the chooser on a page you were already using**: that is the load-time gate. Pick a mode; the page opens immediately, without a reload.
+- **A page is stuck on "Checking this site…"**: EarnTime's worker is not answering (it was just disabled or removed, or Chrome is still starting it). Give it a few seconds; if the extension is genuinely gone the page releases itself.
+- **Analytics are empty or say "partly estimated"**: screen-time access is off, or today has not accumulated foreground time yet. *Settings → Analytics* shows the current status and the grant button.
 - **YouTube homepage looks empty**: that is Productive Mode hiding the videos. Use the search box to find study content; every result stays visible and the channel is checked when you play a video.
 - **"Filter unavailable"**: the site changed its layout. Time on that page is counted as unproductive until it loads correctly. Reload the page.
 - **Your balance seems wrong after a computer sleep or a browser restart**: EarnTime estimates the gap from history. The audit export shows what it used.

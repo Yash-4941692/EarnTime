@@ -1,7 +1,11 @@
 /** Binds the ExtApi interface to the real chrome.* namespaces (MV3, promise-based). */
 
 import type { IdleState } from '../core/types';
-import type { ExtApi, WindowInfo } from './api';
+import type { ExtApi, PermissionName, WindowInfo } from './api';
+
+/** `@types/chrome` types permission names as a union of the manifest's own strings. */
+const asPermission = (permission: PermissionName): chrome.runtime.ManifestPermission =>
+  permission as chrome.runtime.ManifestPermission;
 
 export function createChromeApi(c: typeof chrome): ExtApi {
   return {
@@ -10,6 +14,14 @@ export function createChromeApi(c: typeof chrome): ExtApi {
       getAll: () => c.storage.local.get(null),
       set: (values) => c.storage.local.set(values),
       remove: (keys) => c.storage.local.remove(keys),
+      session: {
+        // storage.session exists in every Chrome that runs MV3 service workers; the guard keeps an
+        // unexpected shape from taking the whole worker down with it.
+        get: async (key) => (c.storage.session ? (await c.storage.session.get(key))[key] : undefined),
+        set: async (values) => {
+          if (c.storage.session) await c.storage.session.set(values);
+        },
+      },
     },
     alarms: {
       get: (name) => c.alarms.get(name),
@@ -44,6 +56,25 @@ export function createChromeApi(c: typeof chrome): ExtApi {
           addRules: addRules as unknown as chrome.declarativeNetRequest.Rule[],
         });
       },
+    },
+    permissions: {
+      // Callback form throughout: it exists in every Chrome that supports optional permissions at
+      // all, and it keeps the types honest about what the browser actually answers.
+      contains: (permission) =>
+        new Promise<boolean>((resolve) => {
+          if (!c.permissions) return resolve(false);
+          c.permissions.contains({ permissions: [asPermission(permission)] }, (granted) => resolve(granted === true));
+        }),
+      request: (permission) =>
+        new Promise<boolean>((resolve) => {
+          if (!c.permissions) return resolve(false);
+          c.permissions.request({ permissions: [asPermission(permission)] }, (granted) => resolve(granted === true));
+        }),
+      remove: (permission) =>
+        new Promise<boolean>((resolve) => {
+          if (!c.permissions) return resolve(false);
+          c.permissions.remove({ permissions: [asPermission(permission)] }, (removed) => resolve(removed === true));
+        }),
     },
     notify: async (title, message) => {
       await c.notifications.create({

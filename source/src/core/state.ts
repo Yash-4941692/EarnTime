@@ -17,6 +17,7 @@ import {
   WHATSAPP_HOST,
 } from './constants';
 import { normalizeHostInput } from './domains';
+import { MAX_DAY_HOSTS } from './wallet';
 import type {
   DayStats,
   EarnState,
@@ -33,6 +34,8 @@ export function createInitialState(now: number): EarnState {
   return {
     schema: SCHEMA_VERSION,
     setupDone: false,
+    // Screen-time access is asked for during setup, so a state that has never been set up has none.
+    historyGranted: false,
     createdAt: now,
     settings: {
       earnFromMin: DEFAULT_EARN_FROM_MIN,
@@ -119,6 +122,33 @@ function sanitizeSettings(raw: unknown): Settings {
   };
 }
 
+/** Numeric fields of a day bucket; `hosts` is a map and is sanitised separately. */
+const DAY_NUMBER_FIELDS: Array<Exclude<keyof DayStats, 'hosts'>> = [
+  'prodMs',
+  'halfProdMs',
+  'halfUnprodMs',
+  'unprodMs',
+  'earnedMs',
+  'repaidMs',
+  'taskMs',
+  'usedMs',
+  'screenMs',
+  'estimatedScreenMs',
+];
+
+function sanitizeHosts(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [host, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) continue;
+    const key = host.trim().toLowerCase().slice(0, 253);
+    if (!key) continue;
+    out[key] = Math.round(value);
+    if (Object.keys(out).length >= MAX_DAY_HOSTS) break;
+  }
+  return out;
+}
+
 function sanitizeDays(raw: unknown): Record<string, DayStats> {
   const out: Record<string, DayStats> = {};
   if (!raw || typeof raw !== 'object') return out;
@@ -126,9 +156,12 @@ function sanitizeDays(raw: unknown): Record<string, DayStats> {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !value || typeof value !== 'object') continue;
     const v = value as Record<string, unknown>;
     const stats = emptyDayStats();
-    for (const field of Object.keys(stats) as Array<keyof DayStats>) {
+    for (const field of DAY_NUMBER_FIELDS) {
       stats[field] = Math.max(0, finiteNumber(v[field], 0));
     }
+    stats.hosts = sanitizeHosts(v.hosts);
+    // Screen time can never be less than the sum of its parts.
+    stats.screenMs = Math.max(stats.screenMs, stats.estimatedScreenMs);
     out[key] = stats;
   }
   return out;
@@ -231,6 +264,11 @@ export function sanitizeState(raw: unknown, now: number): EarnState {
   const state: EarnState = {
     schema: SCHEMA_VERSION,
     setupDone: r.setupDone === true,
+    // Up to and including schema 4 the `history` permission was a REQUIRED permission, so any state
+    // written before schema 5 belongs to a profile that already granted screen-time access. A stored
+    // boolean wins from schema 5 onwards, and every worker start re-checks it against what Chrome
+    // actually reports, so a revoked permission is noticed within one worker start.
+    historyGranted: typeof r.historyGranted === 'boolean' ? r.historyGranted : storedSchema < SCHEMA_VERSION,
     createdAt: finiteNumber(r.createdAt, now),
     settings: sanitizeSettings(r.settings),
     rules,

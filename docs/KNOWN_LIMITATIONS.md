@@ -27,7 +27,7 @@ EarnTime is a self-discipline tool. It is not a security boundary, and nothing i
 - **Only one tab counts**: the active tab of the focused normal Chrome window. Tab switches are observed live, but during an interruption they can only be estimated (see section 3).
 - **Idle detection is coarse.** `chrome.idle` reports idle after 15 seconds without input. Silent video watched without any input is not counted. That is a deliberate favour to the user, not a complete measure of attention.
 - **Checkpoints every 30 seconds.** A state change that Chrome does not announce with an event (for example, allowing incognito access) takes effect at the next checkpoint, up to 30 seconds later.
-- **Popup and devtools windows** are not normal windows, so while they have focus nothing is counted.
+- **The popup now counts.** Opening EarnTime's popup takes OS focus away from the browser window and Chrome announces no event for it, which used to freeze counting and the display. The popup beats once a second while it is open, and the worker treats that beat as "the user is here" for up to 2.5 seconds, so the timer keeps moving in front of you. Devtools windows and other non-normal windows are still not counted.
 - **Picture-in-picture** and **embedded players on other sites** are not analysed. Only the top-level page is evaluated.
 - **Incognito** is not tracked unless the user allows EarnTime in incognito. The popup shows a warning when it is not.
 - **One profile, one ledger.** Each Chrome profile has its own EarnTime state.
@@ -48,24 +48,36 @@ When the worker was not running (extension disabled, browser closed, computer as
 
 The audit export (Settings → Protection) records each reconciliation's window, charged minutes, credited minutes and debt added.
 
-## 4. Half-productive filters
+## 4. Half-productive filters and the load-time gate
 
 - **YouTube keywords are substrings.** `pw` matches `Upwork`. Use longer keywords where that matters. The settings page has a checker.
 - **YouTube's layout can change.** If the page is not recognised, nothing can be verified, so the page is covered after eight seconds and that broken-filter time counts as unproductive until it loads correctly. Covers deliberately shown for Shorts, unsupported pages and non-study videos are reported separately and do not earn or spend time.
 - **Embedded YouTube players** on other websites are not filtered.
 - **Other half-productive sites** (WhatsApp and the sites you add yourself) have no content filter. Choosing Productive Mode there is a trust decision; the page stays fully visible in both modes.
-- **A page that opens while the service worker is still starting used to be left unmanaged.** Chrome
-  unloads the service worker when it has been idle and restarts it on demand, and that start is not
-  instant. Every message now has its own timeout, the question is retried for up to a minute, and
-  until an answer arrives the page is covered with a "Checking this site" card, so nothing is
-  watched or chosen before EarnTime has answered. If the extension is disabled, that card is
-  removed and the page is left alone. The only remaining gap is therefore an extension that was
-  disabled mid-load.
+- **The gate now runs at `document_start`, before the page has a body.** The content script classifies
+  the URL itself, from the rules the worker keeps mirrored in `chrome.storage.session`, and closes the
+  page immediately: a half-productive site shows the Productive/Unproductive chooser over the first
+  paint, a productive or unproductive site shows its status card, and an unclassifiable site is
+  covered with "Checking this site…". Nothing on the page is usable before that verdict, and no
+  reload is needed to apply it. This removed the earlier window in which a first visit to a
+  half-productive site could be used while the sleeping worker woke up.
+- **What the gate cannot know yet.** Before the worker answers, the page script only knows its own URL
+  and the mirrored rules. It cannot know the balance-dependent restrictions or the YouTube keyword
+  filter, so it always confirms with the worker afterwards and the worker's answer replaces the local
+  one. If the local answer was already correct (the common case) nothing visibly changes.
+- **The mirrored rules are at most 30 seconds old, and 100 tabs wide.** A rule changed in the last few
+  seconds may not be reflected in the first local verdict; the worker's answer corrects it.
+- **A page that opens while the service worker is still starting is held, not released.** Every message
+  has its own timeout, the question is retried for up to a minute, and until an answer arrives the
+  page stays closed. If the rules cannot be read *and* the worker never answers, the page still stays
+  covered — EarnTime fails closed. The only path that releases an unclassifiable page is the watchdog
+  detecting that the extension context itself is gone (disabled, reloaded or removed mid-load),
+  because at that point there is nothing left to enforce a verdict.
 
 ## 5. Debt and blocking
 
 - **Blocking uses declarativeNetRequest** for top-level page loads. Sub-resources are not blocked.
-- **Navigations inside an already-open page** (single-page apps, `pushState`) are not blocked by the rule. EarnTime re-checks open tabs at each checkpoint (up to 30 seconds).
+- **Navigations inside an already-open page** (single-page apps, `pushState`) are not blocked by the rule. EarnTime watches the address of the open page and re-checks within about three quarters of a second, and open tabs are re-checked at each checkpoint (up to 30 seconds) as a backstop. In-page navigations are still never *network*-blocked: a page already loaded can only be covered or handed a mode choice, not refused.
 - **Debt allows only productive sites** (and half-productive sites in Productive Mode). Unlisted sites are blocked too. Add the search engines and documentation you need to the productive list.
 - **Unproductive Mode** on a half-productive site is unavailable when the balance is empty or the user is in debt. An Unproductive session ends when the balance runs out.
 - **Half-productive mode is per tab.** Leaving the site and returning asks again. Closing the tab ends the session. Browser restarts clear all sessions.
@@ -94,7 +106,10 @@ The audit export (Settings → Protection) records each reconciliation's window,
 ## 7. Data and privacy
 
 - Data is stored unencrypted in `chrome.storage.local`. Anyone with access to the Chrome profile can read it.
-- The history permission is used only during reconciliation. EarnTime keeps hostnames and minutes. It does not store page addresses or titles.
+- **Screen time is an optional permission, not a required one.** `history` moved to `optional_permissions`, so Chrome installs EarnTime without it and setup asks for it explicitly. Declining is supported: everything still works, reconciliation just stops attributing gaps site by site, and the analytics say the data is partly estimated.
+- The history permission is used for two things now: reconstructing interruptions, and attributing foreground time to sites for the daily analytics. EarnTime keeps **hostnames and minutes only**. It does not store page addresses, titles or visit counts beyond the minute totals per site per day.
+- **Per-site history is bounded.** At most 60 sites are kept for a day, and the smallest ones are dropped first when that limit is reached. A day with more than 60 distinct sites therefore loses its smallest rows into the totals.
+- Access is verified against Chrome, never trusted from storage: at startup, at install, on window focus and after a worker restart. Revoking it in `chrome://extensions` is noticed at the next window focus (Chrome fires no event for revocation) and written to the ledger.
 - The audit export contains hostnames, minutes and settings. It contains no page addresses.
 - The extension makes no network requests.
 
@@ -114,6 +129,8 @@ No real Chrome browser was available for end-to-end testing. The following behav
 - the `chrome://extensions` redirect and the flash it may cause;
 - disabling, reloading and removing the extension, and the reconciliation that follows;
 - real `chrome.history` visits, real idle timing, real notifications and real incognito gating;
+- `chrome.permissions.request` from the setup page (it needs a real user gesture), revoking `history` in `chrome://extensions`, and `chrome.storage.session` lifetime across real worker restarts;
+- the load-time gate in a real tab: first-paint timing, the chooser over a real half-productive page, and single-page-app navigations on real sites;
 - YouTube as it currently renders (the browser tests use fixture pages).
 
 `docs/TESTING.md` lists the manual checks to run before release.

@@ -7,8 +7,12 @@ export const MINUTE_MS = 60_000;
 export const HOUR_MS = 60 * MINUTE_MS;
 export const DAY_MS = 24 * HOUR_MS;
 
-/** Storage schema version written into the single `state` key. */
-export const SCHEMA_VERSION = 4;
+/**
+ * Storage schema version written into the single `state` key.
+ * 5 adds per-site screen time (`days[*].hosts`, `screenMs`, `estimatedScreenMs`) and the
+ * `historyGranted` flag for the optional screen-time permission.
+ */
+export const SCHEMA_VERSION = 5;
 
 /** Storage key holding the entire persisted state (one key = atomic writes). */
 export const STATE_KEY = 'state';
@@ -32,6 +36,13 @@ export const VISIT_CAP_MS = 15 * MINUTE_MS;
 export const MAX_RECONCILE_WINDOW_MS = 7 * DAY_MS;
 /** Upper bound on URLs whose visits are inspected during one reconciliation. */
 export const MAX_HISTORY_URLS = 1000;
+
+/**
+ * An EarnTime page (the popup, settings) is considered open for this long after its last heartbeat.
+ * The popup beats once a second; the window is wide enough to survive one missed beat and narrow
+ * enough that closing the popup restores the normal focus rules almost immediately.
+ */
+export const UI_OPEN_MS = 2_500;
 
 /** Half-productive filter health: reports older than this are treated as failing. */
 export const HEALTH_FRESH_MS = 45_000;
@@ -74,6 +85,18 @@ export const SUGGESTED_UNPRODUCTIVE_SITES = [
 
 /** Host suffix that receives the YouTube channel filter in Productive Mode. */
 export const YOUTUBE_HOST_SUFFIX = 'youtube.com';
+
+/**
+ * The optional permission behind screen-time analytics. `history` was a required permission up to
+ * schema 4; making it optional means Chrome never shows it as granted without the user asking, and
+ * setup can request it explicitly. Nothing but gap reconstruction and the per-site breakdown uses it.
+ */
+export const SCREEN_TIME_PERMISSION = 'history';
+
+/** How many days of trend the analytics view returns. */
+export const ANALYTICS_TREND_DAYS = 14;
+/** How many sites the per-day breakdown lists. */
+export const ANALYTICS_TOP_SITES = 12;
 
 /** Chrome-internal pages that EarnTime redirects (see guard.ts). */
 export const GUARDED_PAGE_PREFIXES = ['chrome://extensions', 'chrome://settings/extensions'] as const;

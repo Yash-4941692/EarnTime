@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { analyticsView } from '../../core/analytics';
 import type { Command } from '../../core/commands';
 import { isDoneToday } from '../../core/tasks';
 import { dayKey, formatDuration, formatDurationPrecise } from '../../core/time';
 import { dashboardView, type DashboardView, type ModeTone } from '../../core/view';
 import type { EarnState, Task } from '../../core/types';
+import { SiteBar } from '../analytics';
 import { Button, Card, ModePill, Notice, ProgressBar, Stat, type Tone } from '../components';
 import { incognitoAllowed, openExtensionPage, runCommand, useLiveTick, useNow, useStoredState } from '../lib/extension';
 
@@ -59,6 +61,44 @@ function DebtCard({ state, view }: { state: EarnState; view: DashboardView }) {
           </div>
         </details>
       ) : null}
+    </Card>
+  );
+}
+
+/**
+ * Today's screen time by site, in the popup. The same numbers live in Settings → Analytics; this is
+ * the three-line version, so "where is the day going" is one click away from the balance.
+ */
+function ScreenTimeCard({ state, now }: { state: EarnState; now: number }) {
+  const analytics = useMemo(() => analyticsView(state, now), [state, now]);
+  const top = analytics.sites.slice(0, 3);
+  return (
+    <Card className="space-y-2.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="eyebrow">Screen time today</h2>
+        <span className="text-[12px] tabular-nums text-slate-300">{formatDuration(analytics.screenMs)}</span>
+      </div>
+      {top.length === 0 ? (
+        <p className="text-[12.5px] leading-snug text-slate-500">Nothing recorded yet today.</p>
+      ) : (
+        <ul className="space-y-2">
+          {top.map((site) => (
+            <SiteBar key={site.host} site={site} totalMs={analytics.screenMs} />
+          ))}
+        </ul>
+      )}
+      <div className="flex items-center justify-between gap-2 text-[11.5px] text-slate-500">
+        <span>
+          {analytics.sites.length > 3 ? `${analytics.sites.length} sites · ` : ''}
+          {Math.round(analytics.studyShare * 100)}% study
+        </span>
+        <button
+          className="text-slate-400 underline-offset-2 hover:text-slate-200 hover:underline"
+          onClick={() => openExtensionPage('settings.html#analytics')}
+        >
+          Analytics
+        </button>
+      </div>
     </Card>
   );
 }
@@ -196,6 +236,8 @@ export function Popup() {
         <Stat compact label="Half-productive" value={formatDuration(view.halfToday)} tone="half" hint="today" />
         <Stat compact label="Unproductive" value={formatDuration(view.unproductiveToday)} tone="unproductive" hint="today" />
       </div>
+
+      {state.setupDone ? <ScreenTimeCard state={state} now={now} /> : null}
 
       <TasksCard tasks={state.tasks} now={now} onError={setNotice} />
 

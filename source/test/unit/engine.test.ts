@@ -112,7 +112,13 @@ test('an intentional YouTube cover is neither credited nor charged', () => {
   started(state, T0, 'youtube.com', { at: T0, filterState: 'covered' });
   advance(state, obs({ at: T0 + 60 * SEC, host: 'youtube.com', filterState: 'covered' }), 60 * SEC);
   assert.equal(state.balanceMs, 10 * MIN);
-  assert.equal(state.days[dayKey(T0)], undefined, 'covered time does not create empty day stats');
+  // Covered time is not billed, but it IS screen time: the user was looking at that page, so the
+  // per-site breakdown has to say so even though nothing was earned or charged.
+  const day = state.days[dayKey(T0)]!;
+  assert.equal(day.prodMs + day.halfProdMs + day.halfUnprodMs + day.unprodMs, 0, 'covered time is not billed');
+  assert.equal(day.earnedMs + day.usedMs, 0, 'covered time neither earns nor spends');
+  assert.equal(day.screenMs, 60 * SEC, 'covered time is still recorded as screen time');
+  assert.deepEqual(day.hosts, { 'youtube.com': 60 * SEC });
   assert.equal(liveFrom(state.last!).why, 'filter-covered');
 });
 

@@ -9,21 +9,36 @@ import type { EarnState, FilterState, HalfSession, Observation, Role } from './t
 
 export type BlockReason = 'debt' | 'exhausted';
 
-export function sessionFor(state: EarnState, tabId: number | null, entry: string): HalfSession | null {
+/**
+ * The money fields alone. Several rules only need the balance and the debt, and taking the narrow
+ * view lets a content script reuse the very same logic on the persisted numbers it can read while a
+ * page loads — one implementation, two callers, no second set of rules to drift.
+ */
+export interface MoneyView {
+  balanceMs: number;
+  debtMs: number;
+}
+
+/** The half-productive session table. */
+export interface SessionView {
+  sessions: Record<string, HalfSession>;
+}
+
+export function sessionFor(state: SessionView, tabId: number | null, entry: string): HalfSession | null {
   if (tabId === null) return null;
   const session = state.sessions[String(tabId)];
   return session && session.entry === entry ? session : null;
 }
 
-export function canUseUnproductive(state: EarnState): boolean {
+export function canUseUnproductive(state: MoneyView): boolean {
   return state.balanceMs > 0 && state.debtMs === 0;
 }
 
-export function isDebtMode(state: EarnState): boolean {
+export function isDebtMode(state: MoneyView): boolean {
   return state.debtMs > 0;
 }
 
-export function isExhausted(state: EarnState): boolean {
+export function isExhausted(state: MoneyView): boolean {
   return state.debtMs === 0 && state.balanceMs <= 0;
 }
 

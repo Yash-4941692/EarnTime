@@ -63,6 +63,11 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+/**
+ * Builds the overlay host and its shadow root. It deliberately does NOT append itself: the caller
+ * mounts it through the gate (`gate.mountOverlay`), so a page that wipes its own DOM cannot get rid
+ * of EarnTime's UI — the keep-alive puts the same node, with the same listeners, straight back.
+ */
 export function createOverlay(): Overlay {
   const host = el('div', { attrs: { id: 'earntime-root' } });
   host.style.cssText = 'all: initial;';
@@ -71,7 +76,6 @@ export function createOverlay(): Overlay {
   const slot = el('div');
   const bannerSlot = el('div');
   shadow.append(slot, bannerSlot);
-  (document.documentElement || document.body).append(host);
 
   return {
     root: host,

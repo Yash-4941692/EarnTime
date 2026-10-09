@@ -13,7 +13,13 @@ export type UiMessage =
   | { type: 'ui.command'; command: Command }
   | { type: 'ui.export' }
   | { type: 'ui.reconcileNow' }
-  | { type: 'ui.tick' };
+  | { type: 'ui.tick' }
+  /**
+   * Asks the worker to request (or give up) the optional screen-time permission. It has to go
+   * through the worker so that the recorded state and what Chrome actually granted can never
+   * disagree; the user gesture that allows the prompt is the click in the page that sent it.
+   */
+  | { type: 'ui.screenTimeAccess'; grant: boolean };
 
 export type Incoming = PageMessage | UiMessage;
 
@@ -26,7 +32,17 @@ export interface ReplyError {
 }
 
 export type Reply =
-  | { ok: true; directive?: PageDirective; data?: unknown }
+  | {
+      ok: true;
+      directive?: PageDirective;
+      data?: unknown;
+      /**
+       * The tab the worker saw the message come from. A content script needs its own tab id to look
+       * up its half-productive session in persisted state while the page is still loading, and it
+       * has no other way to know it.
+       */
+      tabId?: number | null;
+    }
   | { ok: false; error: ReplyError };
 
 export function isPageMessage(value: unknown): value is PageMessage {
@@ -38,5 +54,11 @@ export function isPageMessage(value: unknown): value is PageMessage {
 export function isUiMessage(value: unknown): value is UiMessage {
   if (!value || typeof value !== 'object') return false;
   const type = (value as { type?: unknown }).type;
-  return type === 'ui.command' || type === 'ui.export' || type === 'ui.reconcileNow' || type === 'ui.tick';
+  return (
+    type === 'ui.command' ||
+    type === 'ui.export' ||
+    type === 'ui.reconcileNow' ||
+    type === 'ui.tick' ||
+    type === 'ui.screenTimeAccess'
+  );
 }

@@ -263,7 +263,14 @@ test('YouTube intentional covers do not earn or charge, while a broken filter st
   }
   const covered = b.storedState();
   assert.equal(covered.balanceMs, 10 * MIN, 'intentional cover neither earns nor spends screen time');
-  assert.equal(covered.days['2026-10-08'], undefined, 'covered time does not create accounting totals');
+  // Covered time is not billed, but the user was still looking at YouTube, so the day's screen-time
+  // breakdown records it. Billing totals stay at zero.
+  const coveredDay = covered.days['2026-10-08'];
+  assert.equal(coveredDay.prodMs + coveredDay.halfProdMs + coveredDay.halfUnprodMs + coveredDay.unprodMs, 0, 'covered time does not create accounting totals');
+  assert.equal(coveredDay.earnedMs + coveredDay.usedMs, 0);
+  assert.equal(coveredDay.screenMs, 2 * MIN, 'covered time is recorded as screen time');
+  assert.deepEqual(coveredDay.hosts, { 'www.youtube.com': 2 * MIN });
+  assert.equal(coveredDay.estimatedScreenMs, 0, 'observed screen time is exact, not estimated');
   assert.equal(covered.live?.why, 'filter-covered');
 
   await b.sendFromTab(tabId, { type: 'page.health', ok: false }, url);
@@ -558,4 +565,249 @@ test('an update that finds setup unfinished reopens the wizard instead of skippi
   await b.closeTab(setupTabs()[0].id as number);
   await b.installExtension('update');
   assert.equal(setupTabs().length, 1, 'reloading an unpacked extension reports "update" and must not strand the user');
+});
+
+// ---------------------------------------------------------------------------
+// Screen time while a page loads, and the analytics that come out of it
+// ---------------------------------------------------------------------------
+
+test('the worker publishes its verdict for a half-productive tab, so the next load is judged while loading', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 20 });
+  const url = 'https://www.youtube.com/watch?v=abc';
+  const { tabId } = await openedWindowWithTab(b, url);
+
+  // The verdict exists before the page has asked anything: it is published for every open
+  // half-productive tab, which is what lets a content script decide while the page loads instead of
+  // waiting for a worker that may still be starting.
+  await b.settle();
+  let published = b.gateCache()[String(tabId)];
+  assert.equal(published.directive.kind, 'choose', 'a first visit is published as "choose a mode"');
+  assert.equal(published.url, url);
+  assert.equal(published.directive.entry, 'youtube.com');
+
+  const init = await b.sendFromTab(tabId, { type: 'page.init', url });
+  assert.equal(init.ok, true);
+  assert.equal(init.tabId, tabId, 'the page is told which tab it is, so it can find its own session');
+  assert.equal(init.directive.kind, 'choose');
+
+  const chosen = await b.sendFromTab(tabId, { type: 'page.choose', url, mode: 'unproductive' });
+  assert.equal(chosen.ok, true);
+  published = b.gateCache()[String(tabId)];
+  assert.equal(published.directive.kind, 'active', 'the published verdict follows the choice');
+  assert.equal(published.directive.mode, 'unproductive');
+
+  // Leaving the site invalidates the session, and the published verdict goes back to the chooser, so
+  // a return visit is asked again — while it loads, not after.
+  await b.navigate(tabId, 'https://www.instagram.com/');
+  await b.navigate(tabId, url);
+  published = b.gateCache()[String(tabId)];
+  assert.equal(published.directive.kind, 'choose', 'returning to the site asks again');
+
+  // A site that is not half-productive gets no verdict published at all.
+  const studyTab = await b.openTab('https://www.khanacademy.org/', { active: true });
+  await b.settle();
+  assert.equal(b.gateCache()[String(studyTab)], undefined);
+});
+
+test('screen time per site is recorded for the whole foreground day, not only for billed time', async () => {
+  const b = newBrowser();
+  // A starting balance the unproductive stretch can actually be charged to: without it the tab would
+  // be redirected to the block page halfway through and the day would end early.
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  const key = '2026-10-08';
+  // Each navigation loses the 15-second idle-detection tail, exactly as billing does: the user was
+  // already inactive when Chrome reported the change, so that quiet stretch is nobody's.
+  const TAIL = 15 * SEC;
+
+  const { tabId } = await openedWindowWithTab(b, 'https://www.khanacademy.org/math');
+  await b.runFor(30 * MIN);
+  await b.navigate(tabId, 'https://example.org/news');
+  await b.runFor(10 * MIN);
+  await b.navigate(tabId, 'https://www.instagram.com/');
+  await b.runFor(5 * MIN);
+
+  const day = b.storedState().days[key];
+  assert.equal(b.tabUrl(tabId), 'https://www.instagram.com/', 'the balance covered the whole stretch');
+  assert.equal(day.prodMs, 30 * MIN, 'study time is billed as before');
+  near(day.unprodMs / MIN, 5, 0.3, 'unproductive time is billed as before');
+  near(day.screenMs / MIN, 45 - TAIL / MIN, 0.6, 'screen time covers every site that was in front of the user');
+  assert.equal(day.estimatedScreenMs, 0, 'observed screen time is exact');
+  // Listed sites are recorded under the list entry that matched them (so subdomains group together);
+  // a site on no list is recorded under its own hostname.
+  near(day.hosts['khanacademy.org'] / MIN, 30, 0.3, 'study time goes to the study site');
+  near(day.hosts['example.org'] / MIN, 10 - TAIL / MIN, 0.3, 'neutral time goes to the neutral site');
+  near(day.hosts['instagram.com'] / MIN, 5, 0.3, 'distracting time goes to the distracting site');
+  assert.equal(Object.keys(day.hosts).length, 3);
+  // A neutral site is measured but never billed: 10 minutes of it cost nothing.
+  near(
+    day.screenMs / MIN - (day.prodMs + day.unprodMs + day.halfProdMs + day.halfUnprodMs) / MIN,
+    10 - TAIL / MIN,
+    0.3,
+    'the neutral site is measured but never billed',
+  );
+  assert.equal(
+    b.storedState().balanceMs,
+    10 * MIN + day.earnedMs - day.usedMs,
+    'the balance moved only by billing: ten neutral minutes cost nothing',
+  );
+});
+
+test('time the user was away is not screen time', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  await openedWindowWithTab(b, 'https://www.instagram.com/');
+  await b.runFor(5 * MIN);
+  b.stopInput();
+  await b.runFor(10 * MIN); // idle: not billed, and not screen time either
+  await b.input();
+  await b.runFor(1 * MIN);
+
+  const day = b.storedState().days['2026-10-08'];
+  near(day.screenMs / MIN, 6, 0.4, 'the idle stretch is missing from screen time');
+  assert.equal(day.hosts['instagram.com'], day.screenMs, 'all of it attributed to the site that was open');
+  assert.equal(day.screenMs, day.unprodMs, 'and screen time equals billed time when nothing else was open');
+});
+
+test('time reconstructed from history after an interruption is screen time, marked as estimated', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 30 });
+  const { tabId } = await openedWindowWithTab(b, 'https://www.instagram.com/p/start');
+  await b.runFor(30 * SEC);
+
+  b.disableExtension();
+  for (let i = 0; i < 3; i++) {
+    await b.navigate(tabId, `https://www.instagram.com/p/${i}`);
+    await b.runFor(10 * MIN);
+  }
+  await b.enableExtension();
+  await b.runFor(2 * MIN);
+
+  const day = b.storedState().days['2026-10-08'];
+  assert.ok(day.estimatedScreenMs >= 25 * MIN, 'the gap was reconstructed from history');
+  assert.ok(day.screenMs >= day.estimatedScreenMs);
+  // A listed site is attributed to the list entry that matched it, live and reconstructed alike, so
+  // its subdomains group into one row of the breakdown.
+  assert.ok(day.hosts['instagram.com'] >= day.estimatedScreenMs, 'and attributed to the site it happened on');
+});
+
+test('without screen-time access a gap cannot be reconstructed, and the numbers say so', async () => {
+  const b = newBrowser();
+  b.revokeScreenTime();
+  await installAndSetup(b, { initialBalanceMin: 30, screenTimeAccess: false });
+  assert.equal(b.storedState().historyGranted, false, 'screen-time access was declined at setup');
+  const { tabId } = await openedWindowWithTab(b, 'https://www.instagram.com/p/start');
+  await b.runFor(30 * SEC);
+
+  b.disableExtension();
+  for (let i = 0; i < 3; i++) {
+    await b.navigate(tabId, `https://www.instagram.com/p/${i}`);
+    await b.runFor(10 * MIN);
+  }
+  await b.enableExtension();
+  await b.runFor(2 * MIN);
+
+  const s = b.storedState();
+  const day = s.days['2026-10-08'];
+  assert.equal(s.lastReconcile?.visits ?? 0, 0, 'reconciliation had no visits to work from');
+  // The gap is still charged, but only as one unobserved stretch bounded by the continuation caps,
+  // never as the thirty minutes of browsing that only history could have shown.
+  assert.ok(day.estimatedScreenMs <= 15 * MIN, 'the estimate stops at the caps instead of covering the gap');
+  assert.ok(day.screenMs < 20 * MIN, 'so the day is not credited with browsing nobody observed');
+  assert.ok(s.balanceMs + s.debtMs > 30 * MIN - 20 * MIN, 'and the unseen browsing was not billed either');
+});
+
+test('screen-time access can be granted and removed, and each change is written to the ledger', async () => {
+  const b = newBrowser();
+  b.revokeScreenTime();
+  await installAndSetup(b, { screenTimeAccess: false });
+  assert.equal(b.storedState().historyGranted, false);
+
+  b.grantScreenTime(); // what Chrome does when the user accepts the prompt
+  const granted = await b.sendFromExtensionPage({ type: 'ui.screenTimeAccess', grant: true });
+  assert.equal(granted.ok, true);
+  assert.equal(granted.data.granted, true);
+  assert.equal(b.storedState().historyGranted, true);
+  assert.ok(b.storedState().ledger.some((e: { note: string }) => e.note === 'Screen-time access granted'));
+
+  await b.sendFromExtensionPage({ type: 'ui.screenTimeAccess', grant: false });
+  await b.settle();
+  assert.equal(b.storedState().historyGranted, false);
+  assert.equal(b.grantedPermissions.has('history'), false, 'Chrome gave the permission up too');
+  assert.ok(b.storedState().ledger.some((e: { note: string }) => e.note === 'Screen-time access removed'));
+});
+
+test('a revoked permission is noticed on the next worker start, without the user saying anything', async () => {
+  const b = newBrowser();
+  await installAndSetup(b);
+  assert.equal(b.storedState().historyGranted, true);
+
+  // The user removes the permission from chrome://extensions: no event reaches EarnTime.
+  b.revokeScreenTime();
+  await b.restartWorker();
+  assert.equal(b.storedState().historyGranted, false, 'the recorded access follows Chrome');
+});
+
+test('setup records the screen-time access answer, and the worker corrects it against Chrome', async () => {
+  const declined = newBrowser();
+  declined.revokeScreenTime();
+  await installAndSetup(declined, { screenTimeAccess: false });
+  assert.equal(declined.storedState().historyGranted, false);
+
+  // Claiming access that Chrome did not grant does not survive the first worker start.
+  const liar = newBrowser();
+  liar.revokeScreenTime();
+  await installAndSetup(liar, { screenTimeAccess: true });
+  assert.equal(liar.storedState().historyGranted, true, 'recorded as asked…');
+  await liar.restartWorker();
+  await liar.openWindow({ focused: true });
+  await liar.settle();
+  assert.equal(liar.storedState().historyGranted, false, '…and corrected to what Chrome really granted');
+});
+
+test('the popup keeps the timer running in front of the user instead of freezing', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  const { windowId } = await openedWindowWithTab(b, 'https://www.instagram.com/');
+  await b.runFor(60 * SEC);
+  const before = b.storedState().balanceMs;
+  assert.equal(b.storedState().live?.k, 'unproductive');
+
+  // The popup takes OS focus. Chrome fires no event for that, so the worker only finds out at its
+  // next periodic checkpoint — and what it sees is "no focused window".
+  b.openPopup();
+  await b.runFor(35 * SEC);
+  const frozen = b.storedState();
+  assert.equal(frozen.live?.why, 'background', 'with no heartbeat the worker treats it as "Chrome not focused"');
+  const frozenCharge = before - frozen.balanceMs;
+  assert.ok(frozenCharge >= 30 * SEC, 'and the whole stretch is charged at once, whenever that checkpoint happens');
+
+  // The popup beats once a second, which is enough to keep both the counting and the display alive:
+  // the numbers move every second instead of jumping once every thirty.
+  const beat = async () => {
+    await b.sendFromExtensionPage({ type: 'ui.tick' });
+    await b.runFor(1 * SEC);
+  };
+  const beforeBeats = frozen.balanceMs;
+  for (let i = 0; i < 12; i++) await beat();
+
+  const during = b.storedState();
+  assert.equal(during.live?.k, 'unproductive', 'the site behind the popup is still what is being used');
+  assert.equal(during.live?.why, null, 'and it is no longer reported as "Chrome not focused"');
+  near((beforeBeats - during.balanceMs) / SEC, 12, 2, 'twelve beats charged twelve seconds, one per second');
+  assert.ok(during.days['2026-10-08'].hosts['instagram.com'] >= 60 * SEC, 'and it all went to the site that was open');
+
+  // Closing the popup stops the heartbeat. The window that was open while EarnTime could not see it
+  // is charged once, at the first checkpoint after the heartbeat expires, and then nothing more
+  // moves: no focused window, no counting.
+  await b.runFor(40 * SEC);
+  const closed = b.storedState();
+  assert.equal(closed.live?.why, 'background');
+  const afterClose = closed.balanceMs;
+  await b.runFor(60 * SEC);
+  assert.equal(b.storedState().balanceMs, afterClose, 'a closed popup charges nothing');
+
+  b.closePopup(windowId);
+  await b.runFor(40 * SEC);
+  assert.equal(b.storedState().live?.k, 'unproductive', 'and the page counts again once it is in front of the user');
 });
