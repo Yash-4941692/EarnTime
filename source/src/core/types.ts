@@ -51,6 +51,18 @@ export interface DayStats {
   taskMs: number;
   /** Time charged against the balance or debt (equals unprodMs + halfUnprodMs). */
   usedMs: number;
+  /**
+   * Screen time per hostname, in milliseconds, for every site that was in the foreground — including
+   * neutral sites that EarnTime neither credits nor charges. Hostnames only, never page addresses.
+   */
+  hosts: Record<string, number>;
+  /** Foreground screen time observed while the worker was running (exact). */
+  screenMs: number;
+  /**
+   * Foreground screen time reconstructed from browser history after an interruption (estimated, with
+   * the same per-visit cap as reconciliation). `screenMs` already includes it.
+   */
+  estimatedScreenMs: number;
 }
 
 export type LedgerKind =
@@ -157,6 +169,12 @@ export interface ReconcileSummary {
 export interface EarnState {
   schema: number;
   setupDone: boolean;
+  /**
+   * Whether the user granted the optional `history` permission ("screen time access"). History fills
+   * the gaps EarnTime cannot observe itself — a suspended worker, a closed browser, a disabled
+   * extension — and nothing else uses it.
+   */
+  historyGranted: boolean;
   createdAt: number;
   settings: Settings;
   rules: Rules;

@@ -28,12 +28,15 @@ By default **60 productive minutes earn 5 minutes**. The ratio, starting balance
 
 - **Earn-to-use model.** Productive time earns screen time at your ratio. Unproductive time spends it.
 - **Three categories.** Productive (earns), half-productive (you choose the mode on each visit; YouTube and WhatsApp are included by default) and unproductive (spends).
+- **Checked while the page loads.** The gate runs at `document_start` and classifies the address itself, so a half-productive site shows its mode chooser over the first paint — never usable for a moment before you answer, and no reload to apply the answer. Every later navigation is re-checked too, including in-page ones (single-page apps, `pushState`). If the worker cannot be reached, the page stays closed: EarnTime fails closed.
+- **Live timer.** The popup beats once a second, so the remaining time falls in front of your eyes while it is open instead of freezing until you reopen it — and the time behind the popup keeps counting.
 - **Counts only active use.** Only the active tab of the focused Chrome window counts. Background tabs, minimised windows, idle time and locked screens do not.
 - **Debt.** If usage runs past your balance while EarnTime was not running (extension disabled, browser closed, computer asleep), the excess becomes debt, estimated from browser history. Debt restricts browsing to productive sites until it is repaid by studying.
 - **YouTube Productive Mode.** The homepage simply shows no videos (no banner over it). Search results stay fully visible — every channel, even unproductive ones — and a video's channel name is checked the moment it plays, on the first visit with no reload. Non-study videos are covered without charging or crediting time; if YouTube’s layout cannot be verified, the filter fails closed.
 - **Protection costs.** After setup, a change costs the unlock cost (default 10 min) only when it **lifts a restriction EarnTime was already enforcing** — dropping an unproductive or half-productive site, or moving a site to a more permissive list. Adding a site to any list is free, as are YouTube keywords because they do not gate access to a site. A change that costs is **quoted before it is charged**, so one click never spends your balance by accident. Setup runs once.
 - **Daily tasks.** Recurring or one-off tasks that pay screen time, once per day or once ever.
-- **Audit log.** Every credit, charge, debt, rule change and interruption is recorded. Export it as read-only JSON (hosts only, never page addresses).
+- **Screen-time analytics.** With the optional `history` permission (asked for during setup), EarnTime records how long **each site** was in front of you today and measures earned, used and debt from that daily screen time. The popup shows the top sites; *Settings → Analytics* shows the full per-site breakdown, a 14-day trend, and today against yesterday and your average, so you can see progress or degradation at a glance. Time reconstructed after an interruption is marked **estimated**. Hostnames and minutes only.
+- **Audit log.** Every credit, charge, debt, rule change, interruption and screen-time access change is recorded. Export it as read-only JSON (hosts only, never page addresses).
 - **Local only.** No account, no network calls, no analytics. Data stays in `chrome.storage.local`.
 
 For day-to-day use, see the [user guide](docs/USER_GUIDE.md).
@@ -78,13 +81,13 @@ The browser tests need a Chromium binary. They do not load the extension into Ch
 ### Layout
 
 ```
-manifest.json              MV3 manifest (permissions: storage, tabs, alarms, idle, history, notifications, declarativeNetRequest)
+manifest.json              MV3 manifest (permissions: storage, tabs, alarms, idle, notifications, declarativeNetRequest; optional: history)
 background.js              service worker (built)
 content.js                 content script for half-productive pages (built)
 popup.* settings.* setup.* block.*   extension pages (built; *.html copied from source/pages)
 source/src/core/           pure logic: accounting, reconciliation, rules, costs, tasks, migration, view models
 source/src/background/     service worker: controller (serial job queue), Chrome adapter, event wiring
-source/src/content/        content scripts: mode chooser, YouTube filter, overlays
+source/src/content/        content scripts: load-time gate, worker-free verdict, page lifecycle, mode chooser, YouTube filter, overlays
 source/src/ui/             React pages (popup, settings, setup, block) and shared components
 source/test/               unit tests, simulated-browser flow tests, browser tests and fixtures
 docs/                      user guide, testing report, known limitations
@@ -95,7 +98,7 @@ docs/                      user guide, testing report, known limitations
 ## Privacy
 
 - Data is stored only in your browser's extension storage.
-- The `history` permission is used once per interruption, to estimate time from visits. EarnTime keeps hostnames and minutes, not page addresses or titles.
+- The `history` permission is **optional**: Chrome installs EarnTime without it and setup asks for it explicitly. It is used to reconstruct time EarnTime could not watch itself, and to attribute foreground time to sites for the daily analytics. EarnTime keeps hostnames and minutes, not page addresses, titles or search terms. Access is verified against Chrome (startup, install, window focus, worker restart) and every change is written to the ledger. Declining is fully supported.
 - No network requests are made by the extension.
 
 ## Contributing

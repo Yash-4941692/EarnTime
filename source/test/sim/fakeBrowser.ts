@@ -88,6 +88,11 @@ export class FakeBrowser {
   mono = 0;
 
   storage: Record<string, unknown> = {};
+  /**
+   * In-memory browser-session storage (`chrome.storage.session`). Separate from `storage` because
+   * it is never persisted to disk and is readable by content scripts without waking the worker.
+   */
+  sessionStorage: Record<string, unknown> = {};
   tabs = new Map<number, SimTab>();
   windows = new Map<number, SimWindow>();
   /** Window that has OS focus, or null when Chrome is in the background. */
@@ -99,6 +104,11 @@ export class FakeBrowser {
   notifications: Array<{ title: string; message: string; at: number }> = [];
   badge = { text: '', color: '' };
   incognitoAllowed = false;
+  /**
+   * Optional permissions currently granted. The simulator models a profile whose user accepted
+   * screen-time access during setup, which is what the reconciliation flows were written against.
+   */
+  grantedPermissions = new Set<string>(['history']);
   /** Called after every storage write (browser tests persist state with it). */
   onStorageWritten: (() => void) | null = null;
 
@@ -198,6 +208,24 @@ export class FakeBrowser {
             self.onStorageWritten?.();
           },
         },
+        session: {
+          get: async (key: string | null) => {
+            if (key === null) return clone(self.sessionStorage);
+            if (typeof key !== 'string') throw new Error('sim: only string keys supported');
+            return { [key]: clone(self.sessionStorage[key]) };
+          },
+          set: async (values: Record<string, unknown>) => {
+            const changes: Record<string, { newValue: unknown; oldValue: unknown }> = {};
+            for (const [k, v] of Object.entries(values)) {
+              changes[k] = { newValue: clone(v), oldValue: clone(self.sessionStorage[k]) };
+              self.sessionStorage[k] = clone(v);
+            }
+            self.events.onStorageChanged.emit(changes, 'session');
+          },
+          remove: async (keys: string | string[]) => {
+            for (const k of Array.isArray(keys) ? keys : [keys]) delete self.sessionStorage[k];
+          },
+        },
         onChanged: this.events.onStorageChanged,
       },
       alarms: {
@@ -286,6 +314,24 @@ export class FakeBrowser {
       extension: {
         isAllowedIncognitoAccess: async () => self.incognitoAllowed,
       },
+      permissions: {
+        contains: (perms: { permissions?: string[] }, callback?: (granted: boolean) => void) => {
+          const granted = (perms.permissions ?? []).every((name) => self.grantedPermissions.has(name));
+          if (callback) callback(granted);
+          return Promise.resolve(granted);
+        },
+        request: (perms: { permissions?: string[] }, callback?: (granted: boolean) => void) => {
+          // The simulated user always accepts the prompt; `revokeScreenTime` models a refusal.
+          for (const name of perms.permissions ?? []) self.grantedPermissions.add(name);
+          if (callback) callback(true);
+          return Promise.resolve(true);
+        },
+        remove: (perms: { permissions?: string[] }, callback?: (removed: boolean) => void) => {
+          for (const name of perms.permissions ?? []) self.grantedPermissions.delete(name);
+          if (callback) callback(true);
+          return Promise.resolve(true);
+        },
+      },
     };
   }
 
@@ -341,6 +387,17 @@ export class FakeBrowser {
       if (this.pending.size === 0) return;
     }
     throw new Error('sim: settle did not converge');
+  }
+
+  /**
+   * Chrome started the worker again for a browser-level event: in-memory knowledge is gone, and
+   * `onStartup` runs, which is where a permission revoked behind EarnTime's back gets noticed.
+   */
+  async restartWorker(): Promise<void> {
+    this.suspendWorker();
+    this.startWorker();
+    await this.fire(this.events.onStartup);
+    await this.settle();
   }
 
   /** Simulates Chrome suspending the worker: in-memory state is lost, storage remains. */
@@ -550,6 +607,22 @@ export class FakeBrowser {
     }
     return id;
     await this.settle();
+  }
+
+  /**
+   * An extension popup opens. Chrome gives OS focus to the popup, so `windows.getLastFocused` stops
+   * reporting the browser window as focused — but it fires no `onFocusChanged` event, because the
+   * browser window did not change. That distinction is the whole reason an open popup used to freeze
+   * EarnTime's numbers: with no event, nothing re-checkpointed, and the role fell to "not focused".
+   */
+  openPopup(): void {
+    this.focusedWindowId = null;
+  }
+
+  /** The popup closes and the browser window has OS focus again (also without an event). */
+  closePopup(windowId: number): void {
+    this.focusedWindowId = windowId;
+    this.lastFocusedId = windowId;
   }
 
   async focusWindow(windowId: number | null): Promise<void> {
@@ -771,6 +844,21 @@ export class FakeBrowser {
   /** Reads the persisted state exactly as it is stored (JSON round-trip). */
   storedState(): any {
     return clone(this.storage.state);
+  }
+
+  /** Models the user refusing (or later revoking) screen-time access. */
+  revokeScreenTime(): void {
+    this.grantedPermissions.delete('history');
+  }
+
+  /** Models the user accepting screen-time access again. */
+  grantScreenTime(): void {
+    this.grantedPermissions.add('history');
+  }
+
+  /** Reads the worker's published per-tab verdicts (`chrome.storage.session`). */
+  gateCache(): any {
+    return clone(this.sessionStorage.gateCache ?? {});
   }
 }
 

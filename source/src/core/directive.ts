@@ -5,8 +5,8 @@
 
 import { classifyHost } from './domains';
 import { filterKindForHost, type FilterKind } from './matchers';
-import { canUseUnproductive, isDebtMode, sessionFor } from './roles';
-import type { EarnState, HalfMode } from './types';
+import { canUseUnproductive, isDebtMode, sessionFor, type MoneyView, type SessionView } from './roles';
+import type { HalfMode, Rules } from './types';
 
 export type PageDirective =
   | { kind: 'none' }
@@ -34,7 +34,18 @@ export interface DirectiveResult {
   clearSession: boolean;
 }
 
-export function pageDirective(state: EarnState, tabId: number | null, host: string | null): DirectiveResult {
+/**
+ * Everything a directive depends on, and nothing more. The service worker passes its whole state;
+ * a content script that is judging a page *while it loads* passes the same fields read straight
+ * from storage. One implementation, so the pre-verdict and the authoritative answer can never
+ * disagree about the rules.
+ */
+export interface DirectiveInput extends MoneyView, SessionView {
+  rules: Rules;
+  settings: { youtubeKeywords: string[] };
+}
+
+export function pageDirective(state: DirectiveInput, tabId: number | null, host: string | null): DirectiveResult {
   if (!host) return { directive: { kind: 'none' }, clearSession: false };
   const cls = classifyHost(host, state.rules);
   if (cls.kind !== 'half' || !cls.entry) return { directive: { kind: 'none' }, clearSession: false };

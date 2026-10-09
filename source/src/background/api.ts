@@ -34,6 +34,12 @@ export interface VisitItem {
   visitTime?: number;
 }
 
+/**
+ * Optional permission names EarnTime can ask the user for. There is exactly one today: the browsing
+ * history behind screen-time analytics.
+ */
+export type PermissionName = 'history';
+
 export interface ExtApi {
   storage: {
     /** Returns the value stored under `key`, or undefined. */
@@ -42,6 +48,14 @@ export interface ExtApi {
     getAll(): Promise<Record<string, unknown>>;
     set(values: Record<string, unknown>): Promise<void>;
     remove(keys: string[]): Promise<void>;
+    /**
+     * In-memory, browser-session storage. Content scripts can read it without waking the service
+     * worker, which is what lets a page be judged while it loads. Never persisted to disk.
+     */
+    session: {
+      get(key: string): Promise<unknown>;
+      set(values: Record<string, unknown>): Promise<void>;
+    };
   };
   alarms: {
     get(name: string): Promise<unknown | undefined>;
@@ -66,6 +80,12 @@ export interface ExtApi {
   dnr: {
     getDynamicRuleIds(): Promise<number[]>;
     replaceDynamicRules(removeIds: number[], addRules: DnrRule[]): Promise<void>;
+  };
+  /** Optional permissions (screen-time access). */
+  permissions: {
+    contains(permission: PermissionName): Promise<boolean>;
+    request(permission: PermissionName): Promise<boolean>;
+    remove(permission: PermissionName): Promise<boolean>;
   };
   notify(title: string, message: string): Promise<void>;
   /** Opens an extension page (for example the setup wizard) in a new tab. */

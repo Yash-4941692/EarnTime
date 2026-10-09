@@ -1,7 +1,7 @@
 /** Thin bridge between React pages and the service worker, plus live state subscription. */
 
 import { useEffect, useState } from 'react';
-import { STATE_KEY } from '../../core/constants';
+import { SCREEN_TIME_PERMISSION, STATE_KEY } from '../../core/constants';
 import type { Command } from '../../core/commands';
 import type { Reply } from '../../core/messages';
 import type { EarnState, UnlockQuote } from '../../core/types';
@@ -64,10 +64,18 @@ export function useNow(intervalMs: number): number {
 }
 
 /**
- * Asks the service worker for a time checkpoint roughly once per second while the caller is
- * mounted. The stored state (balance, today's totals, live role) then advances in real time, so
- * the popup's numbers tick exactly one second per second instead of freezing between 30-second
- * alarm ticks.
+ * Asks the service worker for a time checkpoint roughly once per second while the caller is mounted.
+ *
+ * Two things depend on it:
+ *  - The stored state (balance, today's totals, live role) advances in real time, so the numbers tick
+ *    once per second instead of freezing between 30-second alarm ticks.
+ *  - The beat tells the worker that an EarnTime page is open. Chrome gives OS focus to the popup, so
+ *    the browser window behind it reports "not focused", and without this the worker treated opening
+ *    the popup as walking away: counting paused, the role fell to "Paused", and the balance only
+ *    moved after the popup was closed and reopened. With it, the timer keeps running in front of you.
+ *
+ * The first beat is sent immediately rather than after the first interval, so the very first render
+ * after opening is already live.
  */
 export function useLiveTick(intervalMs = 1000): void {
   useEffect(() => {
@@ -80,12 +88,39 @@ export function useLiveTick(intervalMs = 1000): void {
         // Extension context gone: nothing to tick.
       }
     };
+    ask();
     const id = window.setInterval(ask, intervalMs);
     return () => {
       alive = false;
       window.clearInterval(id);
     };
   }, [intervalMs]);
+}
+
+/** Whether Chrome currently grants the optional screen-time (history) permission. */
+export async function screenTimeAccess(): Promise<boolean> {
+  try {
+    return await chrome.permissions.contains({ permissions: [SCREEN_TIME_PERMISSION] });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Asks the user for screen-time access, or gives it up. It has to be called from the click itself:
+ * Chrome only shows an optional-permission prompt while a user gesture is in flight. The worker asks
+ * Chrome and then records the answer, so the state can never claim an access the profile does not
+ * have. Returns the granted state, or null when EarnTime did not respond.
+ */
+export async function setScreenTimeAccess(grant: boolean): Promise<boolean | null> {
+  try {
+    const reply = (await chrome.runtime.sendMessage({ type: 'ui.screenTimeAccess', grant })) as Reply | undefined;
+    if (!reply || !reply.ok) return null;
+    const data = reply.data as { granted?: boolean } | undefined;
+    return data?.granted === true;
+  } catch {
+    return null;
+  }
 }
 
 export function openExtensionPage(path: string): void {

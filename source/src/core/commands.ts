@@ -29,6 +29,12 @@ export interface SetupPayload {
   unproductive: string[];
   youtubeKeywords: string[];
   tasks: Array<{ title: string; rewardMin: number; recurring: boolean }>;
+  /**
+   * Whether the user accepted screen-time access (the optional `history` permission) during setup.
+   * The permission itself is requested by the setup page, because only a page can ask; this records
+   * the answer so the state and Chrome agree from the first moment.
+   */
+  screenTimeAccess?: boolean;
 }
 
 /**
@@ -47,7 +53,9 @@ export type Command =
   | { type: 'task.add'; title: string; rewardMin: number; recurring: boolean; confirm?: boolean }
   | { type: 'task.update'; id: string; title?: string; rewardMin?: number; recurring?: boolean; confirm?: boolean }
   | { type: 'task.delete'; id: string }
-  | { type: 'task.toggle'; id: string };
+  | { type: 'task.toggle'; id: string }
+  /** Records a screen-time access decision taken outside setup (Settings → Analytics). */
+  | { type: 'screenTime.set'; granted: boolean };
 
 const LIST_LABEL: Record<ListName, string> = {
   productive: 'Productive',
@@ -313,12 +321,14 @@ export function applySetup(state: EarnState, payload: SetupPayload, now: number)
   state.balanceMs = initial * MINUTE_MS;
   state.tasks = tasks;
   state.setupDone = true;
+  state.historyGranted = payload.screenTimeAccess === true;
   addLedger(
     state,
     'setup',
     now,
     state.balanceMs,
-    `Setup complete: ${settings.earnFromMin}:${settings.earnToMin} rule, ${initial} min starting balance, ${totalKept} sites`,
+    `Setup complete: ${settings.earnFromMin}:${settings.earnToMin} rule, ${initial} min starting balance, ${totalKept} sites` +
+      (state.historyGranted ? ', screen-time access on' : ', screen-time access declined'),
   );
   return { ok: true };
 }
@@ -355,6 +365,14 @@ export function applyCommand(state: EarnState, cmd: Command, now: number): RuleR
       return applyYouTubeKeyword(state, now, cmd.keyword, true);
     case 'youtube.remove':
       return applyYouTubeKeyword(state, now, cmd.keyword, false);
+    case 'screenTime.set':
+      // The worker asked Chrome before this command was sent, so the answer is already known: this
+      // only records it, and the ledger entry makes the decision auditable.
+      if (state.historyGranted !== cmd.granted) {
+        state.historyGranted = cmd.granted;
+        addLedger(state, 'rule', now, 0, cmd.granted ? 'Screen-time access granted' : 'Screen-time access removed');
+      }
+      return { ok: true, data: { granted: state.historyGranted } };
     case 'task.add':
     case 'task.update':
     case 'task.delete':

@@ -144,7 +144,7 @@ export function applyReconcile(state: EarnState, plan: Plan, input: ReconcileInp
   const perHost = new Map<string, { ms: number; kind: 'productive' | 'unproductive' }>();
 
   for (const seg of ordered) {
-    const part = chargeInterval(state, seg.role, seg.from, seg.to, 'gap');
+    const part = chargeInterval(state, seg.role, seg.from, seg.to, 'gap', seg.host);
     productiveCreditMs += part.creditMs;
     chargedMs += part.chargedMs;
     debtAddedMs += part.debtAddedMs;

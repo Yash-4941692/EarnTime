@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import {
+  SCREEN_TIME_PERMISSION,
   DEFAULT_EARN_FROM_MIN,
   DEFAULT_EARN_TO_MIN,
   DEFAULT_HALF_SITES,
@@ -15,7 +16,7 @@ import { normalizeHostInput } from '../../core/domains';
 import { Button, Card, Field, Notice } from '../components';
 import { runCommand, useStoredState } from '../lib/extension';
 
-const STEPS = ['Welcome', 'Earn rule', 'Starting balance', 'Websites', 'YouTube', 'Daily tasks', 'Review'] as const;
+const STEPS = ['Welcome', 'Earn rule', 'Starting balance', 'Screen time', 'Websites', 'YouTube', 'Daily tasks', 'Review'] as const;
 
 interface Draft {
   earnFrom: string;
@@ -27,6 +28,8 @@ interface Draft {
   unproductive: string[];
   keywords: string[];
   tasks: Array<{ title: string; rewardMin: number; recurring: boolean }>;
+  /** Whether screen-time access (the optional `history` permission) has been granted. */
+  screenTimeAccess: boolean;
 }
 
 const INITIAL: Draft = {
@@ -39,6 +42,7 @@ const INITIAL: Draft = {
   unproductive: [...SUGGESTED_UNPRODUCTIVE_SITES],
   keywords: [...DEFAULT_YOUTUBE_KEYWORDS],
   tasks: [],
+  screenTimeAccess: false,
 };
 
 function ChipInput({
@@ -156,7 +160,7 @@ export function Setup() {
         return `Starting balance must be between 0 and ${MAX_SETUP_BALANCE_MIN} minutes.`;
       }
     }
-    if (step === 3) {
+    if (step === 4) {
       const all = [...draft.productive, ...draft.half, ...draft.unproductive];
       const hosts = all.map((h) => normalizeHostInput(h));
       if (hosts.some((h) => h === null)) return 'One of the websites is not valid. Remove it or correct it.';
@@ -184,6 +188,7 @@ export function Setup() {
       unproductive: draft.unproductive,
       youtubeKeywords: draft.keywords,
       tasks: draft.tasks,
+      screenTimeAccess: draft.screenTimeAccess,
     };
     const result = await runCommand({ type: 'setup.complete', payload });
     setSaving(false);
@@ -268,6 +273,13 @@ export function Setup() {
         ) : null}
 
         {step === 3 ? (
+          <ScreenTimeStep
+            granted={draft.screenTimeAccess}
+            onChange={(screenTimeAccess) => setDraft({ ...draft, screenTimeAccess })}
+          />
+        ) : null}
+
+        {step === 4 ? (
           <div className="space-y-6">
             <div>
               <h2 className="text-[18px] font-semibold text-slate-50">Websites</h2>
@@ -288,7 +300,7 @@ export function Setup() {
           </div>
         ) : null}
 
-        {step === 4 ? (
+        {step === 5 ? (
           <div className="space-y-4">
             <h2 className="text-[18px] font-semibold text-slate-50">YouTube keywords</h2>
             <p className="text-[13.5px] leading-relaxed text-slate-400">
@@ -298,11 +310,11 @@ export function Setup() {
           </div>
         ) : null}
 
-        {step === 5 ? (
+        {step === 6 ? (
           <TasksStep tasks={draft.tasks} onChange={(tasks) => setDraft({ ...draft, tasks })} />
         ) : null}
 
-        {step === 6 ? (
+        {step === 7 ? (
           <div className="space-y-4">
             <h2 className="text-[18px] font-semibold text-slate-50">Review</h2>
             <dl className="grid grid-cols-[160px_1fr] gap-x-4 gap-y-2 text-[13.5px]">
@@ -322,6 +334,8 @@ export function Setup() {
               <dd className="break-words">{draft.keywords.join(', ') || 'none'}</dd>
               <dt className="text-slate-500">Tasks</dt>
               <dd>{draft.tasks.length}</dd>
+              <dt className="text-slate-500">Screen-time access</dt>
+              <dd>{draft.screenTimeAccess ? 'granted (history fills the gaps)' : 'declined (live counting only)'}</dd>
             </dl>
             <Notice tone="warn">Setup can be completed once. After this, the starting balance and earn rule can only change by the rules in Settings → Protection.</Notice>
           </div>
@@ -345,6 +359,58 @@ export function Setup() {
         </div>
       </Card>
     </Shell>
+  );
+}
+
+/**
+ * Asks for screen-time access during setup.
+ *
+ * The prompt has to come from this page: Chrome only shows an optional-permission prompt while a
+ * user gesture is in flight, and a service worker has none. The answer is carried into
+ * `setup.complete`, so the recorded state and what Chrome granted agree from the first moment — and
+ * the worker re-checks it against Chrome on every start anyway.
+ */
+function ScreenTimeStep({ granted, onChange }: { granted: boolean; onChange: (granted: boolean) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const ask = async () => {
+    setBusy(true);
+    setError(null);
+    let result = false;
+    try {
+      result = await chrome.permissions.request({ permissions: [SCREEN_TIME_PERMISSION] });
+    } catch {
+      setError('Chrome did not answer the permission request. You can grant it later in Settings → Analytics.');
+    }
+    setBusy(false);
+    onChange(result === true);
+  };
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-[18px] font-semibold text-slate-50">Screen-time access</h2>
+      <p className="text-[13.5px] leading-relaxed text-slate-400">
+        EarnTime can only count what it sees running. Chrome suspends its worker, and the browser closes. With screen-time access, EarnTime reads
+        your <strong className="text-slate-200">browsing history</strong> to reconstruct those gaps — and can show you how much time each site
+        took today, in Settings → Analytics.
+      </p>
+      <ul className="list-disc space-y-1.5 pl-5 text-[13px] leading-relaxed text-slate-400">
+        <li>Hostnames and minutes only. No page addresses, titles or search terms are stored.</li>
+        <li>No network requests: nothing is uploaded, ever.</li>
+        <li>Without it, gaps are charged conservatively from the last checkpoint, and the per-site breakdown only covers time EarnTime watched live.</li>
+        <li>You can grant or remove it at any time in Settings → Analytics.</li>
+      </ul>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant={granted ? 'secondary' : 'primary'} onClick={() => void ask()} disabled={busy}>
+          {busy ? 'Asking Chrome…' : granted ? 'Ask again' : 'Allow screen-time access'}
+        </Button>
+        <span className="text-[13px]" aria-live="polite">
+          {granted ? <span className="text-emerald-300">Granted — analytics will include history.</span> : <span className="text-slate-500">Not granted yet. Setup continues either way.</span>}
+        </span>
+      </div>
+      {error ? <Notice tone="warn">{error}</Notice> : null}
+    </div>
   );
 }
 

@@ -15,9 +15,12 @@ import {
   HEALTH_GRACE_MS,
   IDLE_DETECTION_S,
   MAX_HISTORY_URLS,
+  SCREEN_TIME_PERMISSION,
   STATE_KEY,
+  UI_OPEN_MS,
 } from '../core/constants';
-import { pageDirective } from '../core/directive';
+import { GATE_CACHE_KEY, withCacheEntry, type GateCache } from '../content/local';
+import { pageDirective, type DirectiveResult } from '../core/directive';
 import { buildBlockingRules, type DnrRule } from '../core/dnr';
 import { classifyHost, hostFromUrl } from '../core/domains';
 import { advance, liveFrom, makeSnapshot, setLast } from '../core/engine';
@@ -80,6 +83,15 @@ export function createController(opts: ControllerOptions): Controller {
   let lastMono: number | null = null;
   let appliedRulesKey: string | null = null;
   let lastBadge = '';
+  /**
+   * When an EarnTime page (normally the popup) last asked for a tick. While one is open Chrome
+   * reports the browser window as unfocused, and treating that as "the user went away" both paused
+   * the accounting and froze every number on screen — the popup showed a balance that only moved
+   * after it was closed and reopened. See `observe`.
+   */
+  let uiOpenAt: number | null = null;
+  /** Last published verdict cache, so an unchanged answer is not written to storage again. */
+  let publishedGate = '';
 
   function serial<T>(task: () => Promise<T>): Promise<T> {
     const run = chain.then(task, task);
@@ -137,7 +149,7 @@ export function createController(opts: ControllerOptions): Controller {
     return 'bad';
   }
 
-  async function observe(state: EarnState, now: number): Promise<Observation> {
+  async function observe(state: EarnState, now: number, uiOpen = false): Promise<Observation> {
     const win = await safe('windows.getLastFocused', undefined, () => api.windows.getLastFocused());
     const tab = win?.tabs?.find((t) => t.active);
     const url = tab?.url ?? tab?.pendingUrl ?? '';
@@ -152,7 +164,10 @@ export function createController(opts: ControllerOptions): Controller {
       windowId: win?.id ?? null,
       host,
       internalPage: url.length > 0 && host === null,
-      focused: Boolean(win && win.focused && win.state !== 'minimized' && tab),
+      // An open EarnTime popup takes OS focus away from the browser window without the user having
+      // left the page they are on, so it does not pause counting. The window still has to be a
+      // normal, non-minimized one with an active tab.
+      focused: Boolean(win && (win.focused || uiOpen) && win.state !== 'minimized' && tab),
       tabActive: Boolean(tab),
       idle,
       audible: Boolean(tab?.audible),
@@ -161,7 +176,11 @@ export function createController(opts: ControllerOptions): Controller {
     };
   }
 
-  async function fetchVisits(from: number, to: number): Promise<Visit[]> {
+  async function fetchVisits(state: EarnState, from: number, to: number): Promise<Visit[]> {
+    // Screen-time access is an optional permission the user grants during setup. Without it there is
+    // no history to reconstruct a gap from, and the interruption is charged from the last checkpoint
+    // alone (capped), which is the conservative answer.
+    if (!state.historyGranted) return [];
     return safe<Visit[]>('history', [], async () => {
       const items = await api.history.search(from, to, MAX_HISTORY_URLS);
       const visits: Visit[] = [];
@@ -181,7 +200,7 @@ export function createController(opts: ControllerOptions): Controller {
 
   /** Brings accounting up to `now`. Runs history reconciliation first if the gap is too long to trust. */
   async function checkpoint(state: EarnState, now: number): Promise<void> {
-    const obs = await observe(state, now);
+    const obs = await observe(state, now, uiOpenAt !== null && now - uiOpenAt <= UI_OPEN_MS);
     const current = mono();
     const monoDelta = lastMono === null ? null : current - lastMono;
     lastMono = current;
@@ -190,7 +209,7 @@ export function createController(opts: ControllerOptions): Controller {
     if (result.kind === 'reconcile') {
       const prev = state.last;
       const snapshot = makeSnapshot(state, obs);
-      const visits = await fetchVisits(result.from, result.to);
+      const visits = await fetchVisits(state, result.from, result.to);
       const input: ReconcileInput = {
         from: result.from,
         to: result.to,
@@ -232,6 +251,77 @@ export function createController(opts: ControllerOptions): Controller {
     }
   }
 
+  /**
+   * Keeps the recorded screen-time access in step with what Chrome actually granted. A permission can
+   * be revoked from chrome://extensions without EarnTime seeing an event, and a state restored from a
+   * backup can claim an access the profile never gave, so this is checked on every worker start.
+   */
+  async function readScreenTimeAccess(): Promise<boolean> {
+    const granted = await safe<boolean>('permissions.contains', false, () => api.permissions.contains(SCREEN_TIME_PERMISSION));
+    knownScreenTimeAccess = granted;
+    return granted;
+  }
+
+  /**
+   * Re-checks screen-time access when the recorded value may have gone stale. Chrome does not fire an
+   * event when a permission is revoked from chrome://extensions, so this runs at the moments a
+   * difference would matter: a worker start, and a window gaining focus (which is also the first
+   * thing that happens after the extension is re-enabled).
+   */
+  async function syncScreenTimeAccess(): Promise<void> {
+    const granted = await safe<boolean>('permissions.contains', false, () => api.permissions.contains(SCREEN_TIME_PERMISSION));
+    if (knownScreenTimeAccess === granted) return;
+    knownScreenTimeAccess = granted;
+    await job('permissions', false, (state, now) => {
+      applyScreenTimeAccess(state, now, granted);
+    });
+  }
+
+  /**
+   * What Chrome last reported for screen-time access, so a focus change does not read the permission
+   * (and touch storage) on every single window switch. Reset with the worker, as all in-memory
+   * knowledge is.
+   */
+  let knownScreenTimeAccess: boolean | null = null;
+
+  /** Records a change of screen-time access in the state and the ledger. */
+  function applyScreenTimeAccess(state: EarnState, now: number, granted: boolean): void {
+    if (state.historyGranted === granted) return;
+    state.historyGranted = granted;
+    addLedger(state, 'rule', now, 0, granted ? 'Screen-time access granted' : 'Screen-time access removed', undefined, true);
+  }
+
+  /**
+   * Publishes what every open half-productive tab should show, so the next load of that tab can
+   * apply it while the page is still loading — read straight from browser-session storage, with no
+   * service-worker round trip and no uncovered moment. This is a convenience for speed only: the
+   * content script still asks the worker, and the worker's answer is what counts.
+   */
+  async function publishGateCache(state: EarnState, now: number): Promise<void> {
+    const tabs = await safe<TabInfo[]>('tabs.query', [], () => api.tabs.query());
+    const raw = await safe<unknown>('session.get', undefined, () => api.storage.session.get(GATE_CACHE_KEY));
+    let cache: GateCache = raw && typeof raw === 'object' ? { ...(raw as GateCache) } : {};
+    let changed = false;
+    for (const tab of tabs) {
+      if (tab.id === undefined) continue;
+      const url = tab.url ?? '';
+      const host = hostFromUrl(url);
+      if (!host) continue;
+      if (classifyHost(host, state.rules).kind !== 'half') continue;
+      const result: DirectiveResult = pageDirective(state, tab.id, host);
+      const next = withCacheEntry(cache, tab.id, url, result.directive, now);
+      if (JSON.stringify(next) === JSON.stringify(cache)) continue;
+      cache = next;
+      changed = true;
+    }
+    const json = JSON.stringify(cache);
+    if (!changed || json === publishedGate) return;
+    await safe('session.set', undefined, async () => {
+      await api.storage.session.set({ [GATE_CACHE_KEY]: cache });
+      publishedGate = json;
+    });
+  }
+
   async function updateBadge(state: EarnState): Promise<void> {
     if (!state.setupDone) {
       if (lastBadge !== '') {
@@ -254,7 +344,7 @@ export function createController(opts: ControllerOptions): Controller {
   }
 
   /** Sends a block notification when a limit is reached, and keeps the badge in sync. */
-  async function finalize(state: EarnState, before: Flags, beforeJson: string): Promise<void> {
+  async function finalize(state: EarnState, before: Flags, beforeJson: string, now: number): Promise<void> {
     const after = flagsOf(state);
     if (state.setupDone) {
       if (!before.debt && after.debt) {
@@ -269,6 +359,7 @@ export function createController(opts: ControllerOptions): Controller {
     if (after.debt || after.exhausted || after.rulesKey !== before.rulesKey) {
       await enforceOpenTabs(state);
     }
+    await publishGateCache(state, now);
     await updateBadge(state);
     const json = JSON.stringify(state);
     if (json !== beforeJson) {
@@ -296,7 +387,7 @@ export function createController(opts: ControllerOptions): Controller {
         if (checkpointed) await checkpoint(state, now);
         const result = await work(state, now);
         if (checkpointed) await checkpoint(state, now);
-        await finalize(state, before, beforeJson);
+        await finalize(state, before, beforeJson, now);
         return result;
       } catch (err) {
         console.error(`[EarnTime] job ${name} failed`, err);
@@ -351,6 +442,9 @@ export function createController(opts: ControllerOptions): Controller {
         state.last = null;
         state.lastAt = null;
         addLedger(state, 'startup', now, 0, 'Browser started');
+        // Before a gap can be reconstructed from history, the recorded permission has to match what
+        // Chrome actually grants: it can be revoked from chrome://extensions without an event.
+        applyScreenTimeAccess(state, now, await readScreenTimeAccess());
         await checkpoint(state, now);
         // An unfinished setup is offered again on every browser start.
         await ensureSetupPage(state);
@@ -358,15 +452,21 @@ export function createController(opts: ControllerOptions): Controller {
     },
 
     async onInstalled(reason) {
-      await job('installed', true, async (state) => {
+      await job('installed', true, async (state, now) => {
         // A fresh install starts the guided setup. An install whose wizard was never finished is
         // offered again on the next update or reload, rather than being silently skipped.
         if (!state.setupDone) await ensureSetupPage(state);
+        // An upgrade moves `history` from a required to an optional permission, so ask Chrome what
+        // this profile really has instead of trusting the stored flag.
+        applyScreenTimeAccess(state, now, await readScreenTimeAccess());
         void reason;
       });
     },
 
     async onFocusChanged() {
+      // Cheap in the common case (one permission read, no job), and it is what notices a permission
+      // revoked while EarnTime was disabled.
+      await syncScreenTimeAccess();
       await job('focus', true, () => undefined);
     },
 
@@ -444,7 +544,7 @@ export function createController(opts: ControllerOptions): Controller {
           const result = pageDirective(state, tabId, host);
           if (result.clearSession && tabId !== null) delete state.sessions[String(tabId)];
           if (tabId !== null) health.delete(tabId);
-          return { ok: true, directive: result.directive };
+          return { ok: true, directive: result.directive, tabId };
         });
       }
       if (message.type === 'page.choose') {
@@ -477,7 +577,7 @@ export function createController(opts: ControllerOptions): Controller {
             `${message.mode === 'productive' ? 'Productive' : 'Unproductive'} Mode chosen for ${cls.entry}`,
             cls.entry,
           );
-          return { ok: true, directive: pageDirective(state, tabId, host).directive };
+          return { ok: true, directive: pageDirective(state, tabId, host).directive, tabId };
         });
       }
     }
@@ -491,14 +591,33 @@ export function createController(opts: ControllerOptions): Controller {
           return { ok: false, error: { code: result.code, message: result.message, needMs: result.needMs, quote: result.quote } };
         });
       }
+      if (message.type === 'ui.screenTimeAccess') {
+        const grant = message.grant === true;
+        // The prompt itself has to come from the worker while the user's click is still the reason
+        // the message exists, so Chrome shows it; the recorded state then follows the answer rather
+        // than the intention.
+        const granted = grant
+          ? await safe<boolean>('permissions.request', false, () => api.permissions.request(SCREEN_TIME_PERMISSION))
+          : !(await safe<boolean>('permissions.remove', true, () => api.permissions.remove(SCREEN_TIME_PERMISSION)));
+        return job('screen-time-access', true, (state, now): Reply => {
+          applyScreenTimeAccess(state, now, granted);
+          knownScreenTimeAccess = granted;
+          return { ok: true, data: { granted: state.historyGranted } };
+        });
+      }
       if (message.type === 'ui.export') {
         return job('export', false, (state, now): Reply => ({ ok: true, data: auditExport(state, now) }));
       }
       if (message.type === 'ui.tick') {
         // The popup asks for a checkpoint every second while it is open, so the stored balance
         // advances in real time: one second of use charges exactly one second — never more, and
-        // the numbers on screen change visibly every tick.
-        return job('ui.tick', true, (): Reply => ({ ok: true }));
+        // the numbers on screen change visibly every tick. The heartbeat also tells the worker that
+        // an EarnTime page is open, which is what keeps counting (and the display) alive instead of
+        // freezing until the popup is closed and reopened.
+        return job('ui.tick', true, (_state, now): Reply => {
+          uiOpenAt = now;
+          return { ok: true };
+        });
       }
     }
     return fail('unknown', 'Unrecognised message.');

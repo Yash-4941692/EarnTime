@@ -181,10 +181,24 @@ test('loading a realistic v2.1.1 state preserves the wallet, core settings and t
 
   const state = sanitizeState(v211, T0 + 1);
 
-  assert.equal(SCHEMA_VERSION, 4);
-  assert.equal(state.schema, SCHEMA_VERSION, 'the old state is explicitly rewritten as schema 4');
+  assert.equal(SCHEMA_VERSION, 5);
+  assert.equal(state.schema, SCHEMA_VERSION, 'the old state is explicitly rewritten as schema 5');
   assert.equal(state.balanceMs, v211.balanceMs, 'exact balance survives');
-  assert.deepEqual(state.days, v211.days, 'daily totals survive without changes');
+  assert.deepEqual(
+    state.days,
+    {
+      '2026-10-08': {
+        ...v211.days['2026-10-08'],
+        // Schema 5 adds the screen-time fields; a day recorded before they existed starts at zero.
+        hosts: {},
+        screenMs: 0,
+        estimatedScreenMs: 0,
+      },
+    },
+    'daily totals survive without changes',
+  );
+  // `history` was a required permission up to schema 4, so an upgrade already has screen-time access.
+  assert.equal(state.historyGranted, true, 'an upgrade keeps the history permission it already had');
   assert.deepEqual(state.ledger, v211.ledger, 'ledger history survives without changes');
   assert.deepEqual(state.tasks, v211.tasks, 'task definitions and completion history survive without changes');
   assert.deepEqual(state.rules, {
