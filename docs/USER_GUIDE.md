@@ -17,7 +17,7 @@ The setup wizard opens the first time. It has seven steps:
 1. **Welcome**: the loop is Study → Earn → Use → Overspend → Repay.
 2. **Earn rule**: default **60 productive minutes earn 5 minutes**. Also set the **unlock cost** (default 10 min, see *Protection* below).
 3. **Starting balance**: default 0. Setup runs once, so the starting balance cannot be reset later.
-4. **Websites**: productive sites (earn), half-productive sites (you choose the mode each visit; YouTube is included by default), and unproductive sites (spend time; Instagram, Facebook, X, Reddit and Netflix are suggested).
+4. **Websites**: productive sites (earn), half-productive sites (you choose the mode each visit; YouTube and WhatsApp are included by default), and unproductive sites (spend time; Instagram, Facebook, X, Reddit and Netflix are suggested).
 5. **YouTube keywords**: default `JEE`, `NDA`, `Study`, `Learn`, `Education`, `PW`.
 6. **Daily tasks** (optional): goals that pay screen time.
 7. **Review**, then **Finish setup**.
@@ -40,11 +40,16 @@ The setup wizard opens the first time. It has seven steps:
 
 ### YouTube in Productive Mode
 
-- The homepage is replaced by a study search.
-- Results and videos appear only when the **channel name** contains one of your keywords (case-insensitive). Anything whose channel you cannot read is hidden.
+- The homepage shows **no videos** — and no blocking banner either. The rest of the page (search box, guide) works normally.
+- **Search results are never removed.** Every channel's videos stay visible in search, even unproductive ones. The channel is judged only when the content actually plays: the moment a video starts, its channel name is read (on the first visit, no reload needed) and a non-matching video is covered and paused.
 - Shorts, subscriptions, playlists, channel pages and non-matching videos are covered. While a deliberate cover is showing, time is neither charged nor credited.
 - If YouTube's layout itself cannot be verified after the grace period, the filter fails closed and that time is counted as unproductive until the page loads correctly.
 - Matching is by substring: `pw` also matches `Upwork`. Use longer keywords where that matters. *Settings → YouTube* has a checker.
+
+### Half-productive sites without a filter (WhatsApp, and sites you add)
+
+- You get the same **Productive / Unproductive Mode** chooser on every visit; nothing on the page is hidden or blanked in either mode.
+- It is trust based: what you pick is what the time counts as. Productive earns at your ratio, Unproductive is charged to your balance.
 
 ## Balance, debt and repayment
 
@@ -115,6 +120,6 @@ See `docs/KNOWN_LIMITATIONS.md` section 1 for the API this uses, what has been t
 
 - **"Setup isn't finished"**: open the popup and choose *Finish setup*. It also reopens on every browser start until you finish it.
 - **Time is not counting**: check that the EarnTime tab is the active tab in the focused window, and that you are not in an incognito window without access.
-- **YouTube shows a blank page**: that is Productive Mode's study search. Pick a keyword or search for a topic.
+- **YouTube homepage looks empty**: that is Productive Mode hiding the videos. Use the search box to find study content; every result stays visible and the channel is checked when you play a video.
 - **"Filter unavailable"**: the site changed its layout. Time on that page is counted as unproductive until it loads correctly. Reload the page.
 - **Your balance seems wrong after a computer sleep or a browser restart**: EarnTime estimates the gap from history. The audit export shows what it used.

@@ -279,7 +279,7 @@ export function Setup() {
             </div>
             <div className="space-y-2">
               <h3 className="eyebrow">Half-productive: you choose the mode each visit</h3>
-              <ChipInput id="s-half" label="Half-productive site" values={draft.half} onChange={(half) => setDraft({ ...draft, half })} placeholder="e.g. reddit.com" normalize={normalizeHostInput} hint="YouTube has a study filter. Other sites are trusted in Productive Mode." />
+              <ChipInput id="s-half" label="Half-productive site" values={draft.half} onChange={(half) => setDraft({ ...draft, half })} placeholder="e.g. reddit.com" normalize={normalizeHostInput} hint="YouTube has a study filter; WhatsApp is trusted. On other sites you pick the mode and the time counts by your choice." />
             </div>
             <div className="space-y-2">
               <h3 className="eyebrow">Unproductive: spends time</h3>

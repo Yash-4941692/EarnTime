@@ -47,6 +47,17 @@ export function formatDuration(ms: number): string {
   return `${s}s`;
 }
 
+/** Duration with seconds always shown ("1h 05m 12s", "42m 05s", "9s") so live figures visibly tick every second. */
+export function formatDurationPrecise(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h ${pad2(m)}m ${pad2(s)}s`;
+  if (m > 0) return `${m}m ${pad2(s)}s`;
+  return `${s}s`;
+}
+
 /** Whole minutes, rounded down, for display in lists and badges: "42 min". */
 export function formatMinutes(ms: number): string {
   return `${Math.max(0, Math.floor(ms / 60_000))} min`;

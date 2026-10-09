@@ -1,6 +1,6 @@
 {
   "name": "earntime-extension",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "description": "Source for the EarnTime Chrome extension (Manifest V3). Build output is written to the repository root.",
   "license": "MIT",

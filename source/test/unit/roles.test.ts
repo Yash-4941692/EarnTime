@@ -110,7 +110,7 @@ test('pageDirective: choose screen offers Unproductive Mode only when the balanc
   if (funded.directive.kind === 'choose') assert.equal(funded.directive.canUnproductive, true);
 });
 
-test('pageDirective: active directive carries the YouTube keywords and grayscale flag', () => {
+test('pageDirective: active directive carries the YouTube keywords for Productive Mode only', () => {
   const state = freshState();
   state.balanceMs = 10 * MIN;
   state.sessions['3'] = { entry: 'youtube.com', mode: 'productive', since: T0 };
@@ -119,13 +119,13 @@ test('pageDirective: active directive carries the YouTube keywords and grayscale
   if (productive.directive.kind === 'active') {
     assert.equal(productive.directive.filter, 'youtube');
     assert.deepEqual(productive.directive.youtubeKeywords, state.settings.youtubeKeywords);
-    assert.equal(productive.directive.grayscale, false);
+    assert.equal('grayscale' in productive.directive, false, 'the greyscale filter was removed entirely');
   }
   state.sessions['3'] = { entry: 'youtube.com', mode: 'unproductive', since: T0 };
   const unproductive = pageDirective(state, 3, 'youtube.com');
   if (unproductive.directive.kind === 'active') {
-    assert.equal(unproductive.directive.grayscale, true);
     assert.equal(unproductive.directive.filter, null);
+    assert.equal('grayscale' in unproductive.directive, false, 'Unproductive Mode no longer greys the page');
   }
 });
 

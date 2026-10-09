@@ -29,7 +29,7 @@ const LIST_LABEL: Record<ListName, string> = {
 
 const LIST_HELP: Record<ListName, string> = {
   productive: 'Earns screen time while you use it. Always open.',
-  half: 'Mixed sites. You choose Productive or Unproductive Mode each visit. YouTube gets a study filter.',
+  half: 'Mixed sites. You choose Productive or Unproductive Mode each visit. YouTube gets a study filter; WhatsApp and other sites are trusted.',
   unproductive: 'Spends your balance. Blocked when the balance is empty or you are in debt.',
 };
 

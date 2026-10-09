@@ -17,11 +17,25 @@ test('legacy root-extension storage: balance (float minutes), ratio and lists ar
   assert.equal(state.settings.earnFromMin, 25);
   assert.equal(state.settings.earnToMin, 1);
   assert.deepEqual(state.rules.productive, ['khanacademy.org']);
-  assert.deepEqual(state.rules.half, ['youtube.com']);
+  assert.deepEqual(state.rules.half, ['youtube.com', 'web.whatsapp.com'], 'WhatsApp stays a trust-based half-productive site');
   assert.deepEqual(state.rules.unproductive, ['instagram.com']);
   assert.equal(state.setupDone, true);
   assert.equal(state.ledger[0].kind, 'migrate');
   assert.equal(JSON.stringify(state).includes('plaintext'), false, 'nuclear password is not carried over');
+});
+
+test('a schema-3 state that had WhatsApp stripped gets it back exactly once', () => {
+  const v220 = { schema: 3, rules: { productive: [], half: ['youtube.com'], unproductive: [] }, balanceMs: MIN };
+  const upgraded = sanitizeState(v220, T0);
+  assert.ok(upgraded.rules.half.includes('web.whatsapp.com'), 're-added on the first load after the upgrade');
+  assert.equal(upgraded.schema, SCHEMA_VERSION, 'and stored as the new schema');
+  // From schema 4 on, the stored list is authoritative: a user-removed WhatsApp stays removed.
+  const removed = {
+    ...upgraded,
+    rules: { ...upgraded.rules, half: upgraded.rules.half.filter((host) => host !== 'web.whatsapp.com') },
+  };
+  const afterRemoval = sanitizeState(removed, T0 + 1);
+  assert.equal(afterRemoval.rules.half.includes('web.whatsapp.com'), false, 'never force-added again');
 });
 
 test('React prototype storage: balanceSeconds and blocked sites map to unproductive', () => {
@@ -79,7 +93,7 @@ test('sanitizeState repairs corrupted storage without negative money or invalid 
 });
 
 
-test('loading a realistic v2.1.1 state preserves the wallet and core settings while discarding WhatsApp data', () => {
+test('loading a realistic v2.1.1 state preserves the wallet, core settings and the WhatsApp half site', () => {
   const v211 = {
     schema: 2,
     setupDone: true,
@@ -167,17 +181,17 @@ test('loading a realistic v2.1.1 state preserves the wallet and core settings wh
 
   const state = sanitizeState(v211, T0 + 1);
 
-  assert.equal(SCHEMA_VERSION, 3);
-  assert.equal(state.schema, SCHEMA_VERSION, 'the v2 state is explicitly rewritten as schema 3');
+  assert.equal(SCHEMA_VERSION, 4);
+  assert.equal(state.schema, SCHEMA_VERSION, 'the old state is explicitly rewritten as schema 4');
   assert.equal(state.balanceMs, v211.balanceMs, 'exact balance survives');
   assert.deepEqual(state.days, v211.days, 'daily totals survive without changes');
   assert.deepEqual(state.ledger, v211.ledger, 'ledger history survives without changes');
   assert.deepEqual(state.tasks, v211.tasks, 'task definitions and completion history survive without changes');
   assert.deepEqual(state.rules, {
     productive: v211.rules.productive,
-    half: ['youtube.com', 'medium.com'],
+    half: ['youtube.com', 'web.whatsapp.com', 'medium.com'],
     unproductive: v211.rules.unproductive,
-  }, 'all site rules survive except the obsolete WhatsApp half-filter entry');
+  }, 'all site rules survive; WhatsApp remains a trust-based half-productive site');
   assert.deepEqual(state.settings, {
     earnFromMin: 60,
     earnToMin: 5,

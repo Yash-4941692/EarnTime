@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { Command } from '../../core/commands';
 import { isDoneToday } from '../../core/tasks';
-import { dayKey, formatDuration } from '../../core/time';
+import { dayKey, formatDuration, formatDurationPrecise } from '../../core/time';
 import { dashboardView, type DashboardView, type ModeTone } from '../../core/view';
 import type { EarnState, Task } from '../../core/types';
 import { Button, Card, ModePill, Notice, ProgressBar, Stat, type Tone } from '../components';
-import { incognitoAllowed, openExtensionPage, runCommand, useNow, useStoredState } from '../lib/extension';
+import { incognitoAllowed, openExtensionPage, runCommand, useLiveTick, useNow, useStoredState } from '../lib/extension';
 
 const TONE: Record<ModeTone, Tone> = {
   productive: 'productive',
@@ -108,6 +108,7 @@ function TasksCard({ tasks, now, onError }: { tasks: Task[]; now: number; onErro
 export function Popup() {
   const state = useStoredState();
   const now = useNow(1000);
+  useLiveTick(1000);
   const [incognito, setIncognito] = useState<boolean | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -146,6 +147,17 @@ export function Popup() {
         <ModePill label={view.modeLabel} tone={TONE[view.modeTone]} />
       </div>
 
+      {view.sessionMs !== null ? (
+        <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2">
+          <span className="truncate text-[12px] text-slate-400">
+            This visit · <span className="text-slate-300">{view.currentHost ?? 'this site'}</span>
+          </span>
+          <span className="ml-2 shrink-0 text-[13px] font-semibold tabular-nums text-slate-100" aria-live="off">
+            {formatDurationPrecise(view.sessionMs)}
+          </span>
+        </div>
+      ) : null}
+
       {!state.setupDone ? (
         <Notice tone="warn">
           Setup isn't finished.{' '}
@@ -168,7 +180,7 @@ export function Popup() {
           <div>
             <div className="eyebrow">Remaining</div>
             <div className="mt-1 text-[34px] font-semibold leading-none tabular-nums text-slate-50" aria-live="off">
-              {formatDuration(view.balanceMs)}
+              {formatDurationPrecise(view.balanceMs)}
             </div>
             <div className="mt-1.5 text-[11.5px] text-slate-500">{view.ratioLabel}</div>
           </div>

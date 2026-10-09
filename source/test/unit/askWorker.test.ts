@@ -72,7 +72,7 @@ test('a refusal is an answer and is not retried', async () => {
 test('it gives up within the budget instead of asking forever', async () => {
   // The worker never comes up and each round trip is slow, so the budget runs out mid-schedule.
   const h = harness({ missing: Number.POSITIVE_INFINITY, costPerAttemptMs: 4000 });
-  const reply = await askWorker({ type: 'page.init' }, h.send, h.options);
+  const reply = await askWorker({ type: 'page.init' }, h.send, { ...h.options, budgetMs: 15_000 });
   assert.equal(reply, undefined, 'the page is told there is no answer');
   assert.ok(
     h.recorded.attempts < RETRY_PAUSES_MS.length + 1,
@@ -80,6 +80,8 @@ test('it gives up within the budget instead of asking forever', async () => {
   );
   assert.ok(h.recorded.attempts > 1, 'but it did retry the first failure');
 });
+
+
 
 test('a tight budget stops the retrying at once', async () => {
   const h = harness({ missing: Number.POSITIVE_INFINITY });
@@ -97,10 +99,15 @@ test('the whole pause schedule fits inside the default budget', () => {
   );
 });
 
-test('a worker that never comes up costs one attempt per scheduled pause, and not one more', async () => {
+test('a worker that never comes up grows the pause, then repeats the last one until the budget', async () => {
   const h = harness({ missing: Number.POSITIVE_INFINITY });
   const reply = await askWorker({ type: 'page.init' }, h.send, h.options);
   assert.equal(reply, undefined);
-  assert.equal(h.recorded.attempts, RETRY_PAUSES_MS.length + 1, 'the first ask plus one retry per pause');
-  assert.deepEqual(h.recorded.pauses, RETRY_PAUSES_MS);
+  const pauses = h.recorded.pauses;
+  assert.deepEqual(pauses.slice(0, RETRY_PAUSES_MS.length), RETRY_PAUSES_MS, 'the pause grows through the schedule first');
+  assert.ok(pauses.length > RETRY_PAUSES_MS.length, 'it kept asking past the schedule (no reload needed)');
+  const last = RETRY_PAUSES_MS[RETRY_PAUSES_MS.length - 1];
+  assert.ok(pauses.slice(RETRY_PAUSES_MS.length).every((ms) => ms === last), 'the final pause repeats');
+  const total = pauses.reduce((sum, ms) => sum + ms, 0);
+  assert.ok(total <= DEFAULT_BUDGET_MS, `retries stay inside the budget (${total}ms)`);
 });

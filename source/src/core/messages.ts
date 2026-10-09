@@ -12,7 +12,8 @@ export type PageMessage =
 export type UiMessage =
   | { type: 'ui.command'; command: Command }
   | { type: 'ui.export' }
-  | { type: 'ui.reconcileNow' };
+  | { type: 'ui.reconcileNow' }
+  | { type: 'ui.tick' };
 
 export type Incoming = PageMessage | UiMessage;
 
@@ -37,5 +38,5 @@ export function isPageMessage(value: unknown): value is PageMessage {
 export function isUiMessage(value: unknown): value is UiMessage {
   if (!value || typeof value !== 'object') return false;
   const type = (value as { type?: unknown }).type;
-  return type === 'ui.command' || type === 'ui.export' || type === 'ui.reconcileNow';
+  return type === 'ui.command' || type === 'ui.export' || type === 'ui.reconcileNow' || type === 'ui.tick';
 }
