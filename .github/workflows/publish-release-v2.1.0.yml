@@ -1,0 +1,163 @@
+name: Publish v2.1.0
+
+# Publishes the v2.1.0 release for EarnTime: builds the release ZIP from the
+# merged PR #4 commit (45ed88e662571fa21d7ff4009c5287d6b96b726d) with the
+# repository's deterministic packager, attaches it to the GitHub release, then
+# downloads the published asset back and verifies its SHA-256 checksum.
+#
+# The sandbox this release was prepared in cannot reach uploads.github.com, so
+# the asset upload runs here on GitHub's infrastructure instead. The job refuses
+# to publish unless the rebuild is bit-identical to the ZIP built locally from
+# the same merge commit.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/0cc14ddb-earntime]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    # Pushes to the session branch only run this when the commit message asks
+    # for it; workflow_dispatch always runs (used for retries).
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish v2.1.0]')
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: v2.1.0
+      MERGE_SHA: 45ed88e662571fa21d7ff4009c5287d6b96b726d
+      # SHA-256 of EarnTime-2.1.0.zip built from the merge commit with
+      # `npm run package` (deterministic: fixed timestamps from the commit date).
+      EXPECTED_SHA256: 883c5deb73cfeeded73585b81ee4277ec3fb69d8521f5402026981a077854206
+      ZIP_NAME: EarnTime-2.1.0.zip
+    steps:
+      - name: Check out the merge commit
+        uses: actions/checkout@v4
+        with:
+          ref: 45ed88e662571fa21d7ff4009c5287d6b96b726d
+
+      # Same Node release as the machine that produced the expected checksum;
+      # Node's bundled zlib makes `npm run package` output reproducible.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.3'
+
+      - name: Install dependencies
+        working-directory: source
+        run: npm ci
+
+      - name: Build release ZIP from the merge commit
+        working-directory: source
+        run: npm run package -- --out-dir "$RUNNER_TEMP/dist"
+
+      - name: Assert rebuild is bit-identical to the merge-commit build
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dist"
+          echo "$EXPECTED_SHA256  $ZIP_NAME" | sha256sum -c -
+          unzip -t "$ZIP_NAME"
+          test "$(unzip -Z1 "$ZIP_NAME" | wc -l)" -eq 28
+          unzip -p "$ZIP_NAME" manifest.json | grep -q '"version": "2.1.0"'
+
+      - name: Publish release with ZIP attached
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NOTES=$(cat <<'EOF'
+          Study to earn your screen time — 2.1.0 release.
+
+          ## What's new
+
+          ### Configuration is no longer locked behind the unlock cost
+
+          Adding a productive site, a YouTube keyword or a WhatsApp chat used to cost 10 minutes — two hours of study at the default 60:5 ratio. A change now costs only when it **lifts a restriction EarnTime was already enforcing**.
+
+          | Costs the unlock cost | Free |
+          | --- | --- |
+          | Removing an unproductive or half-productive site | Adding a site to *any* list, including Productive |
+          | Moving a site to a more permissive list | Moving a site to a stricter list |
+          | Raising the earn ratio; lowering the unlock cost | Removing a productive site; lowering the ratio |
+          | Adding a task; raising a task reward | Keywords, chats, groups, and everything in Auto-reply |
+
+          A host on no list is already unrestricted, so listing it can only add tracking — there is nothing to unlock.
+
+          ### Setup reopens until it is finished
+
+          Previously the wizard opened only on the install event, so reloading an unpacked extension (which reports "update") left you stranded. An unfinished setup is now offered on every browser start, one tab at a time.
+
+          ### WhatsApp auto-reply
+
+          Plain-text messages sent from your WhatsApp Web tab:
+
+          - **Someone messages me** — a reply when a new message arrives
+          - **I tick off a task** — an announcement; `{task}` renders the task name (`Yash Boss completed his today's {task}`)
+          - **A time of day arrives** — a scheduled message during a window
+
+          Repeat modes: every time / once a day per chat / **once ever per chat** (for a first-time introduction).
+
+          **Group safety is structural.** A rule that names chats sends to exactly those. A rule with no names answers **personal chats only** — never a group, never a chat on your Productive Mode list, and never a chat it cannot classify. Task and scheduled rules must name their chats.
+
+          **Works with WhatsApp in a background tab.** Chrome throttles background-tab timers, so the service worker drives delivery on every tick and the instant a task pays out.
+
+          **Fails gracefully.** At most three messages per cycle with a pause between them; after three consecutive failures the tab stops until WhatsApp is reloaded; every failure is logged with its reason.
+
+          ## Honest scope
+
+          Plain text only — no media, stickers, reactions, replies-to-message, mentions or formatting. Message *content* is never read; only chat titles and unread counts. WhatsApp Web has no extension API, so EarnTime drives its interface and a WhatsApp redesign will break the selectors — when that happens sends fail loudly and are logged rather than silently misfiring. Automated messaging may be against WhatsApp's terms of service. See `docs/KNOWN_LIMITATIONS.md` section 8.
+
+          ## Install
+
+          1. Download `EarnTime-2.1.0.zip` and extract it (flat layout: `manifest.json` at the top level).
+          2. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked** and select the extracted folder.
+          3. The setup wizard opens. If you close it unfinished, it reopens the next time Chrome starts.
+
+          Upgrading from 2.0.1: reload the unpacked extension. Settings and balances carry over; the new auto-reply and group lists start empty.
+
+          ## Asset checksum (SHA-256)
+          ```
+          883c5deb73cfeeded73585b81ee4277ec3fb69d8521f5402026981a077854206  EarnTime-2.1.0.zip
+          ```
+
+          Built from merge commit `45ed88e662571fa21d7ff4009c5287d6b96b726d` with `npm run package`; all 28 entries verified byte-identical to the committed files.
+
+          ## Chrome limitation
+
+          Chrome prevents extensions from completely controlling privileged `chrome://` pages. Therefore this protection cannot be made absolute using a standard Chrome extension alone. See `docs/KNOWN_LIMITATIONS.md`.
+          EOF
+          )
+          echo "$NOTES" > "$RUNNER_TEMP/notes.md"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists — (re)uploading the asset."
+            gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/dist/$ZIP_NAME" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/dist/$ZIP_NAME" \
+              --target "$MERGE_SHA" \
+              --title "EarnTime v2.1.0" \
+              --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+          gh release view "$RELEASE_TAG" --json tagName,targetCommitish,isDraft,isPrerelease,url,assets
+
+      - name: Download the published asset and verify its checksum
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/dl"
+          gh release download "$RELEASE_TAG" -D "$RUNNER_TEMP/dl" -p "$ZIP_NAME"
+          cd "$RUNNER_TEMP/dl"
+          ACTUAL=$(sha256sum "$ZIP_NAME" | cut -d' ' -f1)
+          echo "Built checksum:      $EXPECTED_SHA256"
+          echo "Downloaded checksum: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED_SHA256"
+          echo
+          {
+            echo "### $RELEASE_TAG asset verification"
+            echo ""
+            echo "- Built from merge commit \`$MERGE_SHA\` with \`npm run package\` (Node v22.22.3)"
+            echo "- Built ZIP SHA-256: \`$EXPECTED_SHA256\`"
+            echo "- Downloaded asset SHA-256: \`$ACTUAL\`"
+            echo "- Checksums match: ✅"
+          } >> "$GITHUB_STEP_SUMMARY"
