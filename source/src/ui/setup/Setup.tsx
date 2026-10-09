@@ -27,6 +27,7 @@ interface Draft {
   unproductive: string[];
   keywords: string[];
   chats: string[];
+  groups: string[];
   tasks: Array<{ title: string; rewardMin: number; recurring: boolean }>;
 }
 
@@ -40,6 +41,7 @@ const INITIAL: Draft = {
   unproductive: [...SUGGESTED_UNPRODUCTIVE_SITES],
   keywords: [...DEFAULT_YOUTUBE_KEYWORDS],
   chats: [],
+  groups: [],
   tasks: [],
 };
 
@@ -186,6 +188,7 @@ export function Setup() {
       unproductive: draft.unproductive,
       youtubeKeywords: draft.keywords,
       whatsappChats: draft.chats,
+      whatsappGroups: draft.groups,
       tasks: draft.tasks,
     };
     const result = await runCommand({ type: 'setup.complete', payload });
@@ -308,6 +311,14 @@ export function Setup() {
               In Productive Mode only these chats are visible. Use the exact name WhatsApp shows. You can leave this empty and add chats later.
             </p>
             <ChipInput id="s-chat" label="Chat name" values={draft.chats} onChange={(chats) => setDraft({ ...draft, chats })} placeholder="Exact chat name" />
+            <ChipInput
+              id="s-group"
+              label="Group names"
+              values={draft.groups}
+              onChange={(groups) => setDraft({ ...draft, groups })}
+              placeholder="e.g. Progress Check"
+              hint="Optional. Auto-reply never messages a group unless a rule names it, and this list is how EarnTime tells groups from personal chats."
+            />
           </div>
         ) : null}
 
@@ -335,6 +346,8 @@ export function Setup() {
               <dd className="break-words">{draft.keywords.join(', ') || 'none'}</dd>
               <dt className="text-slate-500">WhatsApp chats</dt>
               <dd className="break-words">{draft.chats.join(', ') || 'none'}</dd>
+              <dt className="text-slate-500">WhatsApp groups</dt>
+              <dd className="break-words">{draft.groups.join(', ') || 'none'}</dd>
               <dt className="text-slate-500">Tasks</dt>
               <dd>{draft.tasks.length}</dd>
             </dl>

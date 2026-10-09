@@ -26,6 +26,7 @@ export function setupPayload(overrides: Partial<SetupPayload> = {}): SetupPayloa
     unproductive: ['instagram.com', 'reddit.com'],
     youtubeKeywords: ['JEE', 'NDA', 'Study', 'Learn', 'Education', 'PW'],
     whatsappChats: ['Mom'],
+    whatsappGroups: ['Progress Check'],
     tasks: [],
     ...overrides,
   };

@@ -22,6 +22,11 @@ export interface WhatsAppOptions {
 export interface WhatsAppFilter {
   stop(): void;
   healthy(): boolean;
+  /**
+   * Stands the filter aside while an auto-reply drives the page, so opening a chat that is not on
+   * the allowed list to deliver a message does not cover the window and mark the time unproductive.
+   */
+  setPaused(active: boolean): void;
 }
 
 function titleOf(row: HTMLElement): string | null {
@@ -47,6 +52,7 @@ export function startWhatsAppFilter(opts: WhatsAppOptions): WhatsAppFilter {
   let scheduled: number | null = null;
   const started = Date.now();
   let lastCover = '';
+  let paused = false;
 
   const setHealthy = (next: boolean) => {
     if (next !== healthy) {
@@ -86,6 +92,11 @@ export function startWhatsAppFilter(opts: WhatsAppOptions): WhatsAppFilter {
 
   const scan = () => {
     scheduled = null;
+    // While an auto-reply is driving the page the filter neither hides chats nor covers the window.
+    if (paused) {
+      clearCover();
+      return;
+    }
     let list: HTMLElement | null = null;
     for (const selector of LIST_SELECTORS) {
       list = document.querySelector<HTMLElement>(selector);
@@ -160,5 +171,11 @@ export function startWhatsAppFilter(opts: WhatsAppOptions): WhatsAppFilter {
       window.clearInterval(interval);
     },
     healthy: () => healthy,
+    setPaused(active: boolean) {
+      if (paused === active) return;
+      paused = active;
+      if (paused) clearCover();
+      else scan();
+    },
   };
 }

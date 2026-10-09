@@ -97,6 +97,8 @@ export class FakeBrowser {
   visits: SimVisit[] = [];
   dnr = new Map<number, DnrRule>();
   notifications: Array<{ title: string; message: string; at: number }> = [];
+  /** Messages the worker pushed to a content script with chrome.tabs.sendMessage. */
+  tabMessages: Array<{ tabId: number; message: unknown; at: number }> = [];
   badge = { text: '', color: '' };
   incognitoAllowed = false;
   /** Called after every storage write (browser tests persist state with it). */
@@ -235,6 +237,11 @@ export class FakeBrowser {
             await self.fireTab(self.events.onUpdated, tab, tabId, { url: tab.url }, self.tabInfo(tab));
           }
           return self.tabInfo(tab);
+        },
+        sendMessage: async (tabId: number, message: unknown) => {
+          if (!self.tabs.has(tabId)) throw new Error('sim: no such tab');
+          self.tabMessages.push({ tabId, message: clone(message), at: self.now });
+          return undefined;
         },
         onActivated: this.events.onActivated,
         onUpdated: this.events.onUpdated,

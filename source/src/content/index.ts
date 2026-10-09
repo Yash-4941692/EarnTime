@@ -4,10 +4,12 @@
  * sent back for the worker to validate.
  */
 
+import { WHATSAPP_HOST } from '../core/constants';
 import type { PageDirective } from '../core/directive';
-import type { HalfMode } from '../core/types';
+import type { AutoReplyJob, HalfMode } from '../core/types';
 import { applyGrayscale } from './grayscale';
 import { chooserCard, createOverlay, type Overlay } from './overlay';
+import { startWhatsAppAutoReply } from './whatsappSend';
 import { startWhatsAppFilter, type WhatsAppFilter } from './whatsapp';
 import { startYouTubeFilter, type YouTubeFilter } from './youtube';
 
@@ -16,6 +18,7 @@ const HEALTH_INTERVAL_MS = 10_000;
 interface Reply {
   ok: boolean;
   directive?: PageDirective;
+  jobs?: AutoReplyJob[];
   error?: { message: string };
 }
 
@@ -39,6 +42,29 @@ function send(message: unknown): Promise<Reply | undefined> {
 function whenReady(fn: () => void): void {
   if (document.documentElement) fn();
   else document.addEventListener('readystatechange', () => document.documentElement && fn(), { once: true });
+}
+
+/**
+ * Auto-replies run on WhatsApp Web whatever mode the page is in: the point is that a message is
+ * answered without the user opening the site. The service worker decides what to send; this tab only
+ * delivers it.
+ */
+function startAutoReply(getFilter: () => WhatsAppFilter | null): void {
+  if (location.hostname !== WHATSAPP_HOST) return;
+  startWhatsAppAutoReply({
+    async requestJobs(unread, groups) {
+      const reply = await send({ type: 'wa.poll', unread, groups });
+      return reply?.jobs ?? [];
+    },
+    async report(job, ok, error, text) {
+      await send({ type: 'wa.result', jobId: job.id, chat: job.chat, ruleId: job.ruleId, ok, text, error: error ?? undefined });
+    },
+    onSending: (active) => getFilter()?.setPaused(active),
+    async onGiveUp(reason) {
+      // Surfaced in the activity log rather than as an overlay, so it never covers the page.
+      await send({ type: 'wa.result', jobId: 'give-up', chat: 'Auto-reply', ruleId: '', ok: false, error: reason });
+    },
+  });
 }
 
 function start(): void {
@@ -147,6 +173,8 @@ function start(): void {
       }
     });
   };
+
+  startAutoReply(() => whatsapp);
 
   void send({ type: 'page.init', url }).then((reply) => {
     if (!reply || !reply.ok) return;

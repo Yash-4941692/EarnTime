@@ -30,6 +30,7 @@ export function createChromeApi(c: typeof chrome): ExtApi {
       update: async (tabId, url) => {
         await c.tabs.update(tabId, { url });
       },
+      sendToTab: (tabId, message) => c.tabs.sendMessage(tabId, message),
     },
     history: {
       search: (startTime, endTime, maxResults) =>

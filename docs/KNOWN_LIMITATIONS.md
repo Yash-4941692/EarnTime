@@ -70,6 +70,15 @@ The audit export (Settings → Protection) records each reconciliation's window,
 - The default unlock cost is 10 minutes. It can be set to 0, which turns the cost model off. Lowering it is charged at the current price first.
 - Rules cannot be loosened while in debt.
 - Setup runs once. Its starting balance is capped at 30 minutes.
+- **A cost applies only when an existing restriction is lifted.** Adding a site to any list is free,
+  because a site on no list is already unrestricted; adding or removing YouTube keywords, WhatsApp
+  chats and WhatsApp groups is free, because those lists never gate access to a site. The
+  consequences are deliberate and worth knowing:
+  - You can mark any site productive without paying, and productive time earns screen time. The
+    productive list is an honesty setting, not a lock.
+  - A very broad YouTube keyword (a single letter, say) lets most of YouTube count as study time.
+  - Moving a site *up* from unproductive, or dropping an unproductive or half-productive site, still
+    costs, so undoing a restriction you set is never free.
 
 ## 7. Data and privacy
 
@@ -78,14 +87,43 @@ The audit export (Settings → Protection) records each reconciliation's window,
 - The audit export contains hostnames, minutes and settings. It contains no page addresses.
 - The extension makes no network requests.
 
-## 8. Out of scope
+## 8. WhatsApp auto-reply
+
+- **WhatsApp Web must be open and logged in** in a Chrome tab. There is no other channel and EarnTime
+  does not use one: no WhatsApp Business API, no network requests, no phone pairing.
+- **Plain text only.** Media, stickers, GIFs, documents, voice notes, location, contacts, reactions,
+  replies to a specific message, mentions, and formatting (bold/italic/monospace) are not supported.
+  Message *content* is never read — only chat titles and unread counts.
+- **It drives WhatsApp's DOM**, because WhatsApp Web exposes no extension API. Every selector in
+  `source/src/content/whatsappSend.ts` is a guess about the current layout and **will** break when
+  WhatsApp ships a redesign. When it breaks, a send fails, the reason is logged, and after three
+  consecutive failures that tab stops until WhatsApp is reloaded. Nothing is retried in a tight loop
+  and the page is never left with a half-typed message that EarnTime reported as sent.
+- **Group detection is best effort.** A group without a custom photo carries a group icon EarnTime can
+  read; a group *with* a photo carries none. That is why the explicit group list in Settings is the
+  authoritative signal, and why a chat that cannot be classified is treated as a group and skipped by
+  fallback rules. A rule that *names* a group still messages it — naming is the override.
+- **Unread detection depends on the unread badge.** A message that arrives and is read elsewhere
+  (phone, another computer) before EarnTime's next scan may never be seen. Scans happen every 2.5 s in
+  a focused tab and roughly every 30 s in a background tab, where Chrome throttles timers and the
+  service worker has to nudge the page.
+- **Delivery is not instant in a background tab.** Task announcements are pushed immediately; incoming
+  -message replies can lag by up to about 30 seconds.
+- **Automated messaging may violate WhatsApp's terms of service** and could in principle get a number
+  restricted. Rate limits (cooldown, repeat mode, at most three messages per cycle with a pause
+  between them) reduce the risk; they do not remove it.
+- **Not supported:** sending to a chat that is not in the chat list *and* not findable by WhatsApp
+  search, archived or blocked chats, channels, communities, status, calls, and any chat whose exact
+  name you have not typed.
+
+## 9. Out of scope
 
 - Chrome for Android, Firefox, Edge and other browsers have not been tested.
 - No sync across devices and no account.
-- No time-of-day schedules and no parental-control features.
+- No time-of-day schedules for *blocking* (auto-reply has time windows; site blocking does not) and no parental-control features.
 - No defence against a determined user with full control of the machine.
 
-## 9. Test gaps
+## 10. Test gaps
 
 No real Chrome browser was available for end-to-end testing. The following behaviours have **not** been exercised with a real Chrome extension runtime:
 
@@ -94,6 +132,9 @@ No real Chrome browser was available for end-to-end testing. The following behav
 - the `chrome://extensions` redirect and the flash it may cause;
 - disabling, reloading and removing the extension, and the reconciliation that follows;
 - real `chrome.history` visits, real idle timing, real notifications and real incognito gating;
-- YouTube and WhatsApp Web as they currently render (the browser tests use fixture pages).
+- YouTube and WhatsApp Web as they currently render (the browser tests use fixture pages, and the
+  auto-reply DOM tests use a hand-written fake WhatsApp layout);
+- a real auto-reply end to end: opening a real chat, typing into the real composer and actually
+  delivering a message to a real contact.
 
 `docs/TESTING.md` lists the manual checks to run before release.
