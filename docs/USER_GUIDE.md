@@ -77,7 +77,11 @@ After setup, any change that makes usage easier costs the **unlock cost** (defau
 
 If the balance cannot pay, the change is refused and nothing changes. Changes are refused while you are in debt.
 
-EarnTime also redirects `chrome://extensions` and `chrome://settings/extensions` tabs to its block page. **Chrome limits what extensions can do here, so this cannot be made absolute.** See `docs/KNOWN_LIMITATIONS.md`.
+EarnTime also redirects `chrome://extensions` and `chrome://settings/extensions` tabs to its block page.
+
+> Chrome prevents extensions from completely controlling privileged `chrome://` pages. Therefore this protection cannot be made absolute using a standard Chrome extension alone.
+
+See `docs/KNOWN_LIMITATIONS.md` section 1 for the API this uses, what has been tested, and which bypasses remain.
 
 ## Audit
 
