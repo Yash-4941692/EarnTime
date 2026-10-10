@@ -32,7 +32,7 @@ By default **60 productive minutes earn 5 minutes**. The ratio, starting balance
 - **Live timer.** The popup beats once a second, so the remaining time falls in front of your eyes while it is open instead of freezing until you reopen it — and the time behind the popup keeps counting.
 - **Counts only active use.** Only the active tab of the focused Chrome window counts. Background tabs, minimised windows, idle time and locked screens do not.
 - **Debt.** If usage runs past your balance while EarnTime was not running (extension disabled, browser closed, computer asleep), the excess becomes debt, estimated from browser history. Debt restricts browsing to productive sites until it is repaid by studying.
-- **YouTube Productive Mode.** The homepage simply shows no videos (no banner over it). Search results stay fully visible — every channel, even unproductive ones — and a video's channel name is checked the moment it plays, on the first visit with no reload. Non-study videos are covered without charging or crediting time; if YouTube’s layout cannot be verified, the filter fails closed.
+- **YouTube Productive Mode.** The homepage simply shows no videos (no banner over it). Search results stay visible, and a video's channel is checked when it plays. You can also browse channel and playlist pages when their owning channel name matches your study keywords; Shorts, subscriptions and non-matching channels remain covered. If YouTube’s layout cannot be verified, the filter fails closed.
 - **Protection costs.** After setup, a change costs the unlock cost (default 10 min) only when it **lifts a restriction EarnTime was already enforcing** — dropping an unproductive or half-productive site, or moving a site to a more permissive list. Adding a site to any list is free, as are YouTube keywords because they do not gate access to a site. A change that costs is **quoted before it is charged**, so one click never spends your balance by accident. Setup runs once.
 - **Daily tasks.** Recurring or one-off tasks that pay screen time, once per day or once ever.
 - **Screen-time analytics.** With the optional `history` permission (asked for during setup), EarnTime records how long **each site** was in front of you today and measures earned, used and debt from that daily screen time. The popup shows the top sites; *Settings → Analytics* shows the full per-site breakdown, a 14-day trend, and today against yesterday and your average, so you can see progress or degradation at a glance. Time reconstructed after an interruption is marked **estimated**. Hostnames and minutes only.
@@ -65,9 +65,9 @@ cd source
 npm install
 npm run build          # esbuild → ../background.js, ../content.js, ../popup.*, ../settings.*, ../setup.*, ../block.*
 npm run typecheck      # tsc --strict over src/ and test/
-npm run test:unit      # 106 unit tests: accounting, reconciliation, rules, costs, migration, invariants
-npm run test:dom       # 13 jsdom tests: the real YouTube filter, covers and health states
-npm run test:sim       # 33 flow tests against a simulated browser (real controller, real chrome adapter)
+npm run test:unit      # 134 unit tests: accounting, reconciliation, rules, costs, migration, invariants
+npm run test:dom       # 43 jsdom tests: the real YouTube filter, gate, covers and health states
+npm run test:sim       # 42 flow tests against a simulated browser (real controller, real chrome adapter)
 npm test               # typecheck + unit + dom + simulated-browser flow tests (no browser binary needed)
 CHROME_PATH=/path/to/chromium npm run test:browser   # built pages and content scripts in headless Chromium
 CHROME_PATH=/path/to/chromium npm run test:all       # everything

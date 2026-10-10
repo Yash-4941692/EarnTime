@@ -1,8 +1,8 @@
 # Test report
 
-**Status: source logic and simulated flows verified; not yet exercised in real Chrome.** The complete source test command passed on 2026-10-09 (v2.4.0). The separate Playwright/Chromium suite and the manual extension checklist were not run because this environment has no Chromium binary.
+**Status: source logic and simulated flows verified; not yet exercised in real Chrome.** The complete source test command passed on 2026-10-10 (v2.4.1). The separate Playwright/Chromium suite and the manual extension checklist were not run because this environment has no Chromium binary.
 
-> `cd source && npm test` passes **213 tests**: 134 unit + 37 jsdom DOM + 42 simulated-browser flow tests. It includes the strict TypeScript check. The browser suite contains 12 tests but requires `CHROME_PATH`; those results are not included in the 213.
+> `cd source && npm test` passes **219 tests**: 134 unit + 43 jsdom DOM + 42 simulated-browser flow tests. It includes the strict TypeScript check. The browser suite contains 12 tests but requires `CHROME_PATH`; those results are not included in the 219.
 
 ## Environment
 
@@ -18,9 +18,9 @@
 | Type check (strict, `noUnusedLocals`) | `npm run typecheck` | **pass** |
 | Build (root artifacts) | `npm run build` | **pass** |
 | Unit tests | `npm run test:unit` | **134 / 134 pass** |
-| DOM tests (jsdom: load-time gate, page lifecycle, YouTube filter) | `npm run test:dom` | **37 / 37 pass** |
+| DOM tests (jsdom: load-time gate, page lifecycle, YouTube filter) | `npm run test:dom` | **43 / 43 pass** |
 | Flow tests (simulated browser) | `npm run test:sim` | **42 / 42 pass** |
-| Complete source suite | `npm test` | **213 / 213 pass**, including type check |
+| Complete source suite | `npm test` | **219 / 219 pass**, including type check |
 | Browser tests (Playwright + Chromium) | `npm run test:browser` | **12 available; not run** |
 | Real Chrome extension end-to-end | manual checklist below | **not run** |
 
@@ -41,7 +41,7 @@ The release build is verified separately with `npm run build`; browser-specific 
 - **Worker-free page verdict (`src/content/local.ts`):** rule narrowing to the shared `DirectiveInput` shape, half-site chooser verdicts, productive/unproductive/neutral verdicts, the 30-second gate-cache TTL, the 100-entry cache limit, and cache read/write failure being non-fatal.
 - **Invariants:** 25 seeded random sequences (200 steps each) keep balance and debt non-negative and conserve value; a ledger-size limit test.
 
-### DOM tests (`source/test/dom`, 37)
+### DOM tests (`source/test/dom`, 43)
 
 **Load-time gate (`gate.test.ts`) and page lifecycle (`page.test.ts`)** run the real content-script code against jsdom with injected globals and a virtual clock:
 
@@ -55,10 +55,11 @@ The release build is verified separately with `npm run build`; browser-specific 
 
 **YouTube filter tests** exercise the real `src/content/youtube.ts` against jsdom YouTube fixture layouts:
 
-- search results keep keyword channels and hide other, unreadable, and Shorts content;
-- dynamic channel-name changes are rescanned;
-- the homepage becomes a study search with keyword shortcuts;
-- Shorts, unsupported sections, non-study watch pages, and unreadable channel names report deliberate covers;
+- search results stay visible, while Shorts shelves remain hidden;
+- keyword-matched channel and playlist pages stay open for browsing without video playback;
+- non-matching or unreadable channel/playlist owners are covered, and playlist titles alone cannot qualify an unrelated owner;
+- channel-name changes are rescanned, and navigating from an allowed channel to a non-matching video still closes that video;
+- the homepage shows no videos; Shorts, unsupported sections, and non-matching watch pages report deliberate covers;
 - deliberate covers pause media where applicable and report a healthy `covered` status;
 - matching watch pages remain usable while the related shelf stays hidden;
 - an absent page layout waits through the grace period, then fails closed and reports unhealthy; a layout appearing during the grace period is not treated as failure;
@@ -78,7 +79,12 @@ The simulator also models two behaviours Chrome has and earlier versions of the 
 
 The Playwright harness builds the extension pages and content script, serves fixture pages for YouTube, and injects a simulated-browser/controller harness. It covers popup, settings, setup, mode chooser and cover presentation. It does **not** load the extension into Chrome and does not replace the real-browser checks below. The current suite was not run because no Chromium executable was available.
 
-## Regression checks added for this change (v2.4.0)
+## Regression checks added for this change (v2.4.1)
+
+- Channel and playlist pages are open only when their owning channel name matches a YouTube keyword; browsing does not require playing a video.
+- Missing or non-matching owners stay covered, playlist titles cannot bypass the owner check, and a later video navigation is still checked against that video's channel.
+
+### Existing regression checks from v2.4.0
 
 - A half-productive site is gated at `document_start` from local rules only, so the first visit cannot be used before the chooser is answered — verified in jsdom (gate + page lifecycle) and in the simulator (gate cache published before the content script asks).
 - SPA and in-page navigations re-ask, and a revisit to the same site re-asks when the previous choice is no longer current.
@@ -121,7 +127,7 @@ Use a dedicated Chrome profile. EarnTime redirects `chrome://extensions`, so rel
 9. **Known bypass:** remove EarnTime from Chrome using the toolbar menu; confirm the documented limitation.
 10. **Interruption and debt:** in a test profile with 10 minutes, leave Instagram active and interrupt Chrome for 40 minutes. Check the reconciliation audit entry, debt explanation, and blocking (noting the per-visit cap).
 11. **Debt repayment:** verify only productive sites open while in debt; productive time should repay debt before growing the balance.
-12. **YouTube:** choose Productive Mode. Verify study search, keyword-only channels and homepage shortcuts. Shorts, unsupported sections and a non-matching video should be covered without changing charged or credited totals. Verify Unproductive Mode is unavailable at zero balance.
+12. **YouTube:** choose Productive Mode. Verify study search and homepage shortcuts; open a channel and playlist whose owner name matches a keyword without starting a video; confirm non-matching or unreadable owners and Shorts are covered. Play a video from a different channel and verify it is still checked. Covers should not change charged or credited totals. Verify Unproductive Mode is unavailable at zero balance.
 13. **Incognito:** with incognito access off, activity should not count; allow EarnTime in incognito and verify it does.
 14. **Clock change:** move the system clock backwards while a tracked page is active. Usage must not be erased; inspect the clock ledger entry.
 15. **Notifications:** verify the notifications for reaching zero and entering debt.
@@ -135,5 +141,6 @@ Use a dedicated Chrome profile. EarnTime redirects `chrome://extensions`, so rel
 23. **SPA re-check (v2.4.0):** inside `web.whatsapp.com`, click through chats, and inside YouTube navigate by clicking rather than reloading. Each in-page navigation that changes the classification must re-ask or re-cover without a reload.
 24. **Live timer (v2.4.0):** with an unproductive page in front of you, open the popup and watch it. The remaining time must fall second by second while the popup stays open, and the per-day figures must move too. Close the popup and confirm counting resumes normally.
 25. **Screen-time analytics (v2.4.0):** grant access in setup, browse three or four sites, and check Settings → Analytics and the popup breakdown: today's screen time, per-site minutes, the 14-day trend, and the earned/used/debt figures must all derive from that day's screen time. Then revoke `history` in `chrome://extensions`, focus another window and come back: the UI must report access as removed, the ledger must contain the change, and gaps must no longer be reconstructed site by site.
+26. **YouTube channel/playlist browsing (v2.4.1):** open a keyword-matched channel's Videos and Playlists tabs, plus a playlist page, without playing anything; they should remain browsable. Try a non-matching channel and a playlist whose title contains a keyword but whose owner does not; both should be covered. From the allowed channel, open a video from another channel and verify the video-level check still covers it.
 
 Record the result of each step, Chrome version and date before release.

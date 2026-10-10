@@ -51,6 +51,7 @@ The audit export (Settings → Protection) records each reconciliation's window,
 ## 4. Half-productive filters and the load-time gate
 
 - **YouTube keywords are substrings.** `pw` matches `Upwork`. Use longer keywords where that matters. The settings page has a checker.
+- **Channel and playlist browsing is matched by the owning channel name.** A playlist title alone does not qualify it. Each video is still checked against its own channel when played; Shorts and subscriptions remain covered.
 - **YouTube's layout can change.** If the page is not recognised, nothing can be verified, so the page is covered after eight seconds and that broken-filter time counts as unproductive until it loads correctly. Covers deliberately shown for Shorts, unsupported pages and non-study videos are reported separately and do not earn or spend time.
 - **Embedded YouTube players** on other websites are not filtered.
 - **Other half-productive sites** (WhatsApp and the sites you add yourself) have no content filter. Choosing Productive Mode there is a trust decision; the page stays fully visible in both modes.

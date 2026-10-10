@@ -1,9 +1,9 @@
 /**
- * YouTube Productive Mode. Channel-based filtering: a video is allowed only when its channel NAME
- * contains one of the keywords, and that check runs when the content plays — on the first visit,
- * with no reload. Search results themselves are NOT filtered: unproductive channels stay visible in
- * search and are judged only at play time. Shorts, feeds, subscriptions and channel pages are not
- * available, and the homepage shows no videos (but no blocking banner either).
+ * YouTube Productive Mode. Videos, channel pages and playlists are allowed only when the channel
+ * name contains one of the user's keywords. A video's channel is checked on play; channel and
+ * playlist pages are checked as soon as their owner is rendered, so they can be browsed without
+ * starting a video. Search results themselves stay visible and are judged at play time. Shorts,
+ * feeds and subscriptions remain unavailable, and the homepage shows no videos (but no banner).
  */
 
 import { channelAllowed, youtubePageKind } from '../core/matchers';
@@ -45,6 +45,32 @@ const WATCH_CHANNEL_SELECTORS = [
   '#owner #channel-name',
   'ytd-watch-metadata ytd-channel-name a',
   '#upload-info a[href^="/@"]',
+];
+
+/** Channel title in both the older c4 header and YouTube's newer page-header layout. */
+const CHANNEL_PAGE_SELECTORS = [
+  'yt-page-header-renderer #page-header-title',
+  'yt-page-header-view-model #page-header-title',
+  'yt-page-header-renderer #channel-name',
+  'yt-page-header-view-model #channel-name',
+  'ytd-c4-tabbed-header-renderer #channel-name #text',
+  'ytd-c4-tabbed-header-renderer #channel-name',
+  '#channel-header-container #channel-name #text',
+  '#channel-header-container #channel-name',
+];
+
+/** Playlist byline/owner only: the playlist title itself must not make an unrelated channel pass. */
+const PLAYLIST_CHANNEL_SELECTORS = [
+  'ytd-playlist-header-renderer #owner-text a',
+  'ytd-playlist-header-renderer #byline-container a',
+  'ytd-playlist-header-renderer ytd-playlist-byline-renderer a',
+  'ytd-playlist-byline-renderer #byline-container a',
+  'ytd-playlist-byline-renderer a',
+  'ytd-playlist-header-renderer #owner-text',
+  'ytd-playlist-header-renderer #byline-container',
+  'ytd-playlist-byline-renderer #text',
+  '#playlist #owner-text a',
+  '#playlist #byline-container a',
 ];
 
 export function readChannelName(scope: ParentNode, selectors: string[]): string | null {
@@ -160,6 +186,30 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
     }
   };
 
+  /** Productive channel and playlist pages are usable once the owning channel is verified. */
+  const checkChannelContainer = (kind: 'channel' | 'playlist', selectors: string[]) => {
+    hideAlwaysHidden();
+    const name = readChannelName(document, selectors);
+    if (channelAllowed(name, opts.keywords)) {
+      setHealthy(true);
+      clearCover();
+      return;
+    }
+
+    const label = kind === 'playlist' ? 'playlist' : 'channel page';
+    const owner = kind === 'playlist' ? "the playlist's channel" : 'the channel';
+    setHealthy(true, 'covered');
+    setCover(`${kind}:${name ?? '?'}`, () =>
+      notStudyCover(
+        name ? 'Not on your study list' : 'Channel not verified',
+        name
+          ? `The channel "${name}" does not match your YouTube keywords, so this ${label} is closed in Productive Mode. This time is not charged or credited.`
+          : `EarnTime could not read ${owner} name, so this ${label} is closed in Productive Mode (fail closed). This time is not charged or credited.`,
+      ),
+    );
+    pauseMedia();
+  };
+
   const scan = () => {
     scheduled = null;
     // The page kind is read on EVERY scan: a single-page navigation (channel page → video,
@@ -192,10 +242,21 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
       pauseMedia();
       return;
     }
+    if (kind === 'channel') {
+      checkChannelContainer('channel', CHANNEL_PAGE_SELECTORS);
+      return;
+    }
+    if (kind === 'playlist') {
+      checkChannelContainer('playlist', PLAYLIST_CHANNEL_SELECTORS);
+      return;
+    }
     if (kind === 'other') {
       setHealthy(true, 'covered');
       setCover('other', () =>
-        notStudyCover('Not available in Productive Mode', 'Only study searches and study videos are open in Productive Mode. This time is not charged or credited.'),
+        notStudyCover(
+          'Not available in Productive Mode',
+          'Study searches, videos, and channels or playlists from keyword-matched channels are open in Productive Mode. This time is not charged or credited.',
+        ),
       );
       pauseMedia();
       return;

@@ -175,6 +175,114 @@ test('unsupported YouTube sections use the same deliberate-cover status', () => 
   }
 });
 
+test('a keyword-matched channel page is open for browsing without starting a video', () => {
+  const h = makeYouTube(
+    '/@jeestudy/videos',
+    '<ytd-app><yt-page-header-renderer><div id="page-header-title">JEE Physics Academy</div></yt-page-header-renderer><ytd-rich-grid-renderer id="channel-videos">channel videos</ytd-rich-grid-renderer></ytd-app>',
+  );
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'a matching channel does not get a blocking cover');
+    assert.notEqual((h.dom.window.document.querySelector('#channel-videos') as HTMLElement).style.display, 'none');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test("navigating from a productive channel to an unrelated video still checks the video's channel", async () => {
+  const h = makeYouTube(
+    '/@jeestudy/videos',
+    '<ytd-app><yt-page-header-renderer><div id="page-header-title">JEE Physics Academy</div></yt-page-header-renderer></ytd-app>',
+  );
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'the productive channel page is open');
+    const doc = h.dom.window.document;
+    doc.body.insertAdjacentHTML(
+      'beforeend',
+      '<div id="owner"><ytd-video-owner-renderer><ytd-channel-name><a>Random Vlogs</a></ytd-channel-name></ytd-video-owner-renderer></div><video></video>',
+    );
+    h.dom.window.history.pushState({}, '', '/watch?v=random');
+    doc.dispatchEvent(new h.dom.window.Event('yt-navigate-finish'));
+    await wait();
+    assert.match(h.overlayText(), /Not on your study list/);
+    assert.match(h.overlayText(), /Random Vlogs/);
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a non-matching channel page is covered, then opens when its channel name becomes productive', async () => {
+  const h = makeYouTube(
+    '/@random/videos',
+    '<ytd-app><yt-page-header-renderer><div id="page-header-title">Random Vlogs</div></yt-page-header-renderer><video></video></ytd-app>',
+  );
+  const video = h.dom.window.document.querySelector('video')!;
+  Object.defineProperty(video, 'paused', { configurable: true, value: false });
+  const run = start(h);
+  try {
+    assert.match(h.overlayText(), /Not on your study list/);
+    assert.match(h.overlayText(), /Random Vlogs/);
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+    assert.ok(h.pauseCount() > 0, 'media on a rejected channel is paused');
+
+    h.dom.window.document.querySelector('#page-header-title')!.textContent = 'Study Physics';
+    await wait();
+    assert.equal(h.currentOverlay(), null, 'the filter rescans changed header data');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a playlist from a keyword-matched channel stays open while only browsing the list', () => {
+  const h = makeYouTube(
+    '/playlist?list=PL-study',
+    '<ytd-app><ytd-playlist-header-renderer><div id="title">Complete Physics Course</div><div id="owner-text"><a href="/@jeestudy">JEE Physics Academy</a></div></ytd-playlist-header-renderer><ytd-playlist-video-list-renderer id="playlist-items">videos</ytd-playlist-video-list-renderer></ytd-app>',
+  );
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'the playlist page is not mistaken for an unsupported section');
+    assert.notEqual((h.dom.window.document.querySelector('#playlist-items') as HTMLElement).style.display, 'none');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a playlist title cannot make an unrelated or unreadable owner channel productive', () => {
+  const h = makeYouTube(
+    '/playlist?list=PL-random',
+    '<ytd-app><ytd-playlist-header-renderer><div id="title">JEE Study Lessons</div><div id="owner-text"><a href="/@random">Random Vlogs</a></div></ytd-playlist-header-renderer><ytd-playlist-video-list-renderer id="playlist-items">videos</ytd-playlist-video-list-renderer></ytd-app>',
+  );
+  const run = start(h);
+  try {
+    assert.match(h.overlayText(), /Random Vlogs/);
+    assert.match(h.overlayText(), /playlist is closed/);
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a channel or playlist with an unreadable owner fails closed', () => {
+  const cases = [
+    ['/@unknown', '<yt-page-header-renderer><div id="page-header-title"></div></yt-page-header-renderer>', /could not read the channel name/],
+    ['/playlist?list=PL-unknown', '<ytd-playlist-header-renderer><div id="title">A study list</div></ytd-playlist-header-renderer>', /could not read the playlist\x27s channel name/],
+  ] as const;
+  for (const [path, body, expected] of cases) {
+    const h = makeYouTube(path, `<ytd-app>${body}</ytd-app>`);
+    const run = start(h);
+    try {
+      assert.match(h.overlayText(), expected);
+      assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+    } finally {
+      run.cleanup();
+    }
+  }
+});
+
 test('a non-study watch page is covered as intentional; becoming study content clears the cover', async () => {
   const h = makeYouTube('/watch?v=1', '<ytd-app><video></video><div id="owner"><ytd-video-owner-renderer><ytd-channel-name><a>Random Vlogs</a></ytd-channel-name></ytd-video-owner-renderer></div><div id="related">related</div></ytd-app>');
   const run = start(h);
