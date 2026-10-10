@@ -93,6 +93,63 @@ test('background tabs and unfocused, minimized windows are not counted', async (
   assert.equal(b.storedState().days['2026-10-08'].prodMs, 8 * MIN, 'nothing counted while minimized');
 });
 
+test('installed web-app popup and app windows count only when focused', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 15 });
+  const { windowId: browser } = await openedWindowWithTab(b, 'https://www.khanacademy.org/');
+  await b.runFor(MIN);
+
+  // Chrome can report "Open as window" shortcuts as popup windows and installed apps as app
+  // windows. Switching focus must move accounting to the app, not keep counting the browser tab.
+  const shortcut = await b.openWindow({ type: 'popup' });
+  await b.openTab('https://www.instagram.com/', { windowId: shortcut, active: true });
+  await b.runFor(2 * MIN);
+  assert.equal(b.storedState().days['2026-10-08'].unprodMs, 2 * MIN);
+  assert.equal(b.storedState().days['2026-10-08'].prodMs, MIN);
+
+  const app = await b.openWindow({ type: 'app' });
+  await b.openTab('https://www.khanacademy.org/math', { windowId: app, active: true });
+  await b.runFor(2 * MIN);
+  assert.equal(b.storedState().days['2026-10-08'].prodMs, 3 * MIN);
+  assert.equal(b.storedState().days['2026-10-08'].unprodMs, 2 * MIN);
+
+  await b.focusWindow(browser);
+  await b.runFor(MIN);
+  assert.equal(b.storedState().days['2026-10-08'].prodMs, 4 * MIN, 'unfocused app is not counted');
+  await b.minimizeWindow(browser);
+  await b.runFor(MIN);
+  assert.equal(b.storedState().days['2026-10-08'].prodMs, 4 * MIN, 'minimized browser does not count the app behind it');
+});
+
+test('a web-app-only window resumes after a worker restart and still obeys idle and focus', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  const app = await b.openWindow({ type: 'popup' });
+  await b.openTab('https://www.instagram.com/', { windowId: app, active: true });
+  await b.runFor(MIN);
+  b.suspendWorker();
+  await b.runFor(MIN);
+  assert.equal(b.storedState().days['2026-10-08'].unprodMs, 2 * MIN);
+  b.stopInput();
+  await b.runFor(MIN);
+  assert.equal(b.storedState().days['2026-10-08'].unprodMs, 2 * MIN);
+  await b.input();
+  await b.focusWindow(null);
+  await b.runFor(MIN);
+  assert.equal(b.storedState().days['2026-10-08'].unprodMs, 2 * MIN);
+});
+
+test('devtools windows do not displace normal or app windows for time tracking', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  await openedWindowWithTab(b, 'https://www.khanacademy.org/');
+  const devtools = await b.openWindow({ type: 'devtools' });
+  await b.openTab('https://www.instagram.com/', { windowId: devtools, active: true });
+  await b.runFor(MIN);
+  assert.equal(b.storedState().days['2026-10-08']?.unprodMs ?? 0, 0);
+  assert.equal(b.storedState().days['2026-10-08']?.prodMs ?? 0, 0);
+});
+
 test('switching tabs changes what is counted', async () => {
   const b = newBrowser();
   await installAndSetup(b, { initialBalanceMin: 30 });

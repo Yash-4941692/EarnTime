@@ -35,7 +35,9 @@ export function createChromeApi(c: typeof chrome): ExtApi {
     },
     windows: {
       getLastFocused: async () =>
-        (await c.windows.getLastFocused({ populate: true, windowTypes: ['normal'] })) as WindowInfo | undefined,
+        // Installed web apps and "Open as window" shortcuts can be popup/app windows, not
+        // normal browser windows. Keep devtools and other window types excluded.
+        (await c.windows.getLastFocused({ populate: true, windowTypes: ['normal', 'popup', 'app'] })) as WindowInfo | undefined,
     },
     tabs: {
       query: () => c.tabs.query({}),

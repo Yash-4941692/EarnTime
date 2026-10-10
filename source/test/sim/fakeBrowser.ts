@@ -4,7 +4,7 @@
  * jumps between scheduled events (30-second alarms, idle transitions, scripted actions).
  *
  * Simulated behaviours (documented, not Chrome itself):
- *  - Only the focused normal window's active tab counts as "active"; background tabs do not.
+ *  - Only the focused browser or web-app window's active tab counts as "active"; background tabs do not.
  *  - chrome.idle reports 'idle' after 15 s without input (from `stopInput`), 'locked' when locked.
  *  - History records one visit per navigation/open of an http(s) page.
  *  - declarativeNetRequest main_frame rules are matched (allow / redirect), with priorities.
@@ -32,6 +32,7 @@ export interface SimTab {
 export interface SimWindow {
   id: number;
   state: 'normal' | 'minimized';
+  type: 'normal' | 'popup' | 'app' | 'devtools';
   incognito: boolean;
 }
 
@@ -99,6 +100,8 @@ export class FakeBrowser {
   focusedWindowId: number | null = null;
   /** Most recently focused window (kept even when Chrome loses focus). */
   lastFocusedId: number | null = null;
+  /** Most recently focused first, so getLastFocused can skip disallowed window types. */
+  focusOrder: number[] = [];
   visits: SimVisit[] = [];
   dnr = new Map<number, DnrRule>();
   notifications: Array<{ title: string; message: string; at: number }> = [];
@@ -526,18 +529,19 @@ export class FakeBrowser {
     };
   }
 
-  private lastFocusedWindow(q?: { populate?: boolean }): any {
-    const candidates = [...this.windows.values()];
+  private lastFocusedWindow(q?: { populate?: boolean; windowTypes?: string[] }): any {
+    const types = q?.windowTypes ?? ['normal'];
+    const candidates = [...this.windows.values()].filter((w) => types.includes(w.type));
     if (candidates.length === 0) return undefined;
-    const win =
-      (this.lastFocusedId !== null ? this.windows.get(this.lastFocusedId) : undefined) ?? candidates[candidates.length - 1];
+    const recent = this.focusOrder.map((id) => this.windows.get(id)).find((w) => w && types.includes(w.type));
+    const win = recent ?? candidates[candidates.length - 1];
     if (win.incognito && !this.incognitoAllowed) return undefined;
     const info: any = {
       id: win.id,
       focused: this.focusedWindowId === win.id && (!win.incognito || this.incognitoAllowed),
       state: win.state,
       incognito: win.incognito,
-      type: 'normal',
+      type: win.type,
     };
     if (q?.populate !== false) {
       info.tabs = [...this.tabs.values()]
@@ -549,7 +553,10 @@ export class FakeBrowser {
 
   private setFocus(windowId: number | null): void {
     this.focusedWindowId = windowId;
-    if (windowId !== null) this.lastFocusedId = windowId;
+    if (windowId !== null) {
+      this.lastFocusedId = windowId;
+      this.focusOrder = [windowId, ...this.focusOrder.filter((id) => id !== windowId)];
+    }
   }
 
   private queryIdle(seconds: number): IdleState {
@@ -598,9 +605,9 @@ export class FakeBrowser {
   }
 
   /** Adds a window (focused if requested). */
-  async openWindow(opts: { focused?: boolean; incognito?: boolean } = {}): Promise<number> {
+  async openWindow(opts: { focused?: boolean; incognito?: boolean; type?: SimWindow['type'] } = {}): Promise<number> {
     const id = this.nextWindowId++;
-    this.windows.set(id, { id, state: 'normal', incognito: opts.incognito === true });
+    this.windows.set(id, { id, state: 'normal', type: opts.type ?? 'normal', incognito: opts.incognito === true });
     if (opts.focused !== false) {
       this.setFocus(id);
       await this.fire(this.events.onFocusChanged, id);
@@ -623,6 +630,7 @@ export class FakeBrowser {
   closePopup(windowId: number): void {
     this.focusedWindowId = windowId;
     this.lastFocusedId = windowId;
+    this.focusOrder = [windowId, ...this.focusOrder.filter((id) => id !== windowId)];
   }
 
   async focusWindow(windowId: number | null): Promise<void> {
@@ -749,6 +757,7 @@ export class FakeBrowser {
     this.windows.clear();
     this.setFocus(null);
     this.lastFocusedId = null;
+    this.focusOrder = [];
     this.locked = false;
     this.lastInputAt = this.now;
     this.idleState = 'active';
