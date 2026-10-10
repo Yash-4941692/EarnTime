@@ -25,7 +25,7 @@ The setup wizard opens the first time. It has eight steps:
 
 ## How time is counted
 
-- Only the **active tab of the focused Chrome window** counts. Background tabs, minimised windows, other apps and idle time do not.
+- Only the **active tab of the focused Chrome browser or installed web-app/shortcut window** counts. Background tabs, minimised windows, unrelated apps and idle time do not. The web app must be exposed to EarnTime in the same Chrome profile.
 - **EarnTime's own popup counts too.** Opening the popup takes focus away from the page, so it used to freeze the numbers until you closed it. The popup now beats once a second and the timer keeps falling while you watch it.
 - A tab playing audio counts even while you are away from the keyboard (for example, a video you are watching).
 - A locked screen does not count.
@@ -75,7 +75,7 @@ With screen-time access granted, EarnTime keeps a **per-site, per-day** record o
 - **Popup → *Screen time today***: today's total, the three biggest sites as bars, the study share, and a link to the full analytics. The numbers move while the popup is open.
 - **Settings → Analytics**: today's screen time, study time, charged and earned; the full per-site breakdown for the day with "other sites" rolled up; a **14-day trend** so you can see progress or degradation; today against yesterday and against your average; and the screen-time access switch.
 
-**What counts as screen time:** only time the site was actually **in front of you** — the active tab of a focused, non-minimised window. Background tabs, idle time and a locked screen are excluded. Time on a deliberately covered YouTube page, on EarnTime's own pages, or while a mode choice is pending is counted as screen time but is **not billed**. Sites that are on no list are measured and shown, and cost nothing.
+**What counts as screen time:** only time the site was actually **in front of you** — the active tab of a focused, non-minimised Chrome browser or web-app window. Background tabs, idle time and a locked screen are excluded. Time on a deliberately covered YouTube page, on EarnTime's own pages, or while a mode choice is pending is counted as screen time but is **not billed**. Sites that are on no list are measured and shown, and cost nothing.
 
 **Estimated vs. exact:** time EarnTime watched live is exact. Time it had to reconstruct after an interruption (from history) is marked as **estimated** and shown separately, so you always know which numbers are hard and which are inferred. Without screen-time access, gaps are charged conservatively from the last checkpoint, the per-site breakdown only covers what was observed live, and the analytics say so.
 
@@ -151,7 +151,7 @@ See `docs/KNOWN_LIMITATIONS.md` section 1 for the API this uses, what has been t
 ## Troubleshooting
 
 - **"Setup isn't finished"**: open the popup and choose *Finish setup*. It also reopens on every browser start until you finish it.
-- **Time is not counting**: check that the EarnTime tab is the active tab in the focused window, and that you are not in an incognito window without access.
+- **Time is not counting**: check that the site is the active tab in a focused Chrome browser or web-app window in the same profile, and that you are not in an incognito window without access.
 - **A half-productive site shows the chooser on a page you were already using**: that is the load-time gate. Pick a mode; the page opens immediately, without a reload.
 - **A page is stuck on "Checking this site…"**: EarnTime's worker is not answering (it was just disabled or removed, or Chrome is still starting it). Give it a few seconds; if the extension is genuinely gone the page releases itself.
 - **Analytics are empty or say "partly estimated"**: screen-time access is off, or today has not accumulated foreground time yet. *Settings → Analytics* shows the current status and the grant button.

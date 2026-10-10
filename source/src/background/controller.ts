@@ -166,7 +166,7 @@ export function createController(opts: ControllerOptions): Controller {
       internalPage: url.length > 0 && host === null,
       // An open EarnTime popup takes OS focus away from the browser window without the user having
       // left the page they are on, so it does not pause counting. The window still has to be a
-      // normal, non-minimized one with an active tab.
+      // supported, non-minimized one with an active tab.
       focused: Boolean(win && (win.focused || uiOpen) && win.state !== 'minimized' && tab),
       tabActive: Boolean(tab),
       idle,

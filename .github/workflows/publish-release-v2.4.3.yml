@@ -1,0 +1,111 @@
+name: Publish v2.4.3
+
+# A commit on the session branch with [publish v2.4.3] triggers publication.
+# The PR must already be merged: the package is rebuilt from that exact merge commit.
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/00ebdd4d-earntime]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish v2.4.3]')
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: v2.4.3
+      ZIP_NAME: EarnTime-2.4.3.zip
+    steps:
+      - name: Find the merged commit for this session branch
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          MERGE_SHA=$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state merged \
+            --head "$GITHUB_REF_NAME" \
+            --limit 100 \
+            --json mergeCommit,mergedAt \
+            --jq 'sort_by(.mergedAt) | last | .mergeCommit.oid')
+          if [[ -z "$MERGE_SHA" || "$MERGE_SHA" == "null" ]]; then
+            echo "No merged pull request found for $GITHUB_REF_NAME; refusing to publish." >&2
+            exit 1
+          fi
+          echo "sha=$MERGE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Publishing from merged commit $MERGE_SHA"
+
+      - name: Check out the merged commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.merge.outputs.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.3'
+
+      - name: Install dependencies
+        working-directory: source
+        run: npm ci
+
+      - name: Build release ZIP from the merged commit
+        working-directory: source
+        run: npm run package -- --out-dir "$RUNNER_TEMP/dist"
+
+      - name: Verify package and prepare release notes
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dist"
+          unzip -t "$ZIP_NAME"
+          unzip -p "$ZIP_NAME" manifest.json | grep -q '"version": "2.4.3"'
+          unzip -p "$ZIP_NAME" content.js | grep -q 'data-et-gate'
+          SHA256=$(sha256sum "$ZIP_NAME" | cut -d' ' -f1)
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          cp "$GITHUB_WORKSPACE/source/RELEASE_NOTES.md" "$RUNNER_TEMP/notes.md"
+          {
+            echo
+            echo '## Asset checksum (SHA-256)'
+            echo
+            echo '```'
+            echo "$SHA256  $ZIP_NAME"
+            echo '```'
+          } >> "$RUNNER_TEMP/notes.md"
+        id: package
+
+      - name: Publish release with ZIP attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/dist/$ZIP_NAME" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --title 'EarnTime v2.4.3' --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/dist/$ZIP_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target '${{ steps.merge.outputs.sha }}' \
+              --title 'EarnTime v2.4.3' \
+              --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
+      - name: Download the published asset and verify its checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/download"
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$RUNNER_TEMP/download" \
+            --pattern "$ZIP_NAME"
+          ACTUAL=$(sha256sum "$RUNNER_TEMP/download/$ZIP_NAME" | cut -d' ' -f1)
+          test "$ACTUAL" = '${{ steps.package.outputs.sha256 }}'
+          echo "Published $ZIP_NAME from merge commit ${{ steps.merge.outputs.sha }}"
+          echo "SHA-256: $ACTUAL"

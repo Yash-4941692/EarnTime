@@ -24,10 +24,10 @@ EarnTime is a self-discipline tool. It is not a security boundary, and nothing i
 
 ## 2. Counting
 
-- **Only one tab counts**: the active tab of the focused normal Chrome window. Tab switches are observed live, but during an interruption they can only be estimated (see section 3).
+- **Only one tab counts**: the active tab of the focused Chrome browser window or Chrome-installed web-app/shortcut window (when exposed as a popup or app window to this extension). Tab switches are observed live, but during an interruption they can only be estimated (see section 3).
 - **Idle detection is coarse.** `chrome.idle` reports idle after 15 seconds without input. Silent video watched without any input is not counted. That is a deliberate favour to the user, not a complete measure of attention.
 - **Checkpoints every 30 seconds.** A state change that Chrome does not announce with an event (for example, allowing incognito access) takes effect at the next checkpoint, up to 30 seconds later.
-- **The popup now counts.** Opening EarnTime's popup takes OS focus away from the browser window and Chrome announces no event for it, which used to freeze counting and the display. The popup beats once a second while it is open, and the worker treats that beat as "the user is here" for up to 2.5 seconds, so the timer keeps moving in front of you. Devtools windows and other non-normal windows are still not counted.
+- **The popup now counts.** Opening EarnTime's popup takes OS focus away from the browser window and Chrome announces no event for it, which used to freeze counting and the display. The popup beats once a second while it is open, and the worker treats that beat as "the user is here" for up to 2.5 seconds, so the timer keeps moving in front of you. Devtools and unrelated application windows are still not counted.
 - **Picture-in-picture** and **embedded players on other sites** are not analysed. Only the top-level page is evaluated.
 - **Incognito** is not tracked unless the user allows EarnTime in incognito. The popup shows a warning when it is not.
 - **One profile, one ledger.** Each Chrome profile has its own EarnTime state.

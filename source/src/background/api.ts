@@ -66,7 +66,7 @@ export interface ExtApi {
     setDetectionInterval(seconds: number): void;
   };
   windows: {
-    /** Last focused normal window with its tabs populated, or undefined. */
+    /** Last focused browser, web-app or shortcut window with its tabs populated, or undefined. */
     getLastFocused(): Promise<WindowInfo | undefined>;
   };
   tabs: {
