@@ -252,15 +252,15 @@ function YouTubeSection({ state, act }: { state: EarnState; act: Act }) {
       <Card className="space-y-3">
         <h2 className="text-[15px] font-semibold text-slate-50">Productive Mode on YouTube</h2>
         <ul className="list-disc space-y-1 pl-5 text-[13px] leading-snug text-slate-400">
-          <li>The homepage is blank. Use study search or a keyword to find videos.</li>
-          <li>Results and videos show only when the <strong className="text-slate-200">channel name</strong> contains one of these keywords (case-insensitive).</li>
-          <li>If the channel name cannot be read, the item is hidden. Shorts, subscriptions and channel pages are closed.</li>
+          <li>The homepage is blank. Use study search or open a channel/playlist whose channel name matches a keyword.</li>
+          <li>Channel and playlist pages open only when the owning <strong className="text-slate-200">channel name</strong> contains one of these keywords (case-insensitive); each video is still checked against its own channel when it plays.</li>
+          <li>If a channel cannot be read or does not match, its page is covered. Shorts and subscriptions remain closed.</li>
           <li>Matching is by substring: "pw" also matches "Upwork". Use longer keywords if that matters.</li>
         </ul>
       </Card>
       <Card className="space-y-3">
         <div className="flex flex-wrap gap-2" aria-label="YouTube keywords">
-          {keywords.length === 0 ? <Empty>No keywords. Productive Mode will show no YouTube results.</Empty> : null}
+          {keywords.length === 0 ? <Empty>No keywords. No channel, playlist or video can qualify for Productive Mode.</Empty> : null}
           {keywords.map((kw) => (
             <span key={kw} className="chip">
               {kw}

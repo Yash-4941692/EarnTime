@@ -35,15 +35,31 @@ export function matchingKeyword(channelName: string, keywords: readonly string[]
   return null;
 }
 
-export type YouTubePage = 'home' | 'search' | 'watch' | 'shorts' | 'other';
+export type YouTubePage = 'home' | 'search' | 'watch' | 'shorts' | 'playlist' | 'channel' | 'other';
 
-/** Classifies a YouTube path. Only home (blank), search and watch pages are usable in Productive Mode. */
+/**
+ * Classifies a YouTube path. Productive Mode supports search/video pages, plus channel and playlist
+ * browsing when their owning channel matches the user's study keywords. Shorts stay blocked,
+ * including the Shorts tab on an otherwise allowed channel.
+ */
 export function youtubePageKind(pathname: string): YouTubePage {
   const path = pathname.toLowerCase();
   if (path === '/' || path === '') return 'home';
   if (path === '/results' || path.startsWith('/results/')) return 'search';
   if (path === '/watch' || path.startsWith('/watch/')) return 'watch';
   if (path === '/shorts' || path.startsWith('/shorts/')) return 'shorts';
+  if (path === '/playlist' || path.startsWith('/playlist/')) return 'playlist';
+
+  const segments = path.split('/').filter(Boolean);
+  const first = segments[0] ?? '';
+  const isHandleChannel = first.startsWith('@') && first.length > 1;
+  const isLegacyChannel = ['channel', 'c', 'user'].includes(first) && Boolean(segments[1]);
+  if (isHandleChannel || isLegacyChannel) {
+    const channelTab = segments[isHandleChannel ? 1 : 2];
+    if (channelTab === 'shorts') return 'shorts';
+    return 'channel';
+  }
+
   return 'other';
 }
 

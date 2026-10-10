@@ -30,13 +30,20 @@ test('matchingKeyword reports which keyword allowed the channel', () => {
   assert.equal(matchingKeyword('Cooking', KW), null);
 });
 
-test('YouTube page kinds: only home, search and watch are usable in Productive Mode', () => {
+test('YouTube page kinds include keyword-checked channel and playlist browsing, but still block Shorts', () => {
   assert.equal(youtubePageKind('/'), 'home');
   assert.equal(youtubePageKind('/results'), 'search');
   assert.equal(youtubePageKind('/watch'), 'watch');
+  assert.equal(youtubePageKind('/playlist'), 'playlist');
+  assert.equal(youtubePageKind('/@SomeChannel'), 'channel');
+  assert.equal(youtubePageKind('/@SomeChannel/videos'), 'channel');
+  assert.equal(youtubePageKind('/channel/UC123/playlists'), 'channel');
+  assert.equal(youtubePageKind('/c/SomeChannel/videos'), 'channel');
+  assert.equal(youtubePageKind('/user/SomeChannel/videos'), 'channel');
   assert.equal(youtubePageKind('/shorts/abc'), 'shorts');
+  assert.equal(youtubePageKind('/@SomeChannel/shorts'), 'shorts');
+  assert.equal(youtubePageKind('/channel/UC123/shorts'), 'shorts');
   assert.equal(youtubePageKind('/feed/subscriptions'), 'other');
-  assert.equal(youtubePageKind('/@SomeChannel'), 'other');
 });
 
 test('filterKindForHost maps hosts to content filters', () => {

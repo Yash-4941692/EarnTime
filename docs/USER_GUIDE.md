@@ -44,7 +44,8 @@ The setup wizard opens the first time. It has eight steps:
 
 - The homepage shows **no videos** — and no blocking banner either. The rest of the page (search box, guide) works normally.
 - **Search results are never removed.** Every channel's videos stay visible in search, even unproductive ones. The channel is judged only when the content actually plays: the moment a video starts, its channel name is read (on the first visit, no reload needed) and a non-matching video is covered and paused.
-- Shorts, subscriptions, playlists, channel pages and non-matching videos are covered. While a deliberate cover is showing, time is neither charged nor credited.
+- **You can browse a productive channel or playlist without playing a video.** Its owning channel name must match one of your YouTube keywords. A playlist title alone does not make an unrelated channel productive, and every video is checked against its own channel when played.
+- Shorts, subscriptions, unreadable/non-matching channel and playlist pages, and non-matching videos are covered. While a deliberate cover is showing, time is neither charged nor credited.
 - If YouTube's layout itself cannot be verified after the grace period, the filter fails closed and that time is counted as unproductive until the page loads correctly.
 - Matching is by substring: `pw` also matches `Upwork`. Use longer keywords where that matters. *Settings → YouTube* has a checker.
 
@@ -154,6 +155,6 @@ See `docs/KNOWN_LIMITATIONS.md` section 1 for the API this uses, what has been t
 - **A half-productive site shows the chooser on a page you were already using**: that is the load-time gate. Pick a mode; the page opens immediately, without a reload.
 - **A page is stuck on "Checking this site…"**: EarnTime's worker is not answering (it was just disabled or removed, or Chrome is still starting it). Give it a few seconds; if the extension is genuinely gone the page releases itself.
 - **Analytics are empty or say "partly estimated"**: screen-time access is off, or today has not accumulated foreground time yet. *Settings → Analytics* shows the current status and the grant button.
-- **YouTube homepage looks empty**: that is Productive Mode hiding the videos. Use the search box to find study content; every result stays visible and the channel is checked when you play a video.
+- **YouTube homepage looks empty**: that is Productive Mode hiding the videos. Use the search box, or open a channel/playlist whose owning channel name matches your keywords. Search results stay visible; each video's channel is checked when it plays.
 - **"Filter unavailable"**: the site changed its layout. Time on that page is counted as unproductive until it loads correctly. Reload the page.
 - **Your balance seems wrong after a computer sleep or a browser restart**: EarnTime estimates the gap from history. The audit export shows what it used.
