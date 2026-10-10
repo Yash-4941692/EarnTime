@@ -304,7 +304,7 @@ export function Setup() {
           <div className="space-y-4">
             <h2 className="text-[18px] font-semibold text-slate-50">YouTube keywords</h2>
             <p className="text-[13.5px] leading-relaxed text-slate-400">
-              In Productive Mode, channel and playlist pages open only when the owning channel's <strong className="text-slate-200">name</strong> contains one of these keywords. Videos are checked against their channel when played.
+              In Productive Mode you can browse any channel or playlist. A video is checked against its channel's <strong className="text-slate-200">name</strong> when it starts playing — list the channels you study from.
             </p>
             <ChipInput id="s-kw" label="Keyword" values={draft.keywords} onChange={(keywords) => setDraft({ ...draft, keywords })} placeholder="e.g. Physics" />
           </div>

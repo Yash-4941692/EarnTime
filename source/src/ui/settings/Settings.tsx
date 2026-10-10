@@ -252,15 +252,15 @@ function YouTubeSection({ state, act }: { state: EarnState; act: Act }) {
       <Card className="space-y-3">
         <h2 className="text-[15px] font-semibold text-slate-50">Productive Mode on YouTube</h2>
         <ul className="list-disc space-y-1 pl-5 text-[13px] leading-snug text-slate-400">
-          <li>The homepage is blank. Use study search or open a channel/playlist whose channel name matches a keyword.</li>
-          <li>Channel and playlist pages open only when the owning <strong className="text-slate-200">channel name</strong> contains one of these keywords (case-insensitive); each video is still checked against its own channel when it plays.</li>
-          <li>If a channel cannot be read or does not match, its page is covered. Shorts and subscriptions remain closed.</li>
+          <li>The homepage is blank. Use study search, or open any channel or playlist and browse it.</li>
+          <li>Every channel and playlist page can be browsed. The channel rule is applied when a video <strong className="text-slate-200">starts playing</strong>, not while the page is being read.</li>
+          <li>Playback from a channel that does not match — or whose name cannot be read — is refused and stopped. You can keep browsing that page. Shorts and subscriptions remain closed.</li>
           <li>Matching is by substring: "pw" also matches "Upwork". Use longer keywords if that matters.</li>
         </ul>
       </Card>
       <Card className="space-y-3">
         <div className="flex flex-wrap gap-2" aria-label="YouTube keywords">
-          {keywords.length === 0 ? <Empty>No keywords. No channel, playlist or video can qualify for Productive Mode.</Empty> : null}
+          {keywords.length === 0 ? <Empty>No keywords. No video can play in Productive Mode — browsing channels and playlists stays open.</Empty> : null}
           {keywords.map((kw) => (
             <span key={kw} className="chip">
               {kw}
