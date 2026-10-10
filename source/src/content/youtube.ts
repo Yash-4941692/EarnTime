@@ -1,9 +1,11 @@
 /**
- * YouTube Productive Mode. Videos, channel pages and playlists are allowed only when the channel
- * name contains one of the user's keywords. A video's channel is checked on play; channel and
- * playlist pages are checked as soon as their owner is rendered, so they can be browsed without
- * starting a video. Search results themselves stay visible and are judged at play time. Shorts,
- * feeds and subscriptions remain unavailable, and the homepage shows no videos (but no banner).
+ * YouTube Productive Mode. Everything that is only being LOOKED AT stays visible: search results,
+ * channel pages and playlist pages are all browsable whatever their owner is. The channel rule is
+ * applied where it can be trusted — when something actually starts PLAYING. A watch page is judged
+ * by the channel shown in its own metadata; on a channel or playlist page the owner is read at the
+ * moment media plays, so a channel name EarnTime cannot parse no longer blocks the whole page.
+ * Shorts, feeds and subscriptions remain unavailable, and the homepage shows no videos (but no
+ * banner).
  */
 
 import { channelAllowed, youtubePageKind } from '../core/matchers';
@@ -107,6 +109,14 @@ function pauseMedia(): void {
   }
 }
 
+/** True when something on the page is actually playing — the moment a channel has to be checked. */
+function hasPlayingMedia(): boolean {
+  for (const media of document.querySelectorAll<HTMLMediaElement>('video, audio')) {
+    if (!media.paused) return true;
+  }
+  return false;
+}
+
 /** Starts the YouTube filter for the current page. */
 export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
   const started = Date.now();
@@ -114,6 +124,14 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
   let scheduled: number | null = null;
   /** Key of the cover currently shown; covers are rebuilt only when this key changes. */
   let coverKey = '';
+  /**
+   * Page on which playback was refused. Browsing that page is still allowed, but the explanation
+   * stays up (rather than vanishing the instant the media is paused) until the page changes, the
+   * channel turns out to match, or the user chooses to keep browsing.
+   */
+  let playbackRefused: string | null = null;
+  /** Page key of the last scan, so a navigation can drop the previous page's playback refusal. */
+  let lastPage = '';
 
   const studySearch = (query?: string) => {
     location.assign(query ? `/results?search_query=${encodeURIComponent(query)}` : '/results');
@@ -127,13 +145,15 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
 
   const clearCover = () => setCover('', () => null);
 
-  const notStudyCover = (title: string, text: string) =>
+  const notStudyCover = (title: string, text: string, onBrowse?: () => void) =>
     coverCard({
       eyebrow: 'EarnTime · Productive Mode',
       title,
       text,
       actions: [
         { label: 'Study search', onClick: () => studySearch(opts.keywords[0]) },
+        // Only offered where the page itself stays usable: the refusal is about the playback.
+        ...(onBrowse ? [{ label: 'Keep browsing', onClick: onBrowse }] : []),
         { label: 'Back', onClick: opts.leave, secondary: true },
       ],
     });
@@ -168,8 +188,11 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
     for (const node of document.querySelectorAll<HTMLElement>(`${ITEM_SELECTOR}, ${HOME_HIDDEN}`)) hideNode(node);
   };
 
-  /** Search: every result stays visible (even unproductive channels); judgement happens at play. */
-  const showSearchResults = () => {
+  /**
+   * Search results, channel pages and playlist pages are all browsable in full — even content from
+   * an unmatched or unreadable channel. Anything an earlier page (the homepage) hid is shown again.
+   */
+  const showBrowsables = () => {
     for (const node of document.querySelectorAll<HTMLElement>(HOME_HIDDEN)) showNode(node);
     for (const node of document.querySelectorAll<HTMLElement>(ITEM_SELECTOR)) showNode(node);
     hideAlwaysHidden();
@@ -186,25 +209,49 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
     }
   };
 
-  /** Productive channel and playlist pages are usable once the owning channel is verified. */
-  const checkChannelContainer = (kind: 'channel' | 'playlist', selectors: string[]) => {
-    hideAlwaysHidden();
-    const name = readChannelName(document, selectors);
-    if (channelAllowed(name, opts.keywords)) {
+  /**
+   * Channel and playlist pages: browsing is never refused, so no owner is read to decide whether the
+   * page may be seen. The rule is applied to playback instead. The moment media plays, the owner is
+   * read from the page and unmatched content is covered and stopped — which is also all that happens
+   * when the owner cannot be read, instead of the whole page being blocked for it.
+   */
+  const checkBrowsingPage = (kind: 'channel' | 'playlist', page: string) => {
+    showBrowsables();
+
+    if (!hasPlayingMedia() && playbackRefused !== page) {
       setHealthy(true);
       clearCover();
       return;
     }
 
-    const label = kind === 'playlist' ? 'playlist' : 'channel page';
+    // The page's own owner first: a playlist title must never qualify an unrelated channel. The
+    // watch-page selectors are a fallback for a video owner rendered while the page is changing.
+    const selectors = kind === 'playlist' ? PLAYLIST_CHANNEL_SELECTORS : CHANNEL_PAGE_SELECTORS;
+    const name = readChannelName(document, selectors) ?? readChannelName(document, WATCH_CHANNEL_SELECTORS);
+    if (channelAllowed(name, opts.keywords)) {
+      playbackRefused = null;
+      setHealthy(true);
+      clearCover();
+      return;
+    }
+
+    const label = kind === 'playlist' ? 'playlist' : 'channel';
     const owner = kind === 'playlist' ? "the playlist's channel" : 'the channel';
+    playbackRefused = page;
     setHealthy(true, 'covered');
-    setCover(`${kind}:${name ?? '?'}`, () =>
+    setCover(`${page}:${name ?? '?'}`, () =>
       notStudyCover(
         name ? 'Not on your study list' : 'Channel not verified',
         name
-          ? `The channel "${name}" does not match your YouTube keywords, so this ${label} is closed in Productive Mode. This time is not charged or credited.`
-          : `EarnTime could not read ${owner} name, so this ${label} is closed in Productive Mode (fail closed). This time is not charged or credited.`,
+          ? `The channel "${name}" does not match your YouTube keywords, so nothing plays from this ${label} in Productive Mode. You can still browse it. This time is not charged or credited.`
+          : `EarnTime could not read ${owner} name, so nothing plays from this ${label} in Productive Mode (fail closed). You can still browse it. This time is not charged or credited.`,
+        () => {
+          // The page was never the problem, the playback was: let the user browse on. Starting
+          // playback again runs this check again.
+          playbackRefused = null;
+          clearCover();
+          setHealthy(true);
+        },
       ),
     );
     pauseMedia();
@@ -216,6 +263,13 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
     // homepage → video, search → video) must be judged as what the page is right now, on the
     // first visit, without a reload.
     const kind = youtubePageKind(location.pathname);
+    const page = `${kind}:${location.pathname}${location.search}`;
+    // A different page is a different verdict: playback refused on the previous page says nothing
+    // about this one, so the refusal is dropped on every navigation (including going back).
+    if (page !== lastPage) {
+      lastPage = page;
+      playbackRefused = null;
+    }
     const elapsed = Date.now() - started;
     const layoutReady = Boolean(document.querySelector('ytd-app'));
     if (!layoutReady) {
@@ -242,12 +296,8 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
       pauseMedia();
       return;
     }
-    if (kind === 'channel') {
-      checkChannelContainer('channel', CHANNEL_PAGE_SELECTORS);
-      return;
-    }
-    if (kind === 'playlist') {
-      checkChannelContainer('playlist', PLAYLIST_CHANNEL_SELECTORS);
+    if (kind === 'channel' || kind === 'playlist') {
+      checkBrowsingPage(kind, page);
       return;
     }
     if (kind === 'other') {
@@ -255,7 +305,7 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
       setCover('other', () =>
         notStudyCover(
           'Not available in Productive Mode',
-          'Study searches, videos, and channels or playlists from keyword-matched channels are open in Productive Mode. This time is not charged or credited.',
+          'Study searches, videos, and every channel and playlist page are open in Productive Mode. This time is not charged or credited.',
         ),
       );
       pauseMedia();
@@ -264,7 +314,7 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
     if (kind === 'search') {
       setHealthy(true);
       clearCover();
-      showSearchResults();
+      showBrowsables();
       return;
     }
     // Watch page: the channel is read from the page itself the moment the video plays. Unknown

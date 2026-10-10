@@ -213,24 +213,106 @@ test("navigating from a productive channel to an unrelated video still checks th
   }
 });
 
-test('a non-matching channel page is covered, then opens when its channel name becomes productive', async () => {
+/** A button on the cover currently showing, by its label. */
+function button(h: Harness, label: string): HTMLElement | undefined {
+  return Array.from(h.currentOverlay()?.querySelectorAll('button') ?? []).find((b) => b.textContent === label);
+}
+
+test('a non-matching channel page stays browsable; only its playback is refused', () => {
+  const h = makeYouTube(
+    '/@random/videos',
+    '<ytd-app><yt-page-header-renderer><div id="page-header-title">Random Vlogs</div></yt-page-header-renderer><ytd-rich-grid-renderer><ytd-rich-item-renderer id="channel-videos">video</ytd-rich-item-renderer></ytd-rich-grid-renderer><video></video></ytd-app>',
+  );
+  const doc = h.dom.window.document;
+  const video = doc.querySelector('video') as HTMLVideoElement;
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'a channel nobody verified can still be browsed');
+    assert.deepEqual(run.filter.health(), { ok: true });
+    assert.notEqual((doc.querySelector('#channel-videos') as HTMLElement).style.display, 'none', 'its videos are visible');
+
+    // The channel is only judged once something actually plays.
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    video.dispatchEvent(new h.dom.window.Event('play'));
+    assert.match(h.overlayText(), /Not on your study list/);
+    assert.match(h.overlayText(), /Random Vlogs/);
+    assert.match(h.overlayText(), /You can still browse it/);
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+    assert.ok(h.pauseCount() > 0, 'the refused video is stopped');
+
+    // The explanation stays up even though EarnTime paused the video itself, so it can be read…
+    assert.notEqual(h.currentOverlay(), null, 'the cover does not vanish with the playback it stopped');
+    button(h, 'Keep browsing')!.click();
+    assert.equal(h.currentOverlay(), null, 'browsing on is allowed: the page was never the problem');
+    assert.deepEqual(run.filter.health(), { ok: true });
+
+    // …and starting playback again is refused again.
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    video.dispatchEvent(new h.dom.window.Event('play'));
+    assert.match(h.overlayText(), /Not on your study list/);
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a playback refusal belongs to its page: the next channel page is open again', async () => {
   const h = makeYouTube(
     '/@random/videos',
     '<ytd-app><yt-page-header-renderer><div id="page-header-title">Random Vlogs</div></yt-page-header-renderer><video></video></ytd-app>',
   );
-  const video = h.dom.window.document.querySelector('video')!;
-  Object.defineProperty(video, 'paused', { configurable: true, value: false });
+  const doc = h.dom.window.document;
+  Object.defineProperty(doc.querySelector('video')!, 'paused', { configurable: true, value: false });
   const run = start(h);
   try {
     assert.match(h.overlayText(), /Not on your study list/);
-    assert.match(h.overlayText(), /Random Vlogs/);
-    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
-    assert.ok(h.pauseCount() > 0, 'media on a rejected channel is paused');
-
-    h.dom.window.document.querySelector('#page-header-title')!.textContent = 'Study Physics';
+    // Moving on to another channel page (nothing playing there) must not inherit the refusal.
+    doc.querySelector('yt-page-header-renderer')!.remove();
+    doc.body.insertAdjacentHTML('beforeend', '<yt-page-header-renderer><div id="page-header-title">Other Vlogs</div></yt-page-header-renderer>');
+    h.dom.window.history.pushState({}, '', '/@other/videos');
+    doc.dispatchEvent(new h.dom.window.Event('yt-navigate-finish'));
     await wait();
-    assert.equal(h.currentOverlay(), null, 'the filter rescans changed header data');
+    assert.equal(h.currentOverlay(), null);
     assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a channel name EarnTime cannot read no longer blocks the page — only playback is refused', () => {
+  const h = makeYouTube(
+    '/@unknown/videos',
+    '<ytd-app><yt-page-header-renderer><div id="page-header-title"></div></yt-page-header-renderer><ytd-rich-grid-renderer><ytd-rich-item-renderer id="channel-videos">video</ytd-rich-item-renderer></ytd-rich-grid-renderer><video></video></ytd-app>',
+  );
+  const doc = h.dom.window.document;
+  const video = doc.querySelector('video') as HTMLVideoElement;
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'an unreadable owner is no reason to hide the channel');
+    assert.deepEqual(run.filter.health(), { ok: true });
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    video.dispatchEvent(new h.dom.window.Event('play'));
+    assert.match(h.overlayText(), /Channel not verified/);
+    assert.match(h.overlayText(), /could not read the channel name/);
+    assert.ok(h.pauseCount() > 0, 'unverifiable playback is still stopped (fail closed)');
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('navigating from the homepage to a playlist page shows the videos the homepage hid', async () => {
+  const h = makeYouTube('/', '<ytd-app><ytd-rich-grid-renderer id="grid"><ytd-rich-item-renderer id="feed-item">video</ytd-rich-item-renderer></ytd-rich-grid-renderer></ytd-app>');
+  const run = start(h);
+  try {
+    const doc = h.dom.window.document;
+    assert.equal((doc.querySelector('#grid') as HTMLElement).style.display, 'none');
+    assert.equal((doc.querySelector('#feed-item') as HTMLElement).style.display, 'none');
+    doc.body.insertAdjacentHTML('beforeend', '<ytd-playlist-header-renderer><div id="owner-text"><a href="/@random">Random Vlogs</a></div></ytd-playlist-header-renderer>');
+    h.dom.window.history.pushState({}, '', '/playlist?list=PL-any');
+    doc.dispatchEvent(new h.dom.window.Event('yt-navigate-finish'));
+    await wait();
+    assert.equal(h.currentOverlay(), null, 'every playlist can be opened, whoever owns it');
+    assert.notEqual((doc.querySelector('#grid') as HTMLElement).style.display, 'none', 'the hidden homepage grid is shown again');
+    assert.notEqual((doc.querySelector('#feed-item') as HTMLElement).style.display, 'none');
   } finally {
     run.cleanup();
   }
@@ -251,35 +333,58 @@ test('a playlist from a keyword-matched channel stays open while only browsing t
   }
 });
 
-test('a playlist title cannot make an unrelated or unreadable owner channel productive', () => {
+test('a playlist title cannot make an unrelated owner qualify when a video plays', () => {
   const h = makeYouTube(
     '/playlist?list=PL-random',
-    '<ytd-app><ytd-playlist-header-renderer><div id="title">JEE Study Lessons</div><div id="owner-text"><a href="/@random">Random Vlogs</a></div></ytd-playlist-header-renderer><ytd-playlist-video-list-renderer id="playlist-items">videos</ytd-playlist-video-list-renderer></ytd-app>',
+    '<ytd-app><ytd-playlist-header-renderer><div id="title">JEE Study Lessons</div><div id="owner-text"><a href="/@random">Random Vlogs</a></div></ytd-playlist-header-renderer><ytd-playlist-video-list-renderer id="playlist-items">videos</ytd-playlist-video-list-renderer><video></video></ytd-app>',
   );
+  const doc = h.dom.window.document;
+  const video = doc.querySelector('video') as HTMLVideoElement;
   const run = start(h);
   try {
-    assert.match(h.overlayText(), /Random Vlogs/);
-    assert.match(h.overlayText(), /playlist is closed/);
+    assert.equal(h.currentOverlay(), null, 'the list is browsable while nothing plays');
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    video.dispatchEvent(new h.dom.window.Event('play'));
+    assert.match(h.overlayText(), /Random Vlogs/, 'the owner is what decides');
+    assert.ok(!h.overlayText().includes('JEE Study Lessons'), 'a keyword in the playlist title does not');
+    assert.match(h.overlayText(), /nothing plays from this playlist/);
     assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
   } finally {
     run.cleanup();
   }
 });
 
-test('a channel or playlist with an unreadable owner fails closed', () => {
+test('a channel or playlist with an unreadable owner stays open while nothing is playing', () => {
   const cases = [
-    ['/@unknown', '<yt-page-header-renderer><div id="page-header-title"></div></yt-page-header-renderer>', /could not read the channel name/],
-    ['/playlist?list=PL-unknown', '<ytd-playlist-header-renderer><div id="title">A study list</div></ytd-playlist-header-renderer>', /could not read the playlist\x27s channel name/],
+    ['/@unknown', '<yt-page-header-renderer><div id="page-header-title"></div></yt-page-header-renderer>'],
+    ['/playlist?list=PL-unknown', '<ytd-playlist-header-renderer><div id="title">A study list</div></ytd-playlist-header-renderer>'],
   ] as const;
-  for (const [path, body, expected] of cases) {
+  for (const [path, body] of cases) {
     const h = makeYouTube(path, `<ytd-app>${body}</ytd-app>`);
     const run = start(h);
     try {
-      assert.match(h.overlayText(), expected);
-      assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+      assert.equal(h.currentOverlay(), null, `${path} is browsable without a verified owner`);
+      assert.deepEqual(run.filter.health(), { ok: true });
     } finally {
       run.cleanup();
     }
+  }
+});
+
+test('an unreadable playlist owner refuses playback instead of the whole playlist', () => {
+  const h = makeYouTube('/playlist?list=PL-unknown', '<ytd-app><ytd-playlist-header-renderer><div id="title">A study list</div></ytd-playlist-header-renderer><video></video></ytd-app>');
+  const doc = h.dom.window.document;
+  const video = doc.querySelector('video') as HTMLVideoElement;
+  const run = start(h);
+  try {
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    video.dispatchEvent(new h.dom.window.Event('play'));
+    assert.match(h.overlayText(), /could not read the playlist\x27s channel name/);
+    assert.match(h.overlayText(), /You can still browse it/);
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+    assert.ok(h.pauseCount() > 0);
+  } finally {
+    run.cleanup();
   }
 });
 
