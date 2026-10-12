@@ -527,3 +527,196 @@ test('stopping the filter disconnects the observer and leaves future nodes untou
   assert.notEqual(item.style.display, 'none');
   run.cleanup();
 });
+
+// Collaboration (Collab) — YouTube native feature up to 10 credited channels
+test('a Collaboration watch page with any matching collaborator is allowed', () => {
+  const h = makeYouTube(
+    '/watch?v=collab1',
+    '<ytd-app><div id=\"owner\"><ytd-video-owner-renderer><ytd-channel-name><a>Random Vlogs</a></ytd-channel-name></ytd-video-owner-renderer></div><div aria-label=\"Collaboration channels\"><a href=\"/@jeestudy\">JEE Physics Academy</a><a href=\"/@random2\">Random Vlogs 2</a></div></ytd-app>',
+  );
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'collab with a study keyword among collaborators must be allowed');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a Collaboration watch page where no collaborator matches is still covered', () => {
+  const h = makeYouTube(
+    '/watch?v=collab2',
+    '<ytd-app><div id=\"owner\"><ytd-video-owner-renderer><ytd-channel-name><a>Random Vlogs</a></ytd-channel-name></ytd-video-owner-renderer></div><div aria-label=\"Collaboration channels\"><a href=\"/@other1\">Other Channel One</a><a href=\"/@other2\">Other Channel Two</a></div></ytd-app>',
+  );
+  const run = start(h);
+  try {
+    assert.match(h.overlayText(), /Not on your study list/);
+    assert.match(h.overlayText(), /Collaboration detected/);
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a Collaboration watch page with split names via avatarStack is allowed if any matches', () => {
+  const h = makeYouTube(
+    '/watch?v=collab3',
+    '<ytd-app><div id=\"owner\"><ytd-video-owner-renderer><div id=\"avatar-stack\"><yt-avatar-stack-view-model><a href=\"/@random\">Random Vlogs</a></yt-avatar-stack-view-model></div><ytd-channel-name><a>Random Vlogs</a></ytd-channel-name></ytd-video-owner-renderer></div><yt-content-metadata-view-model><a href=\"/@study\">Study Chemistry</a></yt-content-metadata-view-model></ytd-app>',
+  );
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'any matching name in modern metadata must allow');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a Collaboration video where layout shows collaboration but no name can be parsed falls back to trust', () => {
+  const h = makeYouTube(
+    '/watch?v=collab-trust',
+    '<ytd-app><div id=\"owner\"><ytd-video-owner-renderer><div id=\"avatar-stack\"></div></ytd-video-owner-renderer></div><div aria-label=\"Collaboration channels\"></div><video></video></ytd-app>',
+  );
+  const video = h.dom.window.document.querySelector('video') as HTMLVideoElement;
+  Object.defineProperty(video, 'paused', { configurable: true, value: false });
+  const run = start(h);
+  try {
+    assert.match(h.overlayText(), /Collaboration — not fully verified/);
+    assert.match(h.overlayText(), /trust/);
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'collab-trust' });
+    assert.ok(h.pauseCount() > 0, 'trust cover still pauses to surface notice');
+    // Clicking Continue (trust) remembers the page and allows playback
+    const btn = Array.from(h.currentOverlay()?.querySelectorAll('button') ?? []).find((b) => b.textContent === 'Continue (trust)') as HTMLElement | undefined;
+    assert.ok(btn, 'Continue (trust) button must exist');
+    btn!.click();
+    assert.equal(h.currentOverlay(), null, 'after trust Continue the cover is dismissed');
+    assert.deepEqual(run.filter.health(), { ok: true });
+    // Starting playback again must not re-block (trust remembered for this page)
+    const video = h.dom.window.document.createElement('video');
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    h.dom.window.document.body.append(video);
+    video.dispatchEvent(new h.dom.window.Event('play'));
+    assert.equal(h.currentOverlay(), null, 'trusted collaboration must not re-block on next play');
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('readAllChannelNames collects every visible name and anyChannelAllowed checks any', async () => {
+  const { readAllChannelNames } = await import('../../src/content/youtube');
+  const { anyChannelAllowed } = await import('../../src/core/matchers');
+  const dom = new JSDOM('<div id=\"root\"><ytd-channel-name><a>JEE Physics</a></ytd-channel-name><ytd-channel-name><a>Random Vlogs</a></ytd-channel-name><a href=\"/@study\">Study Chemistry</a></div>', { url: 'https://www.youtube.com/watch?v=x' });
+  try {
+    const names = readAllChannelNames(dom.window.document.getElementById('root')!, ['ytd-channel-name a', 'a[href^=\"/@\"]']);
+    assert.ok(names.includes('JEE Physics'));
+    assert.ok(names.includes('Random Vlogs'));
+    assert.ok(names.includes('Study Chemistry'));
+    assert.equal(anyChannelAllowed(names, ['JEE']), true);
+    assert.equal(anyChannelAllowed(names, ['Cooking']), false);
+    assert.equal(anyChannelAllowed(['Random Vlogs', 'Other'], ['JEE', 'Study']), false);
+    assert.equal(anyChannelAllowed(['Random Vlogs', 'JEE Academy'], ['JEE']), true);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test('browsing a channel page with collaboration owner is still browsable and playback is checked', () => {
+  const h = makeYouTube(
+    '/@random/videos',
+    '<ytd-app><yt-page-header-renderer><div id=\"page-header-title\">Random Vlogs and JEE Academy</div></yt-page-header-renderer><video></video></ytd-app>',
+  );
+  const video = h.dom.window.document.querySelector('video') as HTMLVideoElement;
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'channel page browsing remains allowed');
+    // Playback should inspect the channel title; "JEE Academy" inside combined title should allow via anyChannelAllowed split
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    video.dispatchEvent(new h.dom.window.Event('play'));
+    assert.equal(h.currentOverlay(), null, 'combined channel title containing a keyword must be allowed (collab split)');
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('Shorts from a study channel are now allowed in Productive Mode', () => {
+  const h = makeYouTube(
+    '/shorts/abc123',
+    '<ytd-app><ytd-reel-video-renderer is-active><div id=\"overlay\"><ytd-channel-name><a>JEE Study Shorts</a></ytd-channel-name></div></ytd-reel-video-renderer><video></video></ytd-app>',
+  );
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'study Shorts must not be blocked');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('Shorts from a non-study channel remain covered', () => {
+  const h = makeYouTube(
+    '/shorts/xyz',
+    '<ytd-app><ytd-reel-video-renderer is-active><ytd-channel-name><a>Random Vlogs</a></ytd-channel-name></ytd-reel-video-renderer><video></video></ytd-app>',
+  );
+  const video = h.dom.window.document.querySelector('video') as HTMLVideoElement;
+  Object.defineProperty(video, 'paused', { configurable: true, value: false });
+  const run = start(h);
+  try {
+    assert.match(h.overlayText(), /Shorts are off/);
+    assert.match(h.overlayText(), /Random Vlogs/);
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+    assert.ok(h.pauseCount() > 0);
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('Shorts Collaboration with a matching collaborator is allowed', () => {
+  const h = makeYouTube(
+    '/shorts/collabShort',
+    '<ytd-app><ytd-reel-video-renderer is-active><yt-reel-channel-bar-view-model><a href=\"/@random\">Random Vlogs</a></yt-reel-channel-bar-view-model></ytd-reel-video-renderer><div aria-label=\"Collaboration channels\"><a href=\"/@study\">Study With Me</a></div><video></video></ytd-app>',
+  );
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'collab Shorts with a study keyword must be allowed');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('Channel Shorts tab remains browsable; only playback is checked', () => {
+  const h = makeYouTube(
+    '/@random/shorts',
+    '<ytd-app><yt-page-header-renderer><div id=\"page-header-title\">Random Vlogs</div></yt-page-header-renderer><ytd-rich-grid-renderer><ytd-rich-item-renderer id=\"shorts-grid\">shorts grid</ytd-rich-item-renderer></ytd-rich-grid-renderer><video></video></ytd-app>',
+  );
+  const video = h.dom.window.document.querySelector('video') as HTMLVideoElement;
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'Shorts tab browsing must not be covered');
+    assert.notEqual((h.dom.window.document.querySelector('#shorts-grid') as HTMLElement).style.display, 'none');
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    video.dispatchEvent(new h.dom.window.Event('play'));
+    assert.match(h.overlayText(), /Shorts are off/);
+    assert.match(h.overlayText(), /Random Vlogs/);
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('Channel Shorts tab from a study channel stays browsable and its playback is allowed', () => {
+  const h = makeYouTube(
+    '/@jeestudy/shorts',
+    '<ytd-app><yt-page-header-renderer><div id=\"page-header-title\">JEE Physics Academy</div></yt-page-header-renderer><ytd-rich-grid-renderer><ytd-rich-item-renderer id=\"shorts-grid\">shorts grid</ytd-rich-item-renderer></ytd-rich-grid-renderer><video></video></ytd-app>',
+  );
+  const video = h.dom.window.document.querySelector('video') as HTMLVideoElement;
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'study channel shorts tab must be open');
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    video.dispatchEvent(new h.dom.window.Event('play'));
+    assert.equal(h.currentOverlay(), null, 'study channel shorts playback must be allowed');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});

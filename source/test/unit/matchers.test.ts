@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { channelAllowed, filterKindForHost, matchingKeyword, normalizeName, youtubePageKind } from '../../src/core/matchers';
+import { anyChannelAllowed, channelAllowed, filterKindForHost, matchingChannels, matchingKeyword, normalizeName, youtubePageKind } from '../../src/core/matchers';
 import { DEFAULT_YOUTUBE_KEYWORDS } from '../../src/core/constants';
 
 const KW = [...DEFAULT_YOUTUBE_KEYWORDS];
@@ -51,4 +51,17 @@ test('filterKindForHost maps hosts to content filters', () => {
   assert.equal(filterKindForHost('youtube.com'), 'youtube');
   assert.equal(filterKindForHost('example.com'), null);
   assert.equal(filterKindForHost(null), null);
+});
+
+test('anyChannelAllowed allows Collaboration if ANY collaborator matches', () => {
+  assert.equal(anyChannelAllowed(['Random Vlogs', 'JEE Physics Academy', 'Other'], KW), true);
+  assert.equal(anyChannelAllowed(['Random Vlogs', 'Other'], KW), false);
+  assert.equal(anyChannelAllowed([], KW), false);
+  assert.equal(anyChannelAllowed([null, undefined, '   '], KW), false);
+  assert.equal(anyChannelAllowed(['PW Live and Random Vlogs'], KW), true, 'combined string still contains keyword');
+});
+
+test('matchingChannels returns all matching names', () => {
+  assert.deepEqual(matchingChannels(['JEE Physics', 'Random Vlogs', 'Learn Python'], KW), ['JEE Physics', 'Learn Python']);
+  assert.deepEqual(matchingChannels(['Random', 'Other'], KW), []);
 });
