@@ -35,6 +35,30 @@ export function matchingKeyword(channelName: string, keywords: readonly string[]
   return null;
 }
 
+/**
+ * Collab-aware helper: true if ANY channel name in the list matches a keyword.
+ * Used for YouTube Collaboration videos that credit up to 10 channels on one watch page.
+ * Unknown / empty names never match (fail closed) — they are simply ignored, so a
+ * single matching collaborator is enough to allow the video.
+ */
+export function anyChannelAllowed(
+  channelNames: readonly (string | null | undefined)[],
+  keywords: readonly string[],
+): boolean {
+  for (const raw of channelNames) {
+    if (channelAllowed(raw, keywords)) return true;
+  }
+  return false;
+}
+
+/** All names that actually matched, for messaging / tests. */
+export function matchingChannels(
+  channelNames: readonly string[],
+  keywords: readonly string[],
+): string[] {
+  return channelNames.filter((name) => channelAllowed(name, keywords));
+}
+
 export type YouTubePage = 'home' | 'search' | 'watch' | 'shorts' | 'playlist' | 'channel' | 'other';
 
 /**
