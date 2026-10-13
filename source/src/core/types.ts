@@ -56,7 +56,9 @@ export interface DayStats {
    * neutral sites that EarnTime neither credits nor charges. Hostnames only, never page addresses.
    */
   hosts: Record<string, number>;
-  /** Foreground screen time observed while the worker was running (exact). */
+  /** Per-host spending already charged, including same-day reclassification. */
+  chargedHosts: Record<string, number>;
+  /** Total foreground screen time, including the estimated portion below. */
   screenMs: number;
   /**
    * Foreground screen time reconstructed from browser history after an interruption (estimated, with
@@ -175,6 +177,8 @@ export interface EarnState {
    * extension — and nothing else uses it.
    */
   historyGranted: boolean;
+  /** Chrome exposes local vs synced visits, not individual remote device identities. */
+  historyScope: 'local' | 'all';
   createdAt: number;
   settings: Settings;
   rules: Rules;

@@ -20,6 +20,7 @@ function stateWith(overrides: Partial<EarnState> = {}): EarnState {
     schema: 5,
     setupDone: true,
     historyGranted: true,
+    historyScope: 'local',
     createdAt: T0 - 30 * 24 * 60 * MIN,
     settings: { earnFromMin: 60, earnToMin: 5, unlockCostMin: 10, youtubeKeywords: ['Study'] },
     rules: { productive: ['khanacademy.org'], half: ['youtube.com'], unproductive: ['instagram.com'] },

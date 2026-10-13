@@ -151,3 +151,11 @@ Use a dedicated Chrome profile. EarnTime redirects `chrome://extensions`, so rel
 27. **Installed web apps / window shortcuts (v2.4.3):** in the same Chrome profile, install or create a shortcut for a productive site and an unproductive site with *Open as window* enabled. Focus each standalone window for 2 minutes: check earned/used balance and per-site screen time. Switch between each and a regular browser window: only the foreground site should count. Minimise the app, focus an unrelated application, idle, then restart Chrome and verify those periods are not counted. Repeat with a shortcut opened in a tab (it should continue to count normally).
 
 Record the result of each step, Chrome version and date before release.
+
+## Device-source and same-day debt regression checks
+
+`npm test` passes: **144 unit, 58 DOM, and 54 simulated-browser tests** (256 total), plus TypeScript checking. `npm run build` also passes.
+
+New checks cover local versus synced visits (including mixed visits to the same URL and unknown sources), opt-in all-device history and persistence, excluding synced visits during interruptions, 20 minutes of `arena.ai` use against a 10-minute balance, immediate badge/notification/open-tab/DNR enforcement, exact-balance exhaustion, per-host billing across live/history accounting, remove/re-add/move idempotence, subdomain exceptions, migration and local-day boundaries.
+
+The actual Chrome sync API and installation were not exercised in this environment; no Chromium binary was available. Manual checks: reload the unpacked extension, verify **Settings → Analytics → Devices used for history estimates**, compare local and synced visits on a signed-in profile, and add a previously neutral site after its recorded use exceeds the remaining balance. Confirm the existing tab is redirected and productive sites remain available for repayment.

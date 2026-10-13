@@ -3,7 +3,7 @@
  * through these functions so the invariants hold in one place:
  *   - earning repays debt before it grows the balance;
  *   - live spending never takes the balance below zero (no debt is created live);
- *   - debt is created only by history reconciliation after an interruption.
+ *   - debt is created by estimated interruption usage or earlier usage of a newly unproductive site.
  */
 
 import { DAY_RETENTION, LEDGER_LIMIT, LEDGER_MERGE_MS } from './constants';
@@ -20,6 +20,7 @@ export function emptyDayStats(): DayStats {
     taskMs: 0,
     usedMs: 0,
     hosts: {},
+    chargedHosts: {},
     screenMs: 0,
     estimatedScreenMs: 0,
   };
@@ -138,7 +139,7 @@ export function spendFromBalance(state: EarnState, ms: number): number {
   return taken;
 }
 
-/** Adds debt (only reconciliation does this). */
+/** Adds debt for previously unbilled usage, never for blocked live browsing. */
 export function incurDebt(state: EarnState, ms: number, at: number, note: string): void {
   if (ms <= 0) return;
   if (state.debtMs === 0 || state.debtSince === null) {

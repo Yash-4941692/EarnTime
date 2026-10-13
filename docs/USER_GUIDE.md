@@ -83,11 +83,21 @@ With screen-time access granted, EarnTime keeps a **per-site, per-day** record o
 
 **Granting and removing access:** setup asks once; *Settings → Analytics* can grant or remove it at any time. Because Chrome only shows the permission prompt during a real click, that button must be pressed by you — EarnTime cannot grant it to itself. If you revoke `history` in `chrome://extensions` instead, EarnTime notices at the next window focus or worker start, records the change in the ledger, and stops reconstructing gaps.
 
+### Choose which devices supply history
+
+In **Settings → Analytics → Devices used for history estimates**, choose:
+
+- **This device only** (default, including on upgrade): imports only visits Chrome marks as local. Synced and unknown-source visits are excluded.
+- **All devices with synced Chrome history**: opts into the combined history Chrome exposes. This is still an estimate of visit durations, not an exact measurement of screen time on other devices.
+
+Live tracking always measures the current device. Chrome's history API cannot identify which remote device made a synced visit, so individual remote devices cannot be selected. Changing the source affects future imports; it does not undo existing credits, spending or debt. If Chrome cannot identify visit sources, this-device mode uses live tracking and checkpoint estimates only.
+
 ## Balance, debt and repayment
 
 - **Remaining** is your balance. **Earned**, **Used**, **Productive**, **Half-productive** and **Unproductive** show today's totals.
 - Live use of an unproductive site never goes below zero. The site is blocked when the balance runs out.
-- **Debt** appears only after an *interruption*: EarnTime was not running (extension disabled, browser closed, computer asleep). On the next check, EarnTime estimates the time from your browser history. Use beyond the balance becomes debt. Example: balance 10 min, 40 min of Instagram use while EarnTime was off → debt 30 min.
+- **Debt** can also start immediately when you add or move a website to **Unproductive**: its recorded screen time earlier today is charged against your remaining balance. For example, 20 recorded minutes on `arena.ai` and a 10-minute balance creates 10 minutes of debt. Time already charged is not charged again, and earlier days are not back-billed.
+- **Interruption debt** appears after an *interruption*: EarnTime was not running (extension disabled, browser closed, computer asleep). On the next check, EarnTime estimates the time from your browser history. Use beyond the balance becomes debt. Example: balance 10 min, 40 min of Instagram use while EarnTime was off → debt 30 min.
 - In **DEBT MODE** only productive and half-productive sites (in Productive Mode) open. The popup and block page show the debt, how much productive time is needed (at 60:5 each productive hour repays 5 minutes, so 30 min of debt needs 6 hours), and the progress.
 - Productive time and task rewards repay debt before they add to the balance.
 - *Why this debt exists* in the popup shows the interruption window and the charged and credited minutes.

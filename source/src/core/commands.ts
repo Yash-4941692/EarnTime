@@ -11,6 +11,7 @@ import {
   MINUTE_MS,
   SCHEMA_VERSION,
 } from './constants';
+import { chargeReclassifiedSite } from './reclassify';
 import { cleanHostList, dedupeRules } from './state';
 import { normalizeHostInput, listOfEntry } from './domains';
 import { normalizeName } from './matchers';
@@ -55,7 +56,8 @@ export type Command =
   | { type: 'task.delete'; id: string }
   | { type: 'task.toggle'; id: string }
   /** Records a screen-time access decision taken outside setup (Settings → Analytics). */
-  | { type: 'screenTime.set'; granted: boolean };
+  | { type: 'screenTime.set'; granted: boolean }
+  | { type: 'screenTime.scope'; scope: 'local' | 'all' };
 
 const LIST_LABEL: Record<ListName, string> = {
   productive: 'Productive',
@@ -130,6 +132,7 @@ function applySite(state: EarnState, now: number, cmd: Extract<Command, { type: 
     );
     if (!paid.ok) return paid;
     state.rules[cmd.list].push(host);
+    if (cmd.list === 'unproductive') chargeReclassifiedSite(state, host, now);
     addLedger(state, 'rule', now, 0, `Added ${host} to ${LIST_LABEL[cmd.list].toLowerCase()} sites`, host);
     return { ok: true };
   }
@@ -170,6 +173,7 @@ function applySite(state: EarnState, now: number, cmd: Extract<Command, { type: 
   if (!paid.ok) return paid;
   state.rules[current] = state.rules[current].filter((h) => h !== host);
   state.rules[cmd.to].push(host);
+  if (cmd.to === 'unproductive') chargeReclassifiedSite(state, host, now);
   addLedger(state, 'rule', now, 0, `Moved ${host} to ${LIST_LABEL[cmd.to].toLowerCase()} sites`, host);
   return { ok: true };
 }
@@ -365,6 +369,13 @@ export function applyCommand(state: EarnState, cmd: Command, now: number): RuleR
       return applyYouTubeKeyword(state, now, cmd.keyword, true);
     case 'youtube.remove':
       return applyYouTubeKeyword(state, now, cmd.keyword, false);
+    case 'screenTime.scope':
+      if (cmd.scope !== 'local' && cmd.scope !== 'all') return fail('invalid', 'Choose a valid history source.');
+      if (state.historyScope !== cmd.scope) {
+        state.historyScope = cmd.scope;
+        addLedger(state, 'rule', now, 0, `History source: ${cmd.scope === 'local' ? 'this device only' : 'all synced devices'}`);
+      }
+      return { ok: true };
     case 'screenTime.set':
       // The worker asked Chrome before this command was sent, so the answer is already known: this
       // only records it, and the ledger entry makes the decision auditable.
@@ -391,6 +402,7 @@ export function auditExport(state: EarnState, now: number): Record<string, unkno
     note: 'Read-only audit export. Editing this file does not change EarnTime.',
     settings: state.settings,
     rules: state.rules,
+    historyScope: state.historyScope,
     balanceMinutes: +(state.balanceMs / MINUTE_MS).toFixed(2),
     debtMinutes: +(state.debtMs / MINUTE_MS).toFixed(2),
     debtOriginMinutes: +(state.debtOriginMs / MINUTE_MS).toFixed(2),

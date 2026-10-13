@@ -10,7 +10,7 @@ import { dashboardView } from '../../core/view';
 import type { EarnState, LedgerEntry, ListName, Task } from '../../core/types';
 import { EstimateNote, SiteList, StudyShare, TrendChart, deltaLabel, trendSentence } from '../analytics';
 import { Button, Card, Empty, Field, InlineCode, Notice, Stat } from '../components';
-import { exportAudit, incognitoAllowed, screenTimeAccess, setScreenTimeAccess, useLiveTick, useNow, useStoredState } from '../lib/extension';
+import { exportAudit, incognitoAllowed, runCommand, screenTimeAccess, setScreenTimeAccess, useLiveTick, useNow, useStoredState } from '../lib/extension';
 import { createAct, type Act } from './useAct';
 
 type SectionId = 'time' | 'websites' | 'youtube' | 'tasks' | 'analytics' | 'protection';
@@ -176,6 +176,10 @@ function WebsitesSection({ state, act }: { state: EarnState; act: Act }) {
             </Button>
           </div>
         </form>
+        <p className="text-[12px] leading-snug text-slate-400">
+          Adding or moving a site to Unproductive also charges its recorded use earlier today. If that exceeds your balance,
+          Debt Mode starts immediately. Usage already charged is not charged again.
+        </p>
         <Field label="Filter lists" htmlFor="site-filter">
           <input id="site-filter" className="field" placeholder="Type to filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
         </Field>
@@ -450,6 +454,19 @@ function AnalyticsSection({ state }: { state: EarnState }) {
     setGranted(result);
   };
 
+  const changeScope = async (scope: 'local' | 'all') => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await runCommand({ type: 'screenTime.scope', scope });
+      if (!result.ok) setError(result.message ?? 'Could not save the history source.');
+    } catch {
+      setError('EarnTime did not respond. Try again in a moment.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const accessKnown = granted !== null;
   const accessOn = granted === true;
 
@@ -490,6 +507,20 @@ function AnalyticsSection({ state }: { state: EarnState }) {
             <span className="text-slate-500"> (recorded state says {state.historyGranted ? 'granted' : 'not granted'}; the worker corrects it on its next start)</span>
           ) : null}
         </p>
+        <div className="space-y-2">
+          <label htmlFor="history-scope" className="block text-[12.5px] font-medium text-slate-200">Devices used for history estimates</label>
+          <select id="history-scope" className="w-full rounded-lg border border-slate-700 bg-slate-900 p-2 text-sm text-slate-100"
+            value={state.historyScope} disabled={busy}
+            onChange={(event) => void changeScope(event.target.value as 'local' | 'all')}>
+            <option value="local">This device only (recommended)</option>
+            <option value="all">All devices with synced Chrome history</option>
+          </select>
+          <p className="text-[11.5px] leading-snug text-slate-500">
+            Live counting always uses this device. Chrome identifies local versus synced visits, but does not expose the
+            names of remote devices, so individual remote devices cannot be selected. Visits with an unknown source are
+            excluded in this-device mode. Changes affect future imports, not existing balances or debt.
+          </p>
+        </div>
         {error ? <Notice tone="error">{error}</Notice> : null}
         <p className="text-[11.5px] leading-snug text-slate-500">
           EarnTime stores hostnames and minutes only — never page addresses, titles or search terms — and it makes no network requests.

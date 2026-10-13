@@ -37,6 +37,7 @@ export interface SimWindow {
 }
 
 export interface SimVisit {
+  isLocal?: boolean;
   url: string;
   at: number;
 }
@@ -287,7 +288,7 @@ export class FakeBrowser {
             .slice(0, q.maxResults ?? 100);
         },
         getVisits: async (q: { url: string }) =>
-          self.visits.filter((v) => v.url === q.url).map((v) => ({ visitTime: v.at })),
+          self.visits.filter((v) => v.url === q.url).map((v) => ({ visitTime: v.at, isLocal: 'isLocal' in v ? v.isLocal : true })),
       },
       declarativeNetRequest: {
         getDynamicRules: async () => [...self.dnr.values()].map((r) => clone(r)),

@@ -31,6 +31,8 @@ EarnTime is a self-discipline tool. It is not a security boundary, and nothing i
 - **Picture-in-picture** and **embedded players on other sites** are not analysed. Only the top-level page is evaluated.
 - **Incognito** is not tracked unless the user allows EarnTime in incognito. The popup shows a warning when it is not.
 - **One profile, one ledger.** Each Chrome profile has its own EarnTime state.
+- **Device selection is local versus all synced history, not a remote-device picker.** `chrome.history.getVisits` exposes `isLocal`, but no source-device identifier. This-device mode is the default and excludes visits with `isLocal: false` or an unknown source; all synced history is opt-in in Settings → Analytics. This preference affects future imports only. Chrome versions without visit-source information cannot import history in this-device mode. Live tracking always remains local.
+- **Same-day reclassification uses recorded screen time.** Adding/moving a site to Unproductive charges earlier recorded use today and can immediately create debt. It does not replay the day's history, revoke earlier study rewards, or back-bill earlier days. Estimates retain their existing caps. Older releases lack per-host billing records: on upgrade, existing screen time on already half/unproductive sites is conservatively treated as covered when that day has spending, to avoid duplicate charges.
 
 ## 3. Interruption reconciliation (estimates)
 

@@ -65,7 +65,7 @@ function chargeSlice(
   // closed by the YouTube filter) IS screen time — that is the honest answer to "where did the day
   // go", and it is why this number can be larger than the time EarnTime charged.
   const away = role.k === 'none' && (role.why === 'background' || role.why === 'idle' || role.why === 'locked');
-  const screenHost = 'host' in role && role.host ? role.host : (observedHost ?? null);
+  const screenHost = observedHost ?? ('host' in role ? role.host : null);
   if (screenHost && !away) addScreenTime(state, dayKey(from), screenHost, ms, mode === 'gap');
   if (role.k === 'none' || role.k === 'neutral') return { ...ZERO_SLICE };
   const at = to;
@@ -88,6 +88,9 @@ function chargeSlice(
     if (debtAdd > 0) incurDebt(state, debtAdd, from + fromBalance, `${note} (${host ?? 'unknown'})`);
     const charged = fromBalance + debtAdd;
     stats.usedMs += charged;
+    if (screenHost && charged > 0) {
+      stats.chargedHosts[screenHost] = (stats.chargedHosts[screenHost] ?? 0) + charged;
+    }
     if (charged > 0) addLedger(state, 'spend', at, charged, note, host ?? undefined, mergeable);
     return { creditMs: 0, chargedMs: charged, debtAddedMs: debtAdd, repaidMs: 0 };
   };
