@@ -36,8 +36,8 @@ import {
   isGuardedUrl,
 } from '../core/roles';
 import { createInitialState, isLegacyStorage, migrateLegacy, sanitizeState } from '../core/state';
-import { badgeText, formatMinutes } from '../core/time';
-import type { EarnState, FilterState, IdleState, Observation } from '../core/types';
+import { badgeText, formatMinutes, startOfLocalDay } from '../core/time';
+import type { EarnState, FilterState, IdleState, Observation, ReconcileSummary } from '../core/types';
 import { addLedger } from '../core/wallet';
 import type { ExtApi, TabInfo } from './api';
 
@@ -224,6 +224,41 @@ export function createController(opts: ControllerOptions): Controller {
       setLast(state, snapshot);
     }
     if (state.last) state.live = liveFrom(state.last);
+  }
+
+  /**
+   * Reconciles the whole day's browsing history from midnight up to `now` (or from `sinceMs` if provided).
+   * Used on setup completion, when screen-time access is granted, or when the extension is turned on / starts up.
+   */
+  async function reconcileDayHistory(state: EarnState, now: number, sinceMs?: number | null): Promise<ReconcileSummary | null> {
+    if (!state.setupDone || !state.historyGranted) return null;
+    const dayStart = startOfLocalDay(now);
+    const from = typeof sinceMs === 'number' && sinceMs >= dayStart ? sinceMs : dayStart;
+    if (from >= now) return null;
+
+    const obs = await observe(state, now, uiOpenAt !== null && now - uiOpenAt <= UI_OPEN_MS);
+    const snapshot = makeSnapshot(state, obs);
+    const visits = await fetchVisits(state, from, now);
+    if (visits.length === 0) {
+      setLast(state, snapshot);
+      if (state.last) state.live = liveFrom(state.last);
+      return null;
+    }
+
+    const input: ReconcileInput = {
+      from,
+      to: now,
+      visits,
+      prevRole: null,
+      prevHost: null,
+      current: { counts: countsForAccounting(snapshot.role), host: snapshot.host },
+      startupAt: null, // Reconstruct entire day across browser and extension restarts
+    };
+    const plan = planReconcile(state, input);
+    const summary = applyReconcile(state, plan, input, now);
+    setLast(state, snapshot);
+    if (state.last) state.live = liveFrom(state.last);
+    return summary;
   }
 
   async function syncRules(state: EarnState): Promise<void> {
@@ -439,12 +474,17 @@ export function createController(opts: ControllerOptions): Controller {
         lastMono = null;
         state.browserStartAt = now;
         state.sessions = {};
+        const wasSetup = state.setupDone;
+        const prevLastAt = state.lastAt;
         state.last = null;
         state.lastAt = null;
         addLedger(state, 'startup', now, 0, 'Browser started');
         // Before a gap can be reconstructed from history, the recorded permission has to match what
         // Chrome actually grants: it can be revoked from chrome://extensions without an event.
         applyScreenTimeAccess(state, now, await readScreenTimeAccess());
+        if (wasSetup && state.historyGranted) {
+          await reconcileDayHistory(state, now, prevLastAt);
+        }
         await checkpoint(state, now);
         // An unfinished setup is offered again on every browser start.
         await ensureSetupPage(state);
@@ -459,6 +499,9 @@ export function createController(opts: ControllerOptions): Controller {
         // An upgrade moves `history` from a required to an optional permission, so ask Chrome what
         // this profile really has instead of trusting the stored flag.
         applyScreenTimeAccess(state, now, await readScreenTimeAccess());
+        if (state.setupDone && state.historyGranted) {
+          await reconcileDayHistory(state, now, state.lastAt);
+        }
         void reason;
       });
     },
@@ -585,9 +628,14 @@ export function createController(opts: ControllerOptions): Controller {
     if (isUiMessage(message)) {
       if (message.type === 'ui.command') {
         const command = message.command as Command;
-        return job('command', true, (state, now): Reply => {
+        return job('command', true, async (state, now): Promise<Reply> => {
           const result = applyCommand(state, command, now);
-          if (result.ok) return { ok: true, data: result.data };
+          if (result.ok) {
+            if (command.type === 'setup.complete' && state.historyGranted) {
+              await reconcileDayHistory(state, now);
+            }
+            return { ok: true, data: result.data };
+          }
           return { ok: false, error: { code: result.code, message: result.message, needMs: result.needMs, quote: result.quote } };
         });
       }
@@ -599,10 +647,21 @@ export function createController(opts: ControllerOptions): Controller {
         const granted = grant
           ? await safe<boolean>('permissions.request', false, () => api.permissions.request(SCREEN_TIME_PERMISSION))
           : !(await safe<boolean>('permissions.remove', true, () => api.permissions.remove(SCREEN_TIME_PERMISSION)));
-        return job('screen-time-access', true, (state, now): Reply => {
+        return job('screen-time-access', true, async (state, now): Promise<Reply> => {
           applyScreenTimeAccess(state, now, granted);
           knownScreenTimeAccess = granted;
+          if (state.historyGranted && state.setupDone) {
+            await reconcileDayHistory(state, now);
+          }
           return { ok: true, data: { granted: state.historyGranted } };
+        });
+      }
+      if (message.type === 'ui.reconcileNow') {
+        return job('reconcile-now', true, async (state, now): Promise<Reply> => {
+          if (state.setupDone && state.historyGranted) {
+            await reconcileDayHistory(state, now, state.lastAt);
+          }
+          return { ok: true };
         });
       }
       if (message.type === 'ui.export') {

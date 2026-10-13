@@ -202,7 +202,7 @@ export function Setup() {
         <Card className="space-y-4">
           <h1 className="text-[22px] font-semibold text-slate-50">You're set</h1>
           <p className="text-[14px] leading-relaxed text-slate-300">
-            Study on a productive site and time will build up. Unproductive sites spend it. If you run out, you can repay debt by studying.
+            Study on a productive site and time will build up. Unproductive sites spend it. Your browsing history from today has been evaluated against your websites to calculate your initial screen time or debt.
           </p>
           <div className="flex gap-2">
             <a className="btn btn-primary" href="settings.html">Open settings</a>
@@ -335,7 +335,7 @@ export function Setup() {
               <dt className="text-slate-500">Tasks</dt>
               <dd>{draft.tasks.length}</dd>
               <dt className="text-slate-500">Screen-time access</dt>
-              <dd>{draft.screenTimeAccess ? 'granted (history fills the gaps)' : 'declined (live counting only)'}</dd>
+              <dd>{draft.screenTimeAccess ? 'granted (evaluates whole day history)' : 'declined (live counting only)'}</dd>
             </dl>
             <Notice tone="warn">Setup can be completed once. After this, the starting balance and earn rule can only change by the rules in Settings → Protection.</Notice>
           </div>
@@ -389,17 +389,17 @@ function ScreenTimeStep({ granted, onChange }: { granted: boolean; onChange: (gr
 
   return (
     <div className="space-y-4">
-      <h2 className="text-[18px] font-semibold text-slate-50">Screen-time access</h2>
+      <h2 className="text-[18px] font-semibold text-slate-50">Screen-time access (whole day)</h2>
       <p className="text-[13.5px] leading-relaxed text-slate-400">
-        EarnTime can only count what it sees running. Chrome suspends its worker, and the browser closes. With screen-time access, EarnTime reads
-        your <strong className="text-slate-200">browsing history</strong> to reconstruct those gaps — and can show you how much time each site
-        took today, in Settings → Analytics.
+        EarnTime asks for access to your <strong className="text-slate-200">whole screen-time history of the day</strong>.
+        Once setup is complete or when turned on, EarnTime inspects your browsing history since midnight: study sites earn
+        screen time at your earn ratio, while distracting sites spend balance or put you into <strong className="text-rose-400">Debt Mode</strong>.
       </p>
       <ul className="list-disc space-y-1.5 pl-5 text-[13px] leading-relaxed text-slate-400">
-        <li>Hostnames and minutes only. No page addresses, titles or search terms are stored.</li>
-        <li>No network requests: nothing is uploaded, ever.</li>
-        <li>Without it, gaps are charged conservatively from the last checkpoint, and the per-site breakdown only covers time EarnTime watched live.</li>
-        <li>You can grant or remove it at any time in Settings → Analytics.</li>
+        <li>Whole-day history evaluation: gives initial screen time or debt based on the websites you visited today.</li>
+        <li>Hostnames and minutes only. No page addresses, titles or search terms are stored or uploaded.</li>
+        <li>Without it, EarnTime counts only live browsing, and past gaps cannot be evaluated.</li>
+        <li>You can grant or remove screen-time access at any time in Settings → Analytics.</li>
       </ul>
       <div className="flex flex-wrap items-center gap-3">
         <Button variant={granted ? 'secondary' : 'primary'} onClick={() => void ask()} disabled={busy}>

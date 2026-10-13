@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { badgeText, dayKey, formatDuration, formatMinutes, splitByLocalDay } from '../../src/core/time';
+import { badgeText, dayKey, formatDuration, formatMinutes, splitByLocalDay, startOfLocalDay } from '../../src/core/time';
 import { localTime, MIN } from './helpers';
+
+test('startOfLocalDay returns local midnight for that day', () => {
+  const t = localTime(2026, 10, 8, 14, 30, 15);
+  assert.equal(startOfLocalDay(t), localTime(2026, 10, 8, 0, 0, 0));
+});
 
 test('dayKey uses the local calendar day', () => {
   assert.equal(dayKey(localTime(2026, 10, 8, 0, 0, 1)), '2026-10-08');

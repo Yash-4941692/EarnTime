@@ -460,10 +460,9 @@ function AnalyticsSection({ state }: { state: EarnState }) {
           <div className="min-w-0">
             <h2 className="text-[15px] font-semibold text-slate-50">Screen-time access</h2>
             <p className="mt-1 max-w-prose text-[12.5px] leading-snug text-slate-400">
-              Chrome's optional <span className="font-mono text-[11.5px] text-slate-300">history</span> permission. With it, EarnTime can
-              reconstruct the time it could not watch itself — a suspended worker, a closed browser, the extension disabled — and show which
-              sites that time went to. Without it, only time EarnTime observed live is counted, and gaps are charged conservatively from the
-              last checkpoint.
+              Chrome's optional <span className="font-mono text-[11.5px] text-slate-300">history</span> permission. With it, EarnTime evaluates
+              the whole screen-time history of the day — reconstructing gaps and prior browsing since midnight so study sites earn screen time
+              and distracting sites spend balance or put you into debt mode. Without it, only time EarnTime observed live is counted.
             </p>
           </div>
           <div className="shrink-0">
@@ -483,7 +482,7 @@ function AnalyticsSection({ state }: { state: EarnState }) {
           {!accessKnown ? (
             <span className="text-slate-500">checking…</span>
           ) : accessOn ? (
-            <span className="text-emerald-300">granted — history fills the gaps</span>
+            <span className="text-emerald-300">granted — evaluates whole-day history</span>
           ) : (
             <span className="text-amber-200">not granted — live counting only</span>
           )}

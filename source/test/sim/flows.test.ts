@@ -6,6 +6,7 @@ import {
   BLOCK_EXTENSIONS,
   MIN,
   SEC,
+  START,
   balanceMin,
   command,
   confirmedCommand,
@@ -868,3 +869,62 @@ test('the popup keeps the timer running in front of the user instead of freezing
   await b.runFor(40 * SEC);
   assert.equal(b.storedState().live?.k, 'unproductive', 'and the page counts again once it is in front of the user');
 });
+
+test('setup evaluates whole-day history: distracting websites exceed balance and place user in debt mode', async () => {
+  const b = newBrowser();
+  // Simulate user browsing instagram earlier in the day before installing the extension
+  b.visits.push(
+    { url: 'https://www.instagram.com/p/1', at: START - 60 * MIN },
+    { url: 'https://www.instagram.com/p/2', at: START - 50 * MIN },
+    { url: 'https://www.instagram.com/p/3', at: START - 40 * MIN },
+    { url: 'https://www.instagram.com/p/4', at: START - 30 * MIN },
+  );
+  // Install and complete setup with starting balance of 10 min and screenTimeAccess = true
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  const s = b.storedState();
+  // 3 intervals of 10 min + 2 min continuation cap = 32 min of instagram.
+  // Starting balance was 10 min, so 32 - 10 = 22 min of debt!
+  assert.equal(s.balanceMs, 0, 'balance drained by day history');
+  near(s.debtMs / MIN, 22, 1.0, 'debt incurred from today unmonitored browsing');
+  assert.ok(s.lastReconcile, 'reconciliation summary exists');
+  assert.equal(b.badge.text, 'DEBT', 'badge reflects debt mode');
+});
+
+test('setup evaluates whole-day history: study sites earn screentime credit', async () => {
+  const b = newBrowser();
+  // Simulate user browsing khanacademy earlier today
+  b.visits.push(
+    { url: 'https://www.khanacademy.org/math/1', at: START - 60 * MIN },
+    { url: 'https://www.khanacademy.org/math/2', at: START - 40 * MIN },
+    { url: 'https://www.khanacademy.org/math/3', at: START - 20 * MIN },
+  );
+  // Install and setup with 0 starting balance, 60:5 ratio
+  await installAndSetup(b, { initialBalanceMin: 0, earnFromMin: 60, earnToMin: 5 });
+  const s = b.storedState();
+  assert.equal(s.debtMs, 0);
+  assert.ok(s.balanceMs > 0, 'balance credited from earlier study today');
+  assert.ok(s.days['2026-10-08'].hosts['khanacademy.org'] > 0, 'screen time recorded for khanacademy');
+});
+
+test('enabling screen-time access after setup evaluates whole-day history', async () => {
+  const b = newBrowser();
+  b.visits.push(
+    { url: 'https://www.instagram.com/p/1', at: START - 60 * MIN },
+    { url: 'https://www.instagram.com/p/2', at: START - 50 * MIN },
+    { url: 'https://www.instagram.com/p/3', at: START - 40 * MIN },
+    { url: 'https://www.instagram.com/p/4', at: START - 30 * MIN },
+  );
+  // User declines screen-time access in setup
+  await installAndSetup(b, { initialBalanceMin: 10, screenTimeAccess: false });
+  assert.equal(b.storedState().balanceMs, 10 * MIN, 'balance untouched when screen-time access is false');
+  assert.equal(b.storedState().debtMs, 0);
+
+  // User enables screen-time access later (e.g. from Settings)
+  await b.sendFromExtensionPage({ type: 'ui.screenTimeAccess', grant: true });
+  const s = b.storedState();
+  assert.equal(s.historyGranted, true);
+  assert.equal(s.balanceMs, 0, 'balance drained by day history after granting access');
+  near(s.debtMs / MIN, 22, 1.0, 'debt incurred after granting whole-day access');
+});
+
+
