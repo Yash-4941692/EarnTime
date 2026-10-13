@@ -1,3 +1,29 @@
+# EarnTime 2.6.0
+
+## Whole-Day Screen-Time Access & Categorized Initial Balance/Debt Evaluation
+
+**You asked, we built it.**
+* **Whole-Day History Access on Install & Turn-On**: Setup now explicitly requests permission for your **whole screen-time history of the day**. When setup finishes or when the extension is turned on / screen-time access is granted, EarnTime inspects your entire browsing history since local midnight (`00:00`).
+* **Initial Screen Time or Debt Mode Based on Your Websites**:
+  * Prior visits to **productive websites** earn screen-time credit at your earn ratio (e.g. 60:5), giving you an earned initial screen-time cushion.
+  * Prior visits to **unproductive websites** consume your starting balance. If unproductive time exceeds your starting balance, EarnTime immediately places you into **Debt Mode** (`DEBT` badge, blocking unproductive and unlisted sites until repaid through study).
+  * Prior visits to **half-productive websites** (e.g. YouTube) without a verified study mode are charged as unproductive (fail closed).
+  * **Neutral/unlisted websites** are tracked in screen-time analytics without incurring charges or debt.
+* **Seamless Re-enabling**: When browser starts up or when the extension is enabled after being off, unmonitored browsing since midnight or since the last checkpoint is evaluated against your website lists.
+* **Updated UI & Setup Wizard**: Step 4 of the setup wizard and Settings → Analytics now clearly describe whole-day history access and explain how prior browsing today initializes your spendable screen time or debt.
+
+## Implementation details
+
+* Added `startOfLocalDay` helper in `source/src/core/time.ts` to compute midnight epoch ms in the user's local timezone.
+* Added `reconcileDayHistory` in `source/src/background/controller.ts` which runs on `setup.complete`, `onStartup`, `onInstalled`, and when granting screen-time access (`ui.screenTimeAccess` / `ui.reconcileNow`).
+* Updated setup wizard text in `source/src/ui/setup/Setup.tsx` and settings analytics in `source/src/ui/settings/Settings.tsx`.
+* Unit and simulation tests added in `source/test/unit/time.test.ts` and `source/test/sim/flows.test.ts` verifying whole-day history evaluation, debt mode entry from prior unproductive browsing, and credit earned from prior study.
+* Total test suite: 242 tests passing (136 unit, 58 DOM, 48 sim).
+
+## Verification
+
+`npm run build`, `npm run typecheck`, `npm run test:unit`, `npm run test:dom`, and `npm run test:sim` all pass on this checkout.
+
 # EarnTime 2.5.0
 
 ## Collaboration (Collab) + Shorts — YouTube Productive Mode now handles every channel

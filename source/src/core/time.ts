@@ -10,6 +10,12 @@ export function dayKey(ms: number): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+/** Epoch ms of the local midnight at the start of the day containing `ms`. */
+export function startOfLocalDay(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
 /** Epoch ms of the next local midnight after `ms`. */
 export function nextLocalMidnight(ms: number): number {
   const d = new Date(ms);
