@@ -693,9 +693,9 @@ test('screen time per site is recorded for the whole foreground day, not only fo
   assert.equal(day.estimatedScreenMs, 0, 'observed screen time is exact');
   // Listed sites are recorded under the list entry that matched them (so subdomains group together);
   // a site on no list is recorded under its own hostname.
-  near(day.hosts['khanacademy.org'] / MIN, 30, 0.3, 'study time goes to the study site');
+  near(day.hosts['www.khanacademy.org'] / MIN, 30, 0.3, 'study time goes to the study site');
   near(day.hosts['example.org'] / MIN, 10 - TAIL / MIN, 0.3, 'neutral time goes to the neutral site');
-  near(day.hosts['instagram.com'] / MIN, 5, 0.3, 'distracting time goes to the distracting site');
+  near(day.hosts['www.instagram.com'] / MIN, 5, 0.3, 'distracting time goes to the distracting site');
   assert.equal(Object.keys(day.hosts).length, 3);
   // A neutral site is measured but never billed: 10 minutes of it cost nothing.
   near(
@@ -723,7 +723,7 @@ test('time the user was away is not screen time', async () => {
 
   const day = b.storedState().days['2026-10-08'];
   near(day.screenMs / MIN, 6, 0.4, 'the idle stretch is missing from screen time');
-  assert.equal(day.hosts['instagram.com'], day.screenMs, 'all of it attributed to the site that was open');
+  assert.equal(day.hosts['www.instagram.com'], day.screenMs, 'all of it attributed to the site that was open');
   assert.equal(day.screenMs, day.unprodMs, 'and screen time equals billed time when nothing else was open');
 });
 
@@ -744,9 +744,9 @@ test('time reconstructed from history after an interruption is screen time, mark
   const day = b.storedState().days['2026-10-08'];
   assert.ok(day.estimatedScreenMs >= 25 * MIN, 'the gap was reconstructed from history');
   assert.ok(day.screenMs >= day.estimatedScreenMs);
-  // A listed site is attributed to the list entry that matched it, live and reconstructed alike, so
-  // its subdomains group into one row of the breakdown.
-  assert.ok(day.hosts['instagram.com'] >= day.estimatedScreenMs, 'and attributed to the site it happened on');
+  // Retain actual hostnames for both screen time and billing so more-specific rules remain correct.
+  // The analytics view groups www/non-www for display.
+  assert.ok(day.hosts['www.instagram.com'] >= day.estimatedScreenMs, 'and attributed to the site it happened on');
 });
 
 test('without screen-time access a gap cannot be reconstructed, and the numbers say so', async () => {
@@ -853,7 +853,7 @@ test('the popup keeps the timer running in front of the user instead of freezing
   assert.equal(during.live?.k, 'unproductive', 'the site behind the popup is still what is being used');
   assert.equal(during.live?.why, null, 'and it is no longer reported as "Chrome not focused"');
   near((beforeBeats - during.balanceMs) / SEC, 12, 2, 'twelve beats charged twelve seconds, one per second');
-  assert.ok(during.days['2026-10-08'].hosts['instagram.com'] >= 60 * SEC, 'and it all went to the site that was open');
+  assert.ok(during.days['2026-10-08'].hosts['www.instagram.com'] >= 60 * SEC, 'and it all went to the site that was open');
 
   // Closing the popup stops the heartbeat. The window that was open while EarnTime could not see it
   // is charged once, at the first checkpoint after the heartbeat expires, and then nothing more
@@ -903,7 +903,7 @@ test('setup evaluates whole-day history: study sites earn screentime credit', as
   const s = b.storedState();
   assert.equal(s.debtMs, 0);
   assert.ok(s.balanceMs > 0, 'balance credited from earlier study today');
-  assert.ok(s.days['2026-10-08'].hosts['khanacademy.org'] > 0, 'screen time recorded for khanacademy');
+  assert.ok(s.days['2026-10-08'].hosts['www.khanacademy.org'] > 0, 'screen time recorded for khanacademy');
 });
 
 test('enabling screen-time access after setup evaluates whole-day history', async () => {
@@ -928,3 +928,71 @@ test('enabling screen-time access after setup evaluates whole-day history', asyn
 });
 
 
+
+test('adding arena.ai after 20 neutral minutes immediately activates debt and blocks the open tab', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  const { tabId } = await openedWindowWithTab(b, 'https://www.arena.ai/');
+  await b.runFor(20 * MIN);
+  assert.equal(balanceMin(b), 10, 'neutral use was not charged before classification');
+  assert.equal((await command(b, { type: 'site.add', list: 'unproductive', host: 'arena.ai' })).ok, true);
+  assert.equal(debtMin(b), 10);
+  assert.equal(balanceMin(b), 0);
+  assert.equal(b.badge.text, 'DEBT');
+  assert.equal(b.tabUrl(tabId), `${EXT_ORIGIN}/block.html?reason=debt`);
+  assert.ok(b.notifications.some(n => n.title === 'Debt started'));
+  assert.ok(b.dnr.size > 0, 'future navigations are also blocked');
+});
+
+test('adding a site with exactly the remaining balance blocks it without creating debt', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10, screenTimeAccess: false });
+  const { tabId } = await openedWindowWithTab(b, 'https://arena.ai/');
+  await b.runFor(10 * MIN);
+  await command(b, { type: 'site.add', list: 'unproductive', host: 'arena.ai' });
+  assert.equal(debtMin(b), 0);
+  assert.equal(balanceMin(b), 0);
+  assert.equal(b.tabUrl(tabId), BLOCK_EXHAUSTED);
+});
+
+test('setup ignores synced visits by default, but still imports local visits to the same URL', async () => {
+  const b = newBrowser();
+  b.visits.push({ url: 'https://instagram.com/', at: START - 4 * MIN, isLocal: false });
+  b.visits.push({ url: 'https://instagram.com/', at: START - MIN, isLocal: true });
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  assert.equal(balanceMin(b), 9);
+  assert.equal(b.storedState().historyScope, 'local');
+});
+
+test('all-device history is opt-in and the preference survives a worker restart', async () => {
+  const b = newBrowser();
+  await b.installExtension('install');
+  await command(b, { type: 'screenTime.scope', scope: 'all' });
+  b.visits.push({ url: 'https://instagram.com/', at: START - MIN, isLocal: false });
+  await command(b, { type: 'setup.complete', payload: setupPayload({ initialBalanceMin: 10 }) });
+  assert.equal(balanceMin(b), 9);
+  await b.restartWorker();
+  assert.equal(b.storedState().historyScope, 'all');
+  assert.equal(balanceMin(b), 9);
+});
+
+test('this-device history excludes visits whose device source is unknown', async () => {
+  const b = newBrowser();
+  b.visits.push({ url: 'https://instagram.com/', at: START - MIN, isLocal: undefined });
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  assert.equal(balanceMin(b), 10);
+  assert.equal(b.storedState().lastReconcile, null);
+});
+
+test('a synced visit during a gap cannot create local-device debt or study credit', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  await openedWindowWithTab(b, 'https://example.org/');
+  b.disableExtension();
+  b.visits.push({ url: 'https://instagram.com/', at: b.now + MIN, isLocal: false });
+  b.visits.push({ url: 'https://khanacademy.org/', at: b.now + 6 * MIN, isLocal: false });
+  await b.runFor(10 * MIN);
+  await b.enableExtension();
+  assert.equal(balanceMin(b), 10);
+  assert.equal(debtMin(b), 0);
+});

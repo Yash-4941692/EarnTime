@@ -191,6 +191,7 @@ test('loading a realistic v2.1.1 state preserves the wallet, core settings and t
         ...v211.days['2026-10-08'],
         // Schema 5 adds the screen-time fields; a day recorded before they existed starts at zero.
         hosts: {},
+        chargedHosts: {},
         screenMs: 0,
         estimatedScreenMs: 0,
       },

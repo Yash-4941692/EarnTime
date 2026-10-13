@@ -396,6 +396,7 @@ function ScreenTimeStep({ granted, onChange }: { granted: boolean; onChange: (gr
         screen time at your earn ratio, while distracting sites spend balance or put you into <strong className="text-rose-400">Debt Mode</strong>.
       </p>
       <ul className="list-disc space-y-1.5 pl-5 text-[13px] leading-relaxed text-slate-400">
+        <li>Only visits from this device are imported by default. Change the source in Settings → Analytics. Chrome does not identify individual remote devices.</li>
         <li>Whole-day history evaluation: gives initial screen time or debt based on the websites you visited today.</li>
         <li>Hostnames and minutes only. No page addresses, titles or search terms are stored or uploaded.</li>
         <li>Without it, EarnTime counts only live browsing, and past gaps cannot be evaluated.</li>

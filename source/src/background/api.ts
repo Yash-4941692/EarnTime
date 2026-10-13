@@ -31,6 +31,8 @@ export interface HistoryItem {
 }
 
 export interface VisitItem {
+  /** False for synced visits; absent on browsers that cannot identify the source. */
+  isLocal?: boolean;
   visitTime?: number;
 }
 

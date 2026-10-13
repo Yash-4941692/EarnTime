@@ -189,6 +189,7 @@ export function createController(opts: ControllerOptions): Controller {
         const host = hostFromUrl(item.url);
         const list = await api.history.getVisits(item.url);
         for (const visit of list) {
+          if (state.historyScope !== 'all' && visit.isLocal !== true) continue;
           if (typeof visit.visitTime === 'number' && visit.visitTime >= from && visit.visitTime <= to) {
             visits.push({ at: visit.visitTime, host });
           }

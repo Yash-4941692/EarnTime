@@ -16,7 +16,7 @@ import {
   SCHEMA_VERSION,
   WHATSAPP_HOST,
 } from './constants';
-import { normalizeHostInput } from './domains';
+import { classifyHost, normalizeHostInput } from './domains';
 import { MAX_DAY_HOSTS } from './wallet';
 import type {
   DayStats,
@@ -36,6 +36,7 @@ export function createInitialState(now: number): EarnState {
     setupDone: false,
     // Screen-time access is asked for during setup, so a state that has never been set up has none.
     historyGranted: false,
+    historyScope: 'local',
     createdAt: now,
     settings: {
       earnFromMin: DEFAULT_EARN_FROM_MIN,
@@ -122,8 +123,8 @@ function sanitizeSettings(raw: unknown): Settings {
   };
 }
 
-/** Numeric fields of a day bucket; `hosts` is a map and is sanitised separately. */
-const DAY_NUMBER_FIELDS: Array<Exclude<keyof DayStats, 'hosts'>> = [
+/** Numeric fields of a day bucket; host maps are sanitised separately. */
+const DAY_NUMBER_FIELDS: Array<Exclude<keyof DayStats, 'hosts' | 'chargedHosts'>> = [
   'prodMs',
   'halfProdMs',
   'halfUnprodMs',
@@ -149,7 +150,7 @@ function sanitizeHosts(raw: unknown): Record<string, number> {
   return out;
 }
 
-function sanitizeDays(raw: unknown): Record<string, DayStats> {
+function sanitizeDays(raw: unknown, rules: Rules): Record<string, DayStats> {
   const out: Record<string, DayStats> = {};
   if (!raw || typeof raw !== 'object') return out;
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
@@ -160,6 +161,17 @@ function sanitizeDays(raw: unknown): Record<string, DayStats> {
       stats[field] = Math.max(0, finiteNumber(v[field], 0));
     }
     stats.hosts = sanitizeHosts(v.hosts);
+    const billed = v.chargedHosts && typeof v.chargedHosts === 'object'
+      ? v.chargedHosts as Record<string, unknown> : {};
+    // Keep bills for the retained screen-time rows, not the first 60 hosts ever visited.
+    stats.chargedHosts = sanitizeHosts(Object.fromEntries(Object.keys(stats.hosts).map(host => [host, billed[host]])));
+    if (!v.chargedHosts && stats.usedMs > 0) {
+      // Older releases cannot attribute their bills. Do not charge existing usage twice.
+      stats.chargedHosts = Object.fromEntries(Object.entries(stats.hosts).filter(([host]) => {
+        const kind = classifyHost(host, rules).kind;
+        return kind === 'unproductive' || kind === 'half';
+      }));
+    }
     // Screen time can never be less than the sum of its parts.
     stats.screenMs = Math.max(stats.screenMs, stats.estimatedScreenMs);
     out[key] = stats;
@@ -269,6 +281,7 @@ export function sanitizeState(raw: unknown, now: number): EarnState {
     // boolean wins from schema 5 onwards, and every worker start re-checks it against what Chrome
     // actually reports, so a revoked permission is noticed within one worker start.
     historyGranted: typeof r.historyGranted === 'boolean' ? r.historyGranted : storedSchema < SCHEMA_VERSION,
+    historyScope: r.historyScope === 'all' ? 'all' : 'local',
     createdAt: finiteNumber(r.createdAt, now),
     settings: sanitizeSettings(r.settings),
     rules,
@@ -277,7 +290,7 @@ export function sanitizeState(raw: unknown, now: number): EarnState {
     debtOriginMs: Math.max(0, Math.round(finiteNumber(r.debtOriginMs, 0))),
     debtSince: typeof r.debtSince === 'number' ? r.debtSince : null,
     tasks: sanitizeTasks(r.tasks, now),
-    days: sanitizeDays(r.days),
+    days: sanitizeDays(r.days, rules),
     ledger: sanitizeLedger(r.ledger),
     nextLedgerId: Math.max(1, finiteNumber(r.nextLedgerId, 1)),
     sessions: sanitizeSessions(r.sessions),
