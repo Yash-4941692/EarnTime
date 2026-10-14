@@ -1,20 +1,21 @@
-# EarnTime 2.6.2
+# EarnTime 2.6.3
 
-## YouTube Shorts search and playback fixes
+## Correctable interruption estimates, and Shorts that are read harder
 
-- **Shorts show up in search again.** Classic and modern Shorts shelves, cards and links stay visible in search results and on channel pages.
-- **Allowed Shorts have a visible player.** The homepage-only hiding rules no longer hide the Shorts player or its reel after playback is allowed. Cached content is restored on navigation, mode changes and extension shutdown, while preserving YouTube's own display settings.
-- **Modes still apply.** In Productive Mode, the active Short's channel or a credited collaborator must match a study keyword. Non-study or unreadable Shorts are covered and paused. In Unproductive Mode, Shorts remain unrestricted.
-- Only the active reel can qualify playback; prefetched study Shorts cannot authorise a different non-study Short. Active-reel and author-text changes trigger fresh checks, and collaboration trust is reset for a new reel.
-- Returning in an existing Productive Mode session no longer crashes when the content script starts before the page's HTML exists. Blocking-card buttons remain clickable after the load-time gate opens.
-- Existing settings, balances, history-source preferences and debt accounting are preserved.
+- **Half-productive time in an interruption is no longer charged as unproductive.** EarnTime still cannot tell which mode you were in while it was not running, so it now splits the estimated time down the middle: half earns study credit at your ratio, half is charged as unproductive (creating debt only past the balance — the same worst case as before, half as big).
+- **EarnTime asks, and the answer re-prices the stretch.** A *Was that study time?* card appears in the popup and on the debt block page (with a notification), showing the estimated minutes, the host and the last mode you chose. Type how many minutes were study, or press *Keep half & half* to accept the default. Answering is **free** — it only corrects an estimate — and corrections are symmetric: more study credits the difference and repays debt first; less study charges it again. The correction lands on the days the estimated time came from and is written to the ledger and the audit export.
+- **Questions are bounded.** Only stretches of at least a minute are questioned, repeated visits to one host become one question, the newest 20 unanswered questions are kept, and an answer changes nothing else about the interruption's window or its per-visit caps.
+- **Shorts are read harder before EarnTime gives up.** The active Short's channel is read from the active reel and the Shorts chrome, the page's own data for the video id in the address bar, the link's `title`/`aria-label`, and the channel handle as a last resort. On a channel page, the `@handle` in the address bar is used when the header cannot be read.
+- **A Short with an unreadable channel is offered on trust instead of refused.** The *Shorts channel not verified* card explains that the name could not be read, and *Continue (trust)* allows the Short and counts its time as productive. Trust is remembered for that Short only: the next reel asks again. A non-study Short whose channel **can** be read is still covered and paused as before.
+- Existing settings, balances, day totals, ledger, tasks, reviews and site rules are preserved; the storage schema moves to 6.
 
 ## Verification
 
-Strict TypeScript checking, **272 source tests** (144 unit, 73 DOM, 55 simulated-browser), **15 Chromium fixture/browser tests**, and the production build pass. Browser fixtures verify visible video frames, non-study playback pausing, mode changes and clickable blocking-card actions. Live YouTube and a real installed Chrome extension still require manual verification; see `docs/TESTING.md`.
+Strict TypeScript checking, **291 source tests** (155 unit, 79 DOM, 57 simulated-browser), and the production build pass. The Playwright/Chromium fixture suite was not re-run for this change (last verified 15/15) and no Chromium binary was available; live YouTube and a real installed extension still require manual verification. See `docs/TESTING.md` for the report and the manual checklist.
 
 ## Install or update
 
-Download **EarnTime-2.6.2.zip**, extract it, and select the folder containing `manifest.json` via Chrome's **Load unpacked** option.
+Download **EarnTime-2.6.3.zip**, extract it, and select the folder containing `manifest.json` via Chrome's **Load unpacked** option.
 
 For an existing unpacked installation, replace its files with the extracted release, click **Reload** for EarnTime at `chrome://extensions`, then refresh existing YouTube tabs so they load the updated content script. **Do not uninstall** if you want to keep your settings and balance.
+

@@ -12,6 +12,7 @@ import {
   SCHEMA_VERSION,
 } from './constants';
 import { chargeReclassifiedSite } from './reclassify';
+import { applyHalfReview } from './halfReview';
 import { cleanHostList, dedupeRules } from './state';
 import { normalizeHostInput, listOfEntry } from './domains';
 import { normalizeName } from './matchers';
@@ -57,7 +58,14 @@ export type Command =
   | { type: 'task.toggle'; id: string }
   /** Records a screen-time access decision taken outside setup (Settings → Analytics). */
   | { type: 'screenTime.set'; granted: boolean }
-  | { type: 'screenTime.scope'; scope: 'local' | 'all' };
+  | { type: 'screenTime.scope'; scope: 'local' | 'all' }
+  /**
+   * Answers the question about estimated half-productive time: how much of that stretch was study.
+   * Free — telling EarnTime the truth about time it already counted is not a loosening of a rule.
+   */
+  | { type: 'review.set'; id: number; productiveMs: number }
+  /** Accepts the default split as-is, so the question stops being asked. */
+  | { type: 'review.keep'; id: number };
 
 const LIST_LABEL: Record<ListName, string> = {
   productive: 'Productive',
@@ -384,6 +392,28 @@ export function applyCommand(state: EarnState, cmd: Command, now: number): RuleR
         addLedger(state, 'rule', now, 0, cmd.granted ? 'Screen-time access granted' : 'Screen-time access removed');
       }
       return { ok: true, data: { granted: state.historyGranted } };
+    case 'review.set':
+    case 'review.keep': {
+      const review = state.halfReviews.find((entry) => entry.id === Math.round(cmd.id));
+      if (!review) return fail('not-found', 'That estimate is no longer waiting for an answer.');
+      const answer = cmd.type === 'review.set' ? cmd.productiveMs : review.productiveMs;
+      if (cmd.type === 'review.set' && (!Number.isFinite(answer) || answer < 0 || answer > review.totalMs)) {
+        return fail(
+          'invalid',
+          `Enter between 0 and ${Math.round(review.totalMs / MINUTE_MS)} minutes of study time.`,
+        );
+      }
+      const change = applyHalfReview(state, review, answer, now);
+      addLedger(
+        state,
+        'review',
+        now,
+        0,
+        `Estimate answered for ${review.host}: ${Math.round(review.productiveMs / MINUTE_MS)} of ${Math.round(review.totalMs / MINUTE_MS)} min was study`,
+        review.host,
+      );
+      return { ok: true, data: change };
+    }
     case 'task.add':
     case 'task.update':
     case 'task.delete':
@@ -407,6 +437,17 @@ export function auditExport(state: EarnState, now: number): Record<string, unkno
     debtMinutes: +(state.debtMs / MINUTE_MS).toFixed(2),
     debtOriginMinutes: +(state.debtOriginMs / MINUTE_MS).toFixed(2),
     lastReconcile: state.lastReconcile,
+    // The estimate questions and their answers, so a correction is as auditable as a charge.
+    halfReviews: state.halfReviews.map((review) => ({
+      at: new Date(review.at).toISOString(),
+      host: review.host,
+      entry: review.entry,
+      estimatedMinutes: +(review.totalMs / MINUTE_MS).toFixed(2),
+      answeredAsStudyMinutes: review.resolvedAt === null ? null : +(review.productiveMs / MINUTE_MS).toFixed(2),
+      creditedMinutes: +(review.creditedMs / MINUTE_MS).toFixed(2),
+      chargedMinutes: +(review.chargedMs / MINUTE_MS).toFixed(2),
+      answered: review.resolvedAt !== null,
+    })),
     days: state.days,
     ledger: state.ledger.map((e) => ({
       at: new Date(e.at).toISOString(),

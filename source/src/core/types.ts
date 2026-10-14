@@ -74,6 +74,7 @@ export type LedgerKind =
   | 'repay'
   | 'task'
   | 'reconcile'
+  | 'review'
   | 'unlock'
   | 'rule'
   | 'setup'
@@ -99,6 +100,42 @@ export interface HalfSession {
   entry: string;
   mode: HalfMode;
   since: number;
+}
+
+/**
+ * One question EarnTime asks about time it could only estimate: while it was not running, a
+ * half-productive site was used and its mode (Productive / Unproductive) could not be verified.
+ * The default split — half the time credited as study, half charged — is applied immediately (so
+ * nothing is left unbilled) and this record lets the user replace it with the truth.
+ */
+export interface HalfReview {
+  id: number;
+  /** When the reconciliation that created it ran. */
+  at: number;
+  /** Hostname visited during the gap (e.g. "www.youtube.com"). */
+  host: string;
+  /** Half-productive list entry that matched (e.g. "youtube.com"). */
+  entry: string;
+  /** First and last moment of the gap attributed to this host. */
+  from: number;
+  to: number;
+  /** Estimated host time in the gap, before any split. */
+  totalMs: number;
+  /** Productive portion currently applied (the default is half of `totalMs`). */
+  productiveMs: number;
+  /** Screen-time credit currently granted for the productive portion (before debt repayment). */
+  creditedMs: number;
+  /** Time currently charged as unproductive (before the productive portion was chosen). */
+  chargedMs: number;
+  /**
+   * Per local day allocation of `totalMs`, so a later correction lands on the days it came from
+   * instead of on the day the answer is given.
+   */
+  parts: Array<{ day: string; ms: number }>;
+  /** Last mode the user chose for this entry before the gap — a hint for the question, not a rule. */
+  lastMode: HalfMode | null;
+  /** When the user replaced the default with their own answer (null while still unanswered). */
+  resolvedAt: number | null;
 }
 
 export type NoneReason =
@@ -195,6 +232,9 @@ export interface EarnState {
   sessions: Record<string, HalfSession>;
   /** Most recent Productive/Unproductive choice per half entry (used by reconciliation). */
   modeLog: Record<string, { mode: HalfMode; at: number }>;
+  /** Estimated half-productive time whose split the user can still correct. */
+  halfReviews: HalfReview[];
+  nextReviewId: number;
   last: Snapshot | null;
   lastAt: number | null;
   live: LiveStatus | null;

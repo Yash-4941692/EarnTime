@@ -6,6 +6,7 @@ import { dayKey, formatDuration, formatDurationPrecise } from '../../core/time';
 import { dashboardView, type DashboardView, type ModeTone } from '../../core/view';
 import type { EarnState, Task } from '../../core/types';
 import { SiteBar } from '../analytics';
+import { HalfReviewCard } from '../halfReview';
 import { Button, Card, ModePill, Notice, ProgressBar, Stat, type Tone } from '../components';
 import { incognitoAllowed, openExtensionPage, runCommand, useLiveTick, useNow, useStoredState } from '../lib/extension';
 
@@ -230,6 +231,8 @@ export function Popup() {
           </div>
         </Card>
       )}
+
+      <HalfReviewCard state={state} onError={setNotice} />
 
       <div className="grid grid-cols-3 gap-2">
         <Stat compact label="Productive" value={formatDuration(view.productiveToday)} tone="productive" hint="today" />

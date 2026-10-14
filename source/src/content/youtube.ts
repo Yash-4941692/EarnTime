@@ -115,10 +115,14 @@ const CHANNEL_PAGE_SELECTORS = [
   'yt-page-header-view-model #page-header-title',
   'yt-page-header-renderer #channel-name',
   'yt-page-header-view-model #channel-name',
+  'yt-page-header-view-model h1',
+  'yt-page-header-view-model #channel-handle',
+  'yt-page-header-renderer h1',
   'ytd-c4-tabbed-header-renderer #channel-name #text',
   'ytd-c4-tabbed-header-renderer #channel-name',
   '#channel-header-container #channel-name #text',
   '#channel-header-container #channel-name',
+  '#channel-header-container #channel-handle',
 ];
 
 /** Playlist byline/owner only: the playlist title itself must not make an unrelated channel pass. */
@@ -135,7 +139,10 @@ const PLAYLIST_CHANNEL_SELECTORS = [
   '#playlist #byline-container a',
 ];
 
-/** Shorts channel selectors — Shorts uses reel renderers and a channel bar, not the watch owner. */
+/**
+ * Shorts channel selectors — Shorts uses reel renderers and a channel bar, not the watch owner.
+ * They are evaluated inside the Shorts chrome, never inside a prefetched neighbour reel.
+ */
 const SHORTS_CHANNEL_SELECTORS = [
   // These are evaluated inside the active reel, not its prefetched neighbours.
   'ytd-channel-name a',
@@ -144,6 +151,8 @@ const SHORTS_CHANNEL_SELECTORS = [
   'ytd-reel-player-overlay-renderer ytd-channel-name a',
   'ytd-reel-player-overlay-renderer #channel-name a',
   'ytd-reel-player-overlay-renderer a[href^="/@"]',
+  'ytd-reel-player-overlay-renderer a[href^="/channel/"]',
+  'ytd-reel-player-overlay-renderer #reel-channel-bar a',
   // Active reel (YouTube keeps 3 stacked, only one is-active)
   'ytd-reel-video-renderer[is-active] ytd-channel-name a',
   'ytd-reel-video-renderer[is-active] #channel-name a',
@@ -153,6 +162,16 @@ const SHORTS_CHANNEL_SELECTORS = [
   'yt-reel-channel-bar-view-model a[href^="/@"]',
   'yt-reel-channel-bar-view-model #channel-name a',
   'yt-reel-channel-bar-view-model ytd-channel-name a',
+  'yt-reel-channel-bar-view-model a[href^="/channel/"]',
+  'yt-reel-channel-bar-view-model a[href^="/c/"]',
+  'yt-reel-channel-bar-view-model a[href^="/user/"]',
+  // Shorts player header (older and A/B layouts)
+  'ytd-reel-player-header-renderer ytd-channel-name a',
+  'ytd-reel-player-header-renderer #channel-name a',
+  'ytd-reel-player-header-renderer a[href^="/@"]',
+  'ytd-reel-player-header-renderer a[href^="/channel/"]',
+  '#reel-channel-bar a[href^="/@"]',
+  '#reel-channel-bar #channel-name a',
   // Fallback shorts containers
   '#shorts-player ytd-channel-name a',
   '#shorts-player #channel-name a',
@@ -160,10 +179,27 @@ const SHORTS_CHANNEL_SELECTORS = [
   'ytd-shorts ytd-channel-name a',
   'ytd-shorts #channel-name a',
   'ytd-shorts a[href^="/@"]',
+  'ytd-shorts a[href^="/channel/"]',
   // Shorts header / owner area sometimes reuses watch selectors
   '#shorts-inner-container a[href^="/@"]',
   '#shorts-inner-container #channel-name a',
+  '#shorts-inner-container ytd-channel-name a',
 ];
+
+/**
+ * Every container that can hold the Shorts chrome. Each candidate is checked against the active
+ * reel, so a channel name belonging to a prefetched neighbour is never read from here either.
+ */
+const SHORTS_PAGE_CONTAINERS = [
+  'ytd-shorts',
+  '#shorts-container',
+  '#shorts-inner-container',
+  '#shorts-player',
+  'ytd-reel-player-overlay-renderer',
+  'yt-reel-channel-bar-view-model',
+  'ytd-reel-player-header-renderer',
+  'yt-reel-player-header-renderer',
+].join(', ');
 
 export function readChannelName(scope: ParentNode, selectors: string[]): string | null {
   for (const selector of selectors) {
@@ -174,6 +210,21 @@ export function readChannelName(scope: ParentNode, selectors: string[]): string 
     }
   }
   return null;
+}
+
+/**
+ * Readable name of one channel node. The visible text wins; when YouTube has not painted it yet but
+ * the node already carries a title or an aria-label (links in the Shorts channel bar often do), that
+ * is used instead — better a name from the markup than a false "cannot read the channel".
+ */
+function channelNameOf(node: HTMLElement): string {
+  const text = (node.textContent ?? '').trim();
+  if (text) return text;
+  for (const attribute of ['title', 'aria-label']) {
+    const value = (node.getAttribute(attribute) ?? '').trim();
+    if (value) return value;
+  }
+  return '';
 }
 
 /** Collect *every* non-empty channel name matched by selectors (deduped case-insensitive). */
@@ -188,7 +239,7 @@ export function readAllChannelNames(scope: ParentNode, selectors: string[]): str
       continue;
     }
     for (const node of nodes) {
-      const raw = (node.textContent ?? '').trim();
+      const raw = channelNameOf(node);
       if (!raw) continue;
       // Some YouTube nodes concatenate hidden collaborators as "Channel A and 2 more".
       // Keep the raw text for substring matching, but avoid duplicates.
@@ -318,6 +369,17 @@ function getWatchChannelNames(): string[] {
   return [...merged, ...splits];
 }
 
+/**
+ * The handle in the address bar (`/@handle/...`, `/c/name`, `/user/name`). It identifies the channel
+ * the page belongs to, so it can stand in when the header text cannot be read — EarnTime would
+ * otherwise refuse study content on a study channel it simply could not name.
+ */
+function urlHandleCandidate(): string | null {
+  const match = /^\/(?:@|c\/|user\/)([^/?#]+)/i.exec(location.pathname);
+  const handle = (match?.[1] ?? '').trim();
+  return handle && handle.length <= 40 ? handle : null;
+}
+
 /** All names visible on a channel/playlist page plus watch fallback (for SPA transitions). */
 function getBrowsingChannelNames(kind: 'channel' | 'playlist'): string[] {
   const selectors = kind === 'playlist' ? PLAYLIST_CHANNEL_SELECTORS : CHANNEL_PAGE_SELECTORS;
@@ -347,31 +409,176 @@ function getBrowsingChannelNames(kind: 'channel' | 'playlist'): string[] {
       }
     }
   }
+  if (kind === 'channel' && merged.length === 0) {
+    // Nothing on the page could be read: fall back to the handle in the address bar.
+    const handle = urlHandleCandidate();
+    if (handle && !seen.has(handle.toLowerCase())) extra.push(handle);
+  }
   return [...merged, ...extra];
+}
+
+/** Video id the address bar points at, or null on a channel Shorts tab or a non-Shorts page. */
+function shortsVideoId(): string | null {
+  const match = /^\/shorts\/([^/?#]+)/.exec(location.pathname);
+  return match && match[1] ? decodeURIComponent(match[1]) : null;
+}
+
+/** JSON reads per Shorts video id, so the (large) page HTML is parsed at most once per Short. */
+const shortsJsonCache = new Map<string, string[]>();
+
+/**
+ * The channel behind the Short in the address bar, taken from the page's own data. The video id
+ * scopes the search, so a prefetched or cached neighbour's channel can never leak in — this is what
+ * lets EarnTime name the owner even when the channel bar has not hydrated yet.
+ */
+function extractShortsJsonNames(): string[] {
+  const id = shortsVideoId();
+  if (!id) return [];
+  const cached = shortsJsonCache.get(id);
+  if (cached) return cached;
+  const names: string[] = [];
+  const seen = new Set<string>();
+  const add = (raw: string | undefined): void => {
+    const name = (raw ?? '').trim();
+    if (!name || name.length > 80 || seen.has(name.toLowerCase())) return;
+    seen.add(name.toLowerCase());
+    names.push(name);
+  };
+  try {
+    // The player response describes the video the URL points at, when Chrome has it.
+    const player = (
+      window as unknown as { ytInitialPlayerResponse?: { videoDetails?: { videoId?: string; author?: string } } }
+    ).ytInitialPlayerResponse;
+    if (player?.videoDetails?.videoId === id) add(player.videoDetails.author);
+  } catch {
+    // A page may block access to its globals; the HTML scan below still runs.
+  }
+  try {
+    const html = document.documentElement?.innerHTML ?? '';
+    const needle = `"videoId":"${id}"`;
+    const patterns = [
+      /"channelName":"([^"]{1,80})"/g,
+      /"channelName":\{"simpleText":"([^"]{1,80})"/g,
+      /"channelTitleText":\{"runs":\[\{"text":"([^"]{1,80})"/g,
+      /"ownerText":\{"runs":\[\{"text":"([^"]{1,80})"/g,
+      /"longBylineText":\{"runs":\[\{"text":"([^"]{1,80})"/g,
+      /"shortBylineText":\{"runs":\[\{"text":"([^"]{1,80})"/g,
+    ];
+    let index = html.indexOf(needle);
+    for (let hit = 0; index !== -1 && hit < 5; hit += 1) {
+      const chunk = html.slice(Math.max(0, index - 2_000), index + 4_000);
+      for (const pattern of patterns) {
+        pattern.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(chunk)) !== null) add(match[1]);
+      }
+      index = html.indexOf(needle, index + 1);
+    }
+  } catch {
+    // ignore parse errors; the DOM names already cover most cases
+  }
+  if (shortsJsonCache.size >= 4) shortsJsonCache.clear();
+  shortsJsonCache.set(id, names);
+  return names;
+}
+
+/** Handles of the links inside the scopes, usable as channel identities when no name can be read. */
+function readShortsHandles(scopes: Element[], reel: Element | null): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const scope of scopes) {
+    for (const node of scope.querySelectorAll<HTMLElement>('a[href^="/@"], a[href*="youtube.com/@"]')) {
+      const owner = node.closest('ytd-reel-video-renderer');
+      if (owner && owner !== reel) continue;
+      const match = /@([^/?#]+)/.exec(node.getAttribute('href') ?? '');
+      const handle = (match?.[1] ?? '').trim();
+      if (!handle || handle.length > 40 || seen.has(handle.toLowerCase())) continue;
+      seen.add(handle.toLowerCase());
+      out.push(handle);
+    }
+  }
+  return out;
+}
+
+/**
+ * Every readable channel name that belongs to the active Short: the active reel, the Shorts chrome
+ * around it, and — only when nothing else could be read — the page's own data for the video id in
+ * the address bar and the handles of its channel links. A node inside a different reel is always
+ * skipped, so a prefetched neighbour never qualifies the playing Short.
+ */
+function readShortsNames(scopes: Element[], reel: Element | null): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (raw: string): void => {
+    const name = raw.trim();
+    const key = name.toLowerCase();
+    if (!name || name.length > 80 || seen.has(key)) return;
+    seen.add(key);
+    out.push(name);
+  };
+  const selectors = [...SHORTS_CHANNEL_SELECTORS, ...COLLAB_CHANNEL_SELECTORS, ...WATCH_CHANNEL_SELECTORS];
+  for (const scope of scopes) {
+    for (const selector of selectors) {
+      let nodes: NodeListOf<HTMLElement>;
+      try {
+        nodes = scope.querySelectorAll<HTMLElement>(selector);
+      } catch {
+        continue;
+      }
+      for (const node of nodes) {
+        const owner = node.closest('ytd-reel-video-renderer');
+        if (owner && owner !== reel) continue;
+        const name = channelNameOf(node);
+        if (!name) continue;
+        if (/^and \d+ more$/i.test(name)) continue;
+        add(name);
+      }
+    }
+  }
+  if (out.length === 0) {
+    // Nothing on the page named the Short: the page's own data for the video id in the address bar
+    // still can, and the id keeps a prefetched or cached neighbour's author out of the answer.
+    for (const name of extractShortsJsonNames()) add(name);
+  }
+  if (out.length === 0) for (const handle of readShortsHandles(scopes, reel)) add(handle);
+  return out;
+}
+
+/** Collaboration markers that belong to the active Short (never a prefetched neighbour's). */
+function shortsCollaborationDetected(scopes: Element[], reel: Element | null): boolean {
+  if (reel && isCollaborationDetected(reel)) return true;
+  for (const scope of scopes) {
+    for (const node of scope.querySelectorAll(
+      '[aria-label="Collaboration channels"], [aria-label*="Collaboration"], yt-avatar-stack-view-model, #avatar-stack',
+    )) {
+      const owner = node.closest('ytd-reel-video-renderer');
+      if (owner && owner !== reel) continue;
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Only the active Short can qualify playback; YouTube keeps neighbouring reels prefetched. */
 function getShortsChannels(): { names: string[]; collab: boolean; reel: Element | null } {
   const reel = document.querySelector('ytd-reel-video-renderer[is-active]');
-  const hasReels = Boolean(document.querySelector('ytd-reel-video-renderer'));
-  // If reels exist but none is active yet, do not accidentally authorise a prefetched Short.
-  const scope = reel ?? (hasReels ? null :
-    document.querySelector('ytd-shorts') ??
-    document.querySelector('#shorts-inner-container') ??
-    document.querySelector('#shorts-player') ??
-    document.querySelector('ytd-reel-player-overlay-renderer') ??
-    document.querySelector('yt-reel-channel-bar-view-model'));
-  const names = scope ? readAllChannelNames(scope, [...SHORTS_CHANNEL_SELECTORS, ...COLLAB_CHANNEL_SELECTORS, ...WATCH_CHANNEL_SELECTORS]) : [];
-  let collab = scope ? isCollaborationDetected(scope) : false;
+  const scopes: Element[] = [];
+  if (reel) scopes.push(reel);
+  for (const node of document.querySelectorAll(SHORTS_PAGE_CONTAINERS)) {
+    const owner = node.closest('ytd-reel-video-renderer');
+    if (owner && owner !== reel) continue;
+    scopes.push(node);
+  }
+
+  const names = readShortsNames(scopes, reel);
+  let collab = shortsCollaborationDetected(scopes, reel);
 
   // YouTube can mount the current collaboration list outside the reel. Keep supporting it, but
   // never import collaborators from another reel or a cached watch page.
-  if (scope) {
-    for (const container of document.querySelectorAll('[aria-label="Collaboration channels"]')) {
-      if (container.closest('ytd-reel-video-renderer, ytd-watch-flexy, ytd-watch-metadata')) continue;
-      collab = true;
-      names.push(...readAllChannelNames(container, ['a', '#channel-name']));
-    }
+  for (const container of document.querySelectorAll('[aria-label="Collaboration channels"]')) {
+    if (container.closest('ytd-reel-video-renderer, ytd-watch-flexy, ytd-watch-metadata')) continue;
+    collab = true;
+    names.push(...readAllChannelNames(container, ['a', '#channel-name']));
   }
 
   const seen = new Set<string>();
@@ -435,6 +642,12 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
   let playbackRefused: string | null = null;
   /** Page where a Collaboration was accepted on trust — do not re-block after Continue. */
   let collabTrustPage: string | null = null;
+  /**
+   * Short on which the user accepted an unverifiable channel. A new active reel (or a new page)
+   * asks again; the page is part of the key because a loading player has no reel element yet.
+   */
+  let shortsTrustReel: Element | null = null;
+  let shortsTrustPage: string | null = null;
   /** Page key of the last scan, so a navigation can drop the previous page's playback refusal. */
   let lastPage = '';
   let lastShortsReel: Element | null = null;
@@ -464,7 +677,7 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
       ],
     });
 
-  const trustCollabCover = (names: string[], page: string) =>
+  const trustCollabCover = (names: string[], page: string, onTrust?: (reel: Element | null) => void) =>
     coverCard({
       eyebrow: 'EarnTime · Productive Mode — trust-based',
       title: 'Collaboration — not fully verified',
@@ -473,8 +686,44 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
           ? `EarnTime detected a Collaboration video but could only read: ${names.map((n) => `"${n}"`).join(', ')}. It could not verify all collaborators against your keywords (${opts.keywords.join(', ')}), so this video is allowed on trust. Please use it only if it matches your study purpose. This time is counted as productive.`
           : `EarnTime detected a Collaboration video but could not read its channel names against your keywords (${opts.keywords.join(', ')}). This video is allowed on trust (fallback) — please use it only if it matches your study purpose.`,
       actions: [
-        { label: 'Continue (trust)', onClick: () => { collabTrustPage = page; playbackRefused = null; clearCover(); setHealthy(true); } },
+        {
+          label: 'Continue (trust)',
+          onClick: () => {
+            collabTrustPage = page;
+            playbackRefused = null;
+            clearCover();
+            setHealthy(true);
+            onTrust?.(lastShortsReel);
+          },
+        },
         { label: 'Study search', onClick: () => studySearch(opts.keywords[0]) },
+        { label: 'Back', onClick: opts.leave, secondary: true },
+      ],
+    });
+
+  /**
+   * A Short whose channel name could not be read. EarnTime cannot check it against the study
+   * keywords, so it asks instead of refusing study content outright: continuing is an explicit trust
+   * decision, and only that Short carries it — the next reel asks again.
+   */
+  const shortsNotVerifiedCover = (reel: Element | null, trustPage: string, onBrowse?: () => void) =>
+    coverCard({
+      eyebrow: 'EarnTime · Productive Mode — trust-based',
+      title: 'Shorts channel not verified',
+      text: `EarnTime could not read this Short's channel name, so it cannot check it against your keywords (${opts.keywords.join(', ')}). If this is study content, continue on trust — this time is then counted as productive.`,
+      actions: [
+        {
+          label: 'Continue (trust)',
+          onClick: () => {
+            shortsTrustReel = reel;
+            shortsTrustPage = trustPage;
+            playbackRefused = null;
+            clearCover();
+            setHealthy(true, 'trust');
+          },
+        },
+        { label: 'Study search', onClick: () => studySearch(opts.keywords[0]) },
+        ...(onBrowse ? [{ label: 'Keep browsing', onClick: onBrowse }] : []),
         { label: 'Back', onClick: opts.leave, secondary: true },
       ],
     });
@@ -613,6 +862,8 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
       lastPage = page;
       playbackRefused = null;
       collabTrustPage = null;
+      shortsTrustReel = null;
+      shortsTrustPage = null;
     }
     const elapsed = Date.now() - started;
     const layoutReady = Boolean(document.querySelector('ytd-app'));
@@ -643,6 +894,8 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
         lastShortsReel = shorts.reel;
         playbackRefused = null;
         collabTrustPage = null;
+        shortsTrustReel = null;
+        shortsTrustPage = null;
       }
       const isChannelTab = /^\/(@[^/]+\/shorts|channel\/[^/]+\/shorts|c\/[^/]+\/shorts|user\/[^/]+\/shorts)(\/|$)/i.test(
         location.pathname.toLowerCase(),
@@ -676,21 +929,12 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
         clearCover();
         return;
       }
-      if (collab && (names.length === 0 || (names.length === 1 && /and \d+ more/i.test(names[0])))) {
-        setHealthy(true, 'collab-trust');
-        setCover(`shorts:collab-trust:${page}`, () => trustCollabCover(names, page));
-        pauseMedia();
+      if (shortsTrustPage === page && shortsTrustReel === shorts.reel) {
+        // The user already said this Short is study content as far as they can tell.
+        setHealthy(true, 'trust');
+        clearCover();
         return;
       }
-      const display = names.length > 0 ? names.slice(0, 3).map((n) => `"${n}"`).join(', ') : null;
-      const more = names.length > 3 ? ` and ${names.length - 3} more` : '';
-      const collabNote = collab ? ' Collaboration detected — checked all visible collaborators.' : '';
-      const reason =
-        names.length > 0
-          ? names.length === 1
-            ? `The Shorts channel ${display} does not match your YouTube keywords, so Shorts are closed in Productive Mode.${collabNote} This time is not charged or credited.`
-            : `None of the Shorts channels ${display}${more} match your YouTube keywords, so Shorts are closed in Productive Mode.${collabNote} This time is not charged or credited.`
-          : "EarnTime could not read this Shorts channel name, so it is closed in Productive Mode (fail closed). This time is not charged or credited.";
       // For channel tabs, Keep browsing lets user stay on tab
       const onBrowse = isChannelTab
         ? () => {
@@ -699,10 +943,38 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
             setHealthy(true);
           }
         : undefined;
+      if (collab && (names.length === 0 || (names.length === 1 && /and \d+ more/i.test(names[0])))) {
+        setHealthy(true, 'collab-trust');
+        setCover(`shorts:collab-trust:${page}`, () =>
+          trustCollabCover(names, page, (reel) => {
+            shortsTrustReel = reel;
+            shortsTrustPage = page;
+          }),
+        );
+        pauseMedia();
+        return;
+      }
+      if (names.length === 0) {
+        // The channel name could not be read at all: ask, rather than refuse study content the
+        // user can recognise and EarnTime cannot. Continuing counts the time as productive.
+        setHealthy(true, 'trust');
+        setCover(`shorts:trust:${page}:${shorts.reel ? 'reel' : 'none'}`, () =>
+          shortsNotVerifiedCover(shorts.reel, page, onBrowse),
+        );
+        pauseMedia();
+        return;
+      }
+      const display = names.slice(0, 3).map((n) => `"${n}"`).join(', ');
+      const more = names.length > 3 ? ` and ${names.length - 3} more` : '';
+      const collabNote = collab ? ' Collaboration detected — checked all visible collaborators.' : '';
+      const reason =
+        names.length === 1
+          ? `The Shorts channel ${display} does not match your YouTube keywords, so Shorts are closed in Productive Mode.${collabNote} This time is not charged or credited.`
+          : `None of the Shorts channels ${display}${more} match your YouTube keywords, so Shorts are closed in Productive Mode.${collabNote} This time is not charged or credited.`;
       playbackRefused = page;
       setHealthy(true, 'covered');
       // Use watch-style key so cover updates if channel changes
-      setCover(`shorts:${display ?? '?'}:${page}`, () => notStudyCover('Shorts are off', reason, onBrowse));
+      setCover(`shorts:${display}:${page}`, () => notStudyCover('Shorts are off', reason, onBrowse));
       pauseMedia();
       return;
     }

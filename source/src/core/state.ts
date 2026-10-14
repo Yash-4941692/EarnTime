@@ -9,7 +9,9 @@ import {
   DEFAULT_HALF_SITES,
   DEFAULT_UNLOCK_COST_MIN,
   DEFAULT_YOUTUBE_KEYWORDS,
+  HALF_REVIEW_RETENTION_MS,
   MAX_EARN_FROM_MIN,
+  MAX_HALF_REVIEWS,
   MAX_LIST_ITEMS,
   MAX_UNLOCK_COST_MIN,
   MINUTE_MS,
@@ -17,10 +19,12 @@ import {
   WHATSAPP_HOST,
 } from './constants';
 import { classifyHost, normalizeHostInput } from './domains';
+import { dayKey } from './time';
 import { MAX_DAY_HOSTS } from './wallet';
 import type {
   DayStats,
   EarnState,
+  HalfReview,
   HalfSession,
   LedgerEntry,
   Rules,
@@ -29,6 +33,14 @@ import type {
   Task,
 } from './types';
 import { addLedger, emptyDayStats } from './wallet';
+
+/** Schema at which WhatsApp returned to the half-productive list (stored lists are authoritative from here). */
+const WHATSAPP_READD_SCHEMA = 4;
+/**
+ * Schema at which `historyGranted` became an explicit flag. Before that `history` was a required
+ * permission, so a state written earlier belongs to a profile that already had screen-time access.
+ */
+const HISTORY_FLAG_SCHEMA = 5;
 
 export function createInitialState(now: number): EarnState {
   return {
@@ -55,6 +67,8 @@ export function createInitialState(now: number): EarnState {
     nextLedgerId: 1,
     sessions: {},
     modeLog: {},
+    halfReviews: [],
+    nextReviewId: 1,
     last: null,
     lastAt: null,
     live: null,
@@ -251,6 +265,62 @@ function sanitizeModeLog(raw: unknown): Record<string, { mode: 'productive' | 'u
   return out;
 }
 
+function sanitizeReviewParts(raw: unknown, fallbackDay: string, totalMs: number): HalfReview['parts'] {
+  const parts: HalfReview['parts'] = [];
+  if (Array.isArray(raw)) {
+    for (const item of raw.slice(0, 40)) {
+      if (!item || typeof item !== 'object') continue;
+      const p = item as Record<string, unknown>;
+      if (typeof p.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(p.day)) continue;
+      const ms = Math.round(finiteNumber(p.ms, 0));
+      if (ms <= 0) continue;
+      parts.push({ day: p.day, ms });
+    }
+  }
+  const sum = parts.reduce((acc, p) => acc + p.ms, 0);
+  if (sum <= 0) return totalMs > 0 ? [{ day: fallbackDay, ms: totalMs }] : [];
+  return parts;
+}
+
+/** Validates the estimate questions. Unanswered questions are kept; stale answered ones are forgotten. */
+function sanitizeHalfReviews(raw: unknown, now: number): HalfReview[] {
+  if (!Array.isArray(raw)) return [];
+  const out: HalfReview[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const r = item as Record<string, unknown>;
+    if (typeof r.host !== 'string' || !r.host.trim()) continue;
+    if (typeof r.entry !== 'string' || !r.entry.trim()) continue;
+    const at = Math.round(finiteNumber(r.at, 0));
+    const totalMs = Math.round(finiteNumber(r.totalMs, 0));
+    if (at <= 0 || totalMs <= 0) continue;
+    const resolvedAt = typeof r.resolvedAt === 'number' && Number.isFinite(r.resolvedAt) ? Math.round(r.resolvedAt) : null;
+    if (resolvedAt !== null && now - resolvedAt > HALF_REVIEW_RETENTION_MS) continue;
+    const from = Math.round(finiteNumber(r.from, at));
+    const to = Math.max(from, Math.round(finiteNumber(r.to, at)));
+    const productiveMs = Math.min(totalMs, Math.max(0, Math.round(finiteNumber(r.productiveMs, Math.floor(totalMs / 2)))));
+    out.push({
+      id: Math.round(finiteNumber(r.id, 0)),
+      at,
+      host: r.host.trim().toLowerCase().slice(0, 253),
+      entry: r.entry.trim().toLowerCase().slice(0, 253),
+      from,
+      to,
+      totalMs,
+      productiveMs,
+      creditedMs: Math.max(0, Math.round(finiteNumber(r.creditedMs, 0))),
+      chargedMs: Math.max(0, Math.round(finiteNumber(r.chargedMs, totalMs - productiveMs))),
+      parts: sanitizeReviewParts(r.parts, dayKey(at), totalMs),
+      lastMode: r.lastMode === 'productive' || r.lastMode === 'unproductive' ? r.lastMode : null,
+      resolvedAt,
+    });
+  }
+  // Keep the answerable questions first; the defaults already priced anything that is dropped.
+  const unresolved = out.filter((r) => r.resolvedAt === null).slice(-MAX_HALF_REVIEWS);
+  const resolved = out.filter((r) => r.resolvedAt !== null).slice(-Math.max(0, MAX_HALF_REVIEWS - unresolved.length));
+  return [...unresolved, ...resolved].sort((a, b) => a.at - b.at || a.id - b.id);
+}
+
 /**
  * Returns a valid EarnState built from arbitrary stored data. Unknown or invalid fields fall back
  * to defaults; money fields are clamped to non-negative integers.
@@ -266,11 +336,11 @@ export function sanitizeState(raw: unknown, now: number): EarnState {
     unproductive: cleanHostList(rulesRaw.unproductive),
   });
   // Schema 4 restores WhatsApp as a trust-based half-productive site (mode chooser, no content
-  // filter). Stored states written by schema ≤3 had it stripped on every load, so it is re-added
+  // filter). Stored states written before schema 4 had it stripped on every load, so it is re-added
   // exactly once here; from then on the stored list is authoritative and the user may remove it.
   const storedSchema = typeof r.schema === 'number' && Number.isFinite(r.schema) ? r.schema : 0;
   const rules: Rules =
-    storedSchema < SCHEMA_VERSION && !sanitizedRules.half.includes(WHATSAPP_HOST)
+    storedSchema < WHATSAPP_READD_SCHEMA && !sanitizedRules.half.includes(WHATSAPP_HOST)
       ? dedupeRules({ ...sanitizedRules, half: [...sanitizedRules.half, WHATSAPP_HOST] })
       : sanitizedRules;
   const state: EarnState = {
@@ -280,7 +350,8 @@ export function sanitizeState(raw: unknown, now: number): EarnState {
     // written before schema 5 belongs to a profile that already granted screen-time access. A stored
     // boolean wins from schema 5 onwards, and every worker start re-checks it against what Chrome
     // actually reports, so a revoked permission is noticed within one worker start.
-    historyGranted: typeof r.historyGranted === 'boolean' ? r.historyGranted : storedSchema < SCHEMA_VERSION,
+    historyGranted:
+      typeof r.historyGranted === 'boolean' ? r.historyGranted : storedSchema < HISTORY_FLAG_SCHEMA,
     historyScope: r.historyScope === 'all' ? 'all' : 'local',
     createdAt: finiteNumber(r.createdAt, now),
     settings: sanitizeSettings(r.settings),
@@ -295,6 +366,8 @@ export function sanitizeState(raw: unknown, now: number): EarnState {
     nextLedgerId: Math.max(1, finiteNumber(r.nextLedgerId, 1)),
     sessions: sanitizeSessions(r.sessions),
     modeLog: sanitizeModeLog(r.modeLog),
+    halfReviews: sanitizeHalfReviews(r.halfReviews, now),
+    nextReviewId: Math.max(1, finiteNumber(r.nextReviewId, 1)),
     last: isSnapshotLike(r.last) ? (r.last as Snapshot) : null,
     lastAt: typeof r.lastAt === 'number' ? r.lastAt : null,
     live: r.live && typeof r.live === 'object' ? (r.live as EarnState['live']) : null,
@@ -307,6 +380,9 @@ export function sanitizeState(raw: unknown, now: number): EarnState {
     state.debtOriginMs = 0;
   }
   if (state.debtMs > 0 && state.debtOriginMs < state.debtMs) state.debtOriginMs = state.debtMs;
+  // Ids must stay unique even if the counter was lost or edited.
+  const maxReviewId = state.halfReviews.reduce((max, review) => Math.max(max, review.id), 0);
+  if (state.nextReviewId <= maxReviewId) state.nextReviewId = maxReviewId + 1;
   return state;
 }
 

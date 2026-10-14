@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { CHROME_LIMITATION_SENTENCE } from '../../core/constants';
+import { unresolvedReviews } from '../../core/halfReview';
 import { dashboardView } from '../../core/view';
 import { formatDuration } from '../../core/time';
-import { Button, Card, InlineCode, ProgressBar } from '../components';
+import { Button, Card, InlineCode, Notice, ProgressBar } from '../components';
+import { HalfReviewCard } from '../halfReview';
 import { useNow, useStoredState } from '../lib/extension';
 import type { EarnState } from '../../core/types';
 
@@ -14,6 +17,8 @@ function DebtBlock({ state }: { state: EarnState }) {
   const now = useNow(1000);
   const view = dashboardView(state, now);
   const last = state.lastReconcile;
+  const [error, setError] = useState<string | null>(null);
+  const waiting = unresolvedReviews(state);
   return (
     <>
       <span className="rounded-md bg-rose-500/15 px-2 py-0.5 text-[11px] font-bold tracking-[0.12em] text-rose-200">DEBT MODE</span>
@@ -33,6 +38,16 @@ function DebtBlock({ state }: { state: EarnState }) {
         <p className="mt-4 rounded-xl bg-slate-950/60 p-3 text-[12.5px] leading-snug text-slate-400">
           Why: unproductive use of {formatDuration(last.chargedMs)} during an interruption, with a balance that could cover less. Study credit that day was {formatDuration(last.productiveCreditMs)}.
         </p>
+      ) : null}
+      {waiting.length > 0 ? (
+        <div className="mt-4 space-y-3 text-left">
+          <p className="text-[12.5px] leading-snug text-sky-100/90">
+            Part of this debt is estimated half-productive time ({waiting.length === 1 ? waiting[0].entry : `${waiting.length} sites`}). Half of it already
+            counts as study and half as unproductive. Answer below to change that.
+          </p>
+          <HalfReviewCard state={state} onError={setError} />
+          {error ? <Notice tone="error">{error}</Notice> : null}
+        </div>
       ) : null}
     </>
   );
