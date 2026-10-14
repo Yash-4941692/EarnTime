@@ -996,3 +996,17 @@ test('a synced visit during a gap cannot create local-device debt or study credi
   assert.equal(balanceMin(b), 10);
   assert.equal(debtMin(b), 0);
 });
+
+
+test('Chrome storage accepts the array keys used by content scripts in both storage areas', async () => {
+  const b = newBrowser();
+  for (const area of ['local', 'session']) {
+    const storage = b.chrome.storage[area];
+    await storage.set({ first: { value: 1 }, second: 2, other: 3 });
+    const selected = await storage.get(['first', 'second', 'missing']);
+    assert.deepEqual(selected, { first: { value: 1 }, second: 2 });
+    selected.first.value = 99;
+    assert.deepEqual(await storage.get('first'), { first: { value: 1 } }, 'reads are copies');
+    assert.deepEqual(await storage.get([]), {});
+  }
+});

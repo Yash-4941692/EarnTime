@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Study Short - YouTube</title>
+    <style>
+      body { background: #0f0f0f; color: white; font: 16px sans-serif; }
+      ytd-app, ytd-shorts, ytd-reel-video-renderer, yt-reel-channel-bar-view-model { display: block; }
+      ytd-shorts { width: 280px; margin: 24px auto; }
+      ytd-reel-video-renderer:not([is-active]) { display: none; }
+      video { width: 280px; height: 480px; background: #184c40; }
+      a { color: white; }
+    </style>
+  </head>
+  <body>
+    <ytd-app>
+      <ytd-shorts>
+        <ytd-reel-video-renderer id="study-reel" is-active>
+          <video id="short-player" controls muted playsinline></video>
+          <yt-reel-channel-bar-view-model><a href="/@jeestudy">JEE Study Shorts</a></yt-reel-channel-bar-view-model>
+        </ytd-reel-video-renderer>
+        <ytd-reel-video-renderer id="random-reel">
+          <video id="random-player" controls muted playsinline></video>
+          <yt-reel-channel-bar-view-model><a href="/@random">Random Vlogs</a></yt-reel-channel-bar-view-model>
+        </ytd-reel-video-renderer>
+      </ytd-shorts>
+    </ytd-app>
+  </body>
+</html>

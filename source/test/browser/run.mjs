@@ -123,10 +123,39 @@ async function overlayText(page) {
   return page.evaluate(() => document.getElementById('earntime-root')?.shadowRoot?.textContent ?? '');
 }
 
+/** Supply actual video frames without relying on YouTube/network playback in a fixture. */
+async function playFixtureShort(page, selector = '#short-player') {
+  await page.evaluate(async (selector) => {
+    const video = document.querySelector(selector);
+    if (!video.srcObject) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 280;
+      canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+      const draw = () => {
+        ctx.fillStyle = '#184c40';
+        ctx.fillRect(0, 0, 280, 480);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '24px sans-serif';
+        ctx.fillText('Study Short', 60, 240);
+        requestAnimationFrame(draw);
+      };
+      video.srcObject = canvas.captureStream(10);
+      draw();
+    }
+    await video.play();
+  }, selector);
+  await page.waitForFunction((selector) => {
+    const video = document.querySelector(selector);
+    return !video.paused && video.videoWidth > 0 && video.readyState >= 2;
+  }, selector);
+}
+
 function youtubeFixture(pathname, search) {
   if (pathname === '/' || pathname === '') return 'home.html';
   if (pathname === '/results') return 'results.html';
   if (pathname === '/watch') return search.includes('study') ? 'watch-study.html' : 'watch.html';
+  if (pathname.startsWith('/shorts/')) return 'shorts.html';
   return null;
 }
 
@@ -206,7 +235,8 @@ try {
     const page = await newPage(context, { role: 'ui' });
     await page.goto(`${base}/setup.html`);
     await page.getByText('Study first, then spend').waitFor();
-    for (let i = 0; i < 6; i++) await page.getByRole('button', { name: 'Continue' }).click();
+    const steps = await page.getByRole('list', { name: 'Setup progress' }).locator('li').count();
+    for (let i = 0; i < steps - 1; i++) await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await page.getByRole('button', { name: 'Finish setup' }).click();
     await page.getByText("You're set").waitFor();
     const stored = await page.evaluate(() => chrome.storage.local.get('state'));
@@ -227,12 +257,17 @@ try {
     await page.fill('#site-add', 'nptel.ac.in');
     await page.selectOption('#site-list', 'productive');
     await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await page.getByRole('status').filter({ hasText: 'nptel.ac.in added' }).waitFor();
+    expect(await page.getByRole('button', { name: 'Remove nptel.ac.in', exact: true }).count() === 1, 'adding a new productive site is free');
+
+    // Lifting an existing restriction, unlike adding a site, costs the unlock price.
+    await page.getByRole('button', { name: 'Remove instagram.com', exact: true }).click();
     await page.getByRole('alert').waitFor();
     const alert = await page.getByRole('alert').innerText();
-    expect(alert.includes('10') && alert.toLowerCase().includes('minutes') === false ? true : alert.includes('costs 10 min') || alert.includes('10 min'), `cost is explained (got "${alert}")`);
     expect(alert.includes('This change costs 10 min'), `insufficient balance message (got "${alert}")`);
+    expect(await page.getByRole('button', { name: 'Remove instagram.com', exact: true }).count() === 1, 'a refused change does not remove the restriction');
 
-    // Adding to unproductive is stricter, so it succeeds with no balance.
+    // Adding an unproductive site also succeeds with no balance.
     await page.fill('#site-add', 'tiktok.com');
     await page.selectOption('#site-list', 'unproductive');
     await page.getByRole('button', { name: 'Add', exact: true }).click();
@@ -295,15 +330,16 @@ try {
     await context.close();
   });
 
-  await test('YouTube: a mode must be chosen; search shows every channel and hides only Shorts', async () => {
+  await test('YouTube: a mode must be chosen; search shows every channel and Shorts', async () => {
     const context = await youtubeContext(browser);
     await runSetup(context, 'https://www.youtube.com', SETUP_PAYLOAD, 20);
     const page = await newPage(context, { role: 'content', withContent: true, tab: 11 });
     await page.goto('https://www.youtube.com/results?search_query=jee');
-    await page.getByRole('dialog', { name: /How to use youtube.com/ }).waitFor();
+    await page.getByRole('dialog', { name: /How to use (?:www\.)?youtube\.com/ }).waitFor();
     await page.screenshot({ path: join(shots, 'youtube-chooser.png') });
     await page.locator('[data-et-mode="productive"]').click();
-    await page.waitForFunction(() => document.querySelector('#shorts-shelf')?.style.display === 'none');
+    await page.waitForFunction(() => (document.getElementById('earntime-root')?.shadowRoot?.textContent ?? '').includes('EarnTime · Productive Mode'));
+    await page.locator('#shorts-shelf a').waitFor({ state: 'visible' });
     const visibility = await page.evaluate(() => ({
       study: getComputedStyle(document.querySelector('#study-video')).display,
       random: getComputedStyle(document.querySelector('#random-video')).display,
@@ -313,10 +349,90 @@ try {
     expect(visibility.study !== 'none', 'PW Live result is visible');
     expect(visibility.random !== 'none', 'unproductive-channel results stay in search; they are judged at play time');
     expect(visibility.nameless !== 'none', 'unreadable-channel results stay in search');
-    expect(visibility.shorts === 'none', 'Shorts shelf is hidden');
+    expect(visibility.shorts !== 'none', 'Shorts shelf stays visible in search');
+    expect(await page.locator('#shorts-link').isVisible(), 'Shorts links are visible and clickable');
+    expect(await page.locator('#modern-shorts-link').isVisible(), 'modern Shorts cards also stay visible');
     await page.screenshot({ path: join(shots, 'youtube-results.png') });
     expect(page.__errors.length === 0, `no page errors: ${page.__errors.join('; ')}`);
     await context.close();
+  });
+
+  await test('YouTube: clicking a search Short opens a visible player that receives video frames', async () => {
+    const context = await youtubeContext(browser);
+    try {
+      await runSetup(context, 'https://www.youtube.com', SETUP_PAYLOAD, 20);
+      const page = await newPage(context, { role: 'content', withContent: true, tab: 17 });
+      await page.goto('https://www.youtube.com/results?search_query=jee');
+      await page.getByRole('dialog', { name: /How to use (?:www\.)?youtube\.com/ }).waitFor();
+      await page.locator('[data-et-mode="productive"]').click();
+      await page.locator('#shorts-link').click();
+      await page.waitForURL('https://www.youtube.com/shorts/study-short');
+      await page.locator('#short-player').waitFor({ state: 'visible' });
+      expect(await page.getByRole('dialog').count() === 0, 'study Short has no cover or second mode chooser');
+      await playFixtureShort(page);
+      expect(await page.locator('#short-player').isVisible(), 'playing video has no hidden ancestors');
+      expect(page.__errors.length === 0, `no page errors: ${page.__errors.join('; ')}`);
+      await page.screenshot({ path: join(shots, 'youtube-shorts.png') });
+    } finally {
+      await context.close();
+    }
+  });
+
+  await test('YouTube: swiping rechecks the active Short and pauses non-study playback', async () => {
+    const context = await youtubeContext(browser);
+    try {
+      await runSetup(context, 'https://www.youtube.com', SETUP_PAYLOAD, 20);
+      const page = await newPage(context, { role: 'content', withContent: true, tab: 18 });
+      await page.goto('https://www.youtube.com/shorts/study-short');
+      await page.getByRole('dialog', { name: /How to use (?:www\.)?youtube\.com/ }).waitFor();
+      await page.locator('[data-et-mode="productive"]').click();
+      await playFixtureShort(page);
+      // YouTube can change just the active attribute before updating its URL or replacing nodes.
+      await page.evaluate(() => {
+        document.querySelector('#study-reel').removeAttribute('is-active');
+        document.querySelector('#random-reel').setAttribute('is-active', '');
+      });
+      await page.getByRole('dialog', { name: 'Shorts are off' }).waitFor();
+      expect(await page.evaluate(() => document.querySelector('#short-player').paused), 'covered media is actually paused');
+      await page.waitForFunction(async () => (await chrome.storage.local.get('state')).state?.live?.why === 'filter-covered');
+      expect((await overlayText(page)).includes('Random Vlogs'), 'only the active channel is checked, not the prefetched study reel');
+      // Even with the gate open, a blocking card's actions must remain usable.
+      await page.getByRole('button', { name: 'Study search', exact: true }).click();
+      await page.waitForURL('**/results?search_query=JEE');
+      await page.locator('#shorts-link').waitFor({ state: 'visible' });
+      expect(page.__errors.length === 0, `no page errors: ${page.__errors.join('; ')}`);
+    } finally {
+      await context.close();
+    }
+  });
+
+  await test('YouTube: switching to Unproductive Mode clears a Shorts cover and allows playback', async () => {
+    const context = await youtubeContext(browser);
+    try {
+      await runSetup(context, 'https://www.youtube.com', SETUP_PAYLOAD, 20);
+      const page = await newPage(context, { role: 'content', withContent: true, tab: 19 });
+      await page.goto('https://www.youtube.com/shorts/study-short');
+      await page.getByRole('dialog', { name: /How to use (?:www\.)?youtube\.com/ }).waitFor();
+      await page.locator('[data-et-mode="productive"]').click();
+      await playFixtureShort(page);
+      await page.evaluate(() => {
+        document.querySelector('#study-reel').removeAttribute('is-active');
+        document.querySelector('#random-reel').setAttribute('is-active', '');
+      });
+      await page.getByRole('dialog', { name: 'Shorts are off' }).waitFor();
+      // Exercise the real worker's mode change and the content script's storage-change teardown.
+      await page.evaluate(async () => {
+        const reply = await chrome.runtime.sendMessage({ type: 'page.choose', url: location.href, mode: 'unproductive' });
+        if (!reply.ok) throw new Error('Unproductive Mode was refused');
+      });
+      await page.waitForFunction(() => (document.getElementById('earntime-root')?.shadowRoot?.textContent ?? '').includes('EarnTime · Unproductive Mode'));
+      expect(await page.getByRole('dialog').count() === 0, 'the old Productive Mode cover is removed');
+      await playFixtureShort(page, '#random-player');
+      expect(await page.locator('#random-player').isVisible(), 'non-study Shorts remain visible and play in Unproductive Mode');
+      expect(page.__errors.length === 0, `no page errors: ${page.__errors.join('; ')}`);
+    } finally {
+      await context.close();
+    }
   });
 
   await test('YouTube: the homepage shows no videos and no banner', async () => {
@@ -324,7 +440,7 @@ try {
     await runSetup(context, 'https://www.youtube.com', SETUP_PAYLOAD, 20);
     const page = await newPage(context, { role: 'content', withContent: true, tab: 12 });
     await page.goto('https://www.youtube.com/results?search_query=study');
-    await page.getByRole('dialog', { name: /How to use youtube.com/ }).waitFor();
+    await page.getByRole('dialog', { name: /How to use (?:www\.)?youtube\.com/ }).waitFor();
     await page.locator('[data-et-mode="productive"]').click();
     await page.getByText('Productive Mode').first().waitFor();
     await page.goto('https://www.youtube.com/');
@@ -340,7 +456,7 @@ try {
     await runSetup(context, 'https://www.youtube.com', SETUP_PAYLOAD, 20);
     const page = await newPage(context, { role: 'content', withContent: true, tab: 13 });
     await page.goto('https://www.youtube.com/watch?v=vlog1');
-    await page.getByRole('dialog', { name: /How to use youtube.com/ }).waitFor();
+    await page.getByRole('dialog', { name: /How to use (?:www\.)?youtube\.com/ }).waitFor();
     await page.locator('[data-et-mode="productive"]').click();
     await page.getByText('Not on your study list').waitFor();
     // Covered content is not study time: the live status must report the intentional cover.
@@ -357,7 +473,7 @@ try {
     await page.waitForFunction(() => (document.getElementById('earntime-root')?.shadowRoot?.textContent ?? '').includes('Productive Mode'));
     await page.waitForTimeout(600);
     expect((await page.getByText('Not on your study list').count()) === 0, 'study channel is not closed');
-    expect((await page.getByRole('dialog', { name: /How to use youtube.com/ }).count()) === 0, 'no second prompt on the same site');
+    expect((await page.getByRole('dialog', { name: /How to use (?:www\.)?youtube\.com/ }).count()) === 0, 'no second prompt on the same site');
     await context.close();
   });
 
@@ -366,7 +482,7 @@ try {
     await runSetup(empty, 'https://www.youtube.com', SETUP_PAYLOAD, 0);
     const emptyPage = await newPage(empty, { role: 'content', withContent: true, tab: 14 });
     await emptyPage.goto('https://www.youtube.com/results?search_query=jee');
-    await emptyPage.getByRole('dialog', { name: /How to use youtube.com/ }).waitFor();
+    await emptyPage.getByRole('dialog', { name: /How to use (?:www\.)?youtube\.com/ }).waitFor();
     expect(await emptyPage.locator('[data-et-mode="unproductive"]').isDisabled(), 'unproductive option disabled at zero balance');
     await emptyPage.screenshot({ path: join(shots, 'youtube-chooser-empty.png') });
     await empty.close();
@@ -375,7 +491,7 @@ try {
     await runSetup(funded, 'https://www.youtube.com', SETUP_PAYLOAD, 20);
     const page = await newPage(funded, { role: 'content', withContent: true, tab: 15 });
     await page.goto('https://www.youtube.com/results?search_query=jee');
-    await page.getByRole('dialog', { name: /How to use youtube.com/ }).waitFor();
+    await page.getByRole('dialog', { name: /How to use (?:www\.)?youtube\.com/ }).waitFor();
     await page.locator('[data-et-mode="unproductive"]').click();
     await page.waitForFunction(() => (document.getElementById('earntime-root')?.shadowRoot?.textContent ?? '').includes('EarnTime · Unproductive Mode'), null, { timeout: 10000 });
     const filter = await page.evaluate(() => getComputedStyle(document.documentElement).filter);
@@ -394,7 +510,7 @@ try {
     await runSetup(context, 'https://www.youtube.com', SETUP_PAYLOAD, 20);
     const page = await newPage(context, { role: 'content', withContent: true, tab: 16 });
     await page.goto('https://www.youtube.com/results?search_query=jee');
-    await page.getByRole('dialog', { name: /How to use youtube.com/ }).waitFor();
+    await page.getByRole('dialog', { name: /How to use (?:www\.)?youtube\.com/ }).waitFor();
     await page.locator('[data-et-mode="productive"]').click();
     await page.getByText('YouTube layout not recognised').waitFor({ timeout: 15000 });
     await context.close();

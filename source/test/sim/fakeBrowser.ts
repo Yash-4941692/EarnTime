@@ -187,10 +187,10 @@ export class FakeBrowser {
       },
       storage: {
         local: {
-          get: async (key: string | null) => {
-            if (key === null) return clone(self.storage);
-            if (typeof key !== 'string') throw new Error('sim: only string keys supported');
-            return { [key]: clone(self.storage[key]) };
+          get: async (keys: string | string[] | null) => {
+            if (keys === null) return clone(self.storage);
+            const list = Array.isArray(keys) ? keys : [keys];
+            return Object.fromEntries(list.filter((key) => key in self.storage).map((key) => [key, clone(self.storage[key])]));
           },
           set: async (values: Record<string, unknown>) => {
             const changes: Record<string, { newValue: unknown; oldValue: unknown }> = {};
@@ -213,10 +213,10 @@ export class FakeBrowser {
           },
         },
         session: {
-          get: async (key: string | null) => {
-            if (key === null) return clone(self.sessionStorage);
-            if (typeof key !== 'string') throw new Error('sim: only string keys supported');
-            return { [key]: clone(self.sessionStorage[key]) };
+          get: async (keys: string | string[] | null) => {
+            if (keys === null) return clone(self.sessionStorage);
+            const list = Array.isArray(keys) ? keys : [keys];
+            return Object.fromEntries(list.filter((key) => key in self.sessionStorage).map((key) => [key, clone(self.sessionStorage[key])]));
           },
           set: async (values: Record<string, unknown>) => {
             const changes: Record<string, { newValue: unknown; oldValue: unknown }> = {};
