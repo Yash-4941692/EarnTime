@@ -34,6 +34,8 @@ function stateWith(overrides: Partial<EarnState> = {}): EarnState {
     nextLedgerId: 1,
     sessions: {},
     modeLog: {},
+    halfReviews: [],
+    nextReviewId: 1,
     last: null,
     lastAt: null,
     live: null,

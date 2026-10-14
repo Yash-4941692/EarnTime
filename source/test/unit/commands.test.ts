@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { applyCommand, applySetup, auditExport, type Command, type SetupPayload } from '../../src/core/commands';
 import { siteChangeLoosens, ratioLoosens } from '../../src/core/protection';
 import type { EarnState, RuleResult } from '../../src/core/types';
-import { freshState, MIN, T0 } from './helpers';
+import { freshState, MIN, SEC, T0 } from './helpers';
 
 const setupBase: SetupPayload = {
   earnFromMin: 60,
@@ -292,4 +292,71 @@ test('audit export contains hosts and minutes, never page URLs', () => {
   assert.ok(exported.includes('instagram.com'));
   assert.equal(exported.includes('http'), false);
   assert.equal(exported.includes('/watch'), false);
+});
+
+test('estimate questions: unknown ids and impossible answers are refused without side effects', () => {
+  const state = freshState(true);
+  state.balanceMs = 20 * MIN;
+  state.halfReviews.push({
+    id: 3,
+    at: T0,
+    host: 'youtube.com',
+    entry: 'youtube.com',
+    from: T0 - 10 * MIN,
+    to: T0,
+    totalMs: 10 * MIN,
+    productiveMs: 5 * MIN,
+    creditedMs: 25 * SEC,
+    chargedMs: 5 * MIN,
+    parts: [{ day: '2026-10-08', ms: 10 * MIN }],
+    lastMode: 'productive',
+    resolvedAt: null,
+  });
+  state.nextReviewId = 4;
+
+  const missing = applyCommand(state, { type: 'review.keep', id: 99 }, T0);
+  assert.equal(missing.ok, false);
+  assert.equal(missing.ok === false && missing.code, 'not-found');
+
+  const tooBig = applyCommand(state, { type: 'review.set', id: 3, productiveMs: 11 * MIN }, T0);
+  assert.equal(tooBig.ok, false);
+  assert.equal(tooBig.ok === false && tooBig.code, 'invalid');
+  assert.equal(state.balanceMs, 20 * MIN, 'a refused answer moves nothing');
+  assert.equal(state.halfReviews[0].resolvedAt, null, 'and leaves the question open');
+});
+
+test('answering an estimate is free and corrects the books in both directions', () => {
+  const state = freshState(true);
+  state.balanceMs = 20 * MIN;
+  state.halfReviews.push({
+    id: 3,
+    at: T0,
+    host: 'youtube.com',
+    entry: 'youtube.com',
+    from: T0 - 10 * MIN,
+    to: T0,
+    totalMs: 10 * MIN,
+    productiveMs: 5 * MIN,
+    creditedMs: 25 * SEC,
+    chargedMs: 5 * MIN,
+    parts: [{ day: '2026-10-08', ms: 10 * MIN }],
+    lastMode: null,
+    resolvedAt: null,
+  });
+  state.nextReviewId = 4;
+
+  const answered = applyCommand(state, { type: 'review.set', id: 3, productiveMs: 10 * MIN }, T0 + MIN);
+  assert.equal(answered.ok, true);
+  assert.equal(state.balanceMs, 20 * MIN + 5 * MIN + 25 * SEC, 'the charge is refunded and the credit grows');
+  assert.equal(state.halfReviews[0].productiveMs, 10 * MIN);
+  assert.equal(state.halfReviews[0].resolvedAt, T0 + MIN);
+  assert.equal(state.settings.unlockCostMin, 10, 'the unlock cost is untouched: this is not a loosening');
+  assert.ok(state.ledger.some((entry) => entry.kind === 'review' && entry.note.includes('Estimate answered')));
+
+  const kept = applyCommand(state, { type: 'review.keep', id: 3 }, T0 + 2 * MIN);
+  assert.equal(kept.ok, true);
+  assert.equal(state.balanceMs, 20 * MIN + 5 * MIN + 25 * SEC, 'keeping the current answer changes nothing');
+  const exported = auditExport(state, T0);
+  assert.ok(Array.isArray(exported.halfReviews) && exported.halfReviews.length === 1, 'the audit export lists the question');
+  assert.equal((exported.halfReviews as Array<{ answeredAsStudyMinutes: number | null }>)[0].answeredAsStudyMinutes, 10);
 });

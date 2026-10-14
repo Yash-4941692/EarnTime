@@ -162,17 +162,21 @@ test('the homepage shows no cover and no videos — the page itself stays usable
   }
 });
 
-test('Shorts are deliberately covered, reported healthy, and paused without being charged', () => {
+test('an unreadable Short is offered on trust and stays paused until the user continues', () => {
   const h = makeYouTube('/shorts/abc', '<ytd-app><video></video></ytd-app>');
   const video = h.dom.window.document.querySelector('video')!;
   Object.defineProperty(video, 'paused', { configurable: true, value: false });
   const run = start(h);
   try {
-    assert.match(h.overlayText(), /Shorts are off/);
-    assert.match(h.overlayText(), /not charged or credited/);
-    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
-    assert.deepEqual(h.health, [{ ok: true, detail: 'covered' }]);
-    assert.ok(h.pauseCount() > 0);
+    assert.match(h.overlayText(), /Shorts channel not verified/);
+    assert.match(h.overlayText(), /could not read this Short's channel name/);
+    assert.match(h.overlayText(), /counted as productive/);
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'trust' });
+    assert.deepEqual(h.health, [{ ok: true, detail: 'trust' }]);
+    assert.ok(h.pauseCount() > 0, 'nothing plays behind an unanswered cover');
+    button(h, 'Continue (trust)')!.click();
+    assert.equal(h.currentOverlay(), null, 'continuing allows this Short');
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'trust' }, 'and the time now counts as productive');
   } finally {
     run.cleanup();
   }
@@ -294,7 +298,7 @@ test('a playback refusal belongs to its page: the next channel page is open agai
 
 test('a channel name EarnTime cannot read no longer blocks the page — only playback is refused', () => {
   const h = makeYouTube(
-    '/@unknown/videos',
+    '/channel/UC-unreadable/videos',
     '<ytd-app><yt-page-header-renderer><div id="page-header-title"></div></yt-page-header-renderer><ytd-rich-grid-renderer><ytd-rich-item-renderer id="channel-videos">video</ytd-rich-item-renderer></ytd-rich-grid-renderer><video></video></ytd-app>',
   );
   const doc = h.dom.window.document;
@@ -790,8 +794,108 @@ test('prefetched reels do not qualify a Short before its active author is availa
   const h = makeYouTube('/shorts/loading', '<ytd-app><ytd-shorts><ytd-reel-video-renderer><ytd-channel-name><a>JEE Academy</a></ytd-channel-name></ytd-reel-video-renderer></ytd-shorts></ytd-app>');
   const run = start(h);
   try {
-    assert.match(h.overlayText(), /could not read this Shorts channel name/);
-    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+    assert.match(h.overlayText(), /Shorts channel not verified/);
+    assert.doesNotMatch(h.overlayText(), /JEE Academy/, 'a prefetched author never qualifies a playing Short');
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'trust' });
+  } finally {
+    run.cleanup();
+  }
+});
+
+/** Shorts pages carry the video id near its channel data, which is what EarnTime reads when the DOM has not painted the name yet. */
+function shortsJson(id: string, channel: string): string {
+  return `<script>var ytInitialData = {"videoId":"${id}","reelPlayerHeaderRenderer":{"channelTitleText":{"runs":[{"text":"${channel}"}]}}};</script>`;
+}
+
+test('the active Short is read from the page JSON by video id when the channel bar is empty', () => {
+  const h = makeYouTube(
+    '/shorts/jsonid',
+    `<ytd-app><ytd-shorts><ytd-reel-video-renderer is-active><video id="short-player"></video></ytd-reel-video-renderer></ytd-shorts>${shortsJson('jsonid', 'JEE Study Shorts')}</ytd-app>`,
+  );
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'the channel behind the video id qualifies the Short');
+    assertVisible(h, '#short-player');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('JSON for a different video cannot qualify the Short in the address bar', () => {
+  const h = makeYouTube(
+    '/shorts/other',
+    `<ytd-app><ytd-shorts><ytd-reel-video-renderer is-active><video></video></ytd-reel-video-renderer></ytd-shorts>${shortsJson('jsonid', 'JEE Study Shorts')}</ytd-app>`,
+  );
+  const run = start(h);
+  try {
+    assert.match(h.overlayText(), /Shorts channel not verified/);
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'trust' });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a Short whose only readable identity is its channel handle is not refused', () => {
+  const h = makeYouTube(
+    '/shorts/handle',
+    '<ytd-app><ytd-shorts><ytd-reel-video-renderer is-active><video id="short-player"></video><yt-reel-channel-bar-view-model><a href="/@jeestudy" title="JEE Study Shorts"></a></yt-reel-channel-bar-view-model></ytd-reel-video-renderer></ytd-shorts></ytd-app>',
+  );
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'the title the markup already carries names the channel');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a Short with only a channel link (no text at all) is identified by its handle', () => {
+  const h = makeYouTube(
+    '/shorts/handle2',
+    '<ytd-app><ytd-shorts><ytd-reel-video-renderer is-active><video></video><a id="owner-link" href="/@jeestudy"></a></ytd-reel-video-renderer></ytd-shorts></ytd-app>',
+  );
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null, 'the handle identifies the same study channel');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('an unreadable Short that is trusted does not carry that trust to another reel', async () => {
+  const h = makeYouTube(
+    '/shorts/trust2',
+    '<ytd-app><ytd-shorts><ytd-reel-video-renderer id="first" is-active><video></video></ytd-reel-video-renderer><ytd-reel-video-renderer id="second"><video></video></ytd-reel-video-renderer></ytd-shorts></ytd-app>',
+  );
+  const run = start(h);
+  try {
+    assert.match(h.overlayText(), /Shorts channel not verified/);
+    button(h, 'Continue (trust)')!.click();
+    assert.equal(h.currentOverlay(), null);
+    const doc = h.dom.window.document;
+    doc.querySelector('#first')!.removeAttribute('is-active');
+    doc.querySelector('#second')!.setAttribute('is-active', '');
+    await wait();
+    assert.match(h.overlayText(), /Shorts channel not verified/, 'the next reel needs its own trust decision');
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('an unreadable channel page still fails closed when even the address bar carries no handle', () => {
+  const h = makeYouTube(
+    '/channel/UC-unreadable/shorts',
+    '<ytd-app><yt-page-header-renderer><div id="page-header-title"></div></yt-page-header-renderer><video></video></ytd-app>',
+  );
+  const media = h.dom.window.document.querySelector('video')!;
+  Object.defineProperty(media, 'paused', { configurable: true, value: false });
+  media.dispatchEvent(new h.dom.window.Event('play'));
+  const run = start(h);
+  try {
+    assert.match(h.overlayText(), /not verified/i);
+    assert.ok(h.pauseCount() > 0);
   } finally {
     run.cleanup();
   }
@@ -910,8 +1014,9 @@ test('cached search or watch authors cannot qualify a Short with no current Shor
   const h = makeYouTube('/shorts/loading', '<ytd-app><div id="owner"><ytd-video-owner-renderer><ytd-channel-name><a>Study Chemistry</a></ytd-channel-name></ytd-video-owner-renderer></div><ytd-video-renderer><ytd-channel-name><a>JEE Academy</a></ytd-channel-name></ytd-video-renderer></ytd-app>');
   const run = start(h);
   try {
-    assert.match(h.overlayText(), /could not read this Shorts channel name/);
-    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+    assert.match(h.overlayText(), /Shorts channel not verified/);
+    assert.doesNotMatch(h.overlayText(), /Study Chemistry|JEE Academy/, 'cached authors stay invisible to the Shorts check');
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'trust' });
   } finally {
     run.cleanup();
   }

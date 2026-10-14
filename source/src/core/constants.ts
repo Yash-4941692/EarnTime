@@ -11,8 +11,10 @@ export const DAY_MS = 24 * HOUR_MS;
  * Storage schema version written into the single `state` key.
  * 5 adds per-site screen time (`days[*].hosts`, `screenMs`, `estimatedScreenMs`) and the
  * `historyGranted` flag for the optional screen-time permission.
+ * 6 adds `halfReviews`: the estimated half-productive time of an interruption, half credited and
+ * half charged by default, which the user can correct afterwards.
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /** Storage key holding the entire persisted state (one key = atomic writes). */
 export const STATE_KEY = 'state';
@@ -36,6 +38,16 @@ export const VISIT_CAP_MS = 15 * MINUTE_MS;
 export const MAX_RECONCILE_WINDOW_MS = 7 * DAY_MS;
 /** Upper bound on URLs whose visits are inspected during one reconciliation. */
 export const MAX_HISTORY_URLS = 1000;
+
+/**
+ * Shortest estimated half-productive stretch that is worth a question. Below this the default
+ * split stands silently, so a swarm of tiny visits cannot fill the popup with questions.
+ */
+export const MIN_HALF_REVIEW_MS = 60_000;
+/** Unanswered and recent questions kept in state; the oldest are dropped first. */
+export const MAX_HALF_REVIEWS = 20;
+/** Answered questions are forgotten after this long. */
+export const HALF_REVIEW_RETENTION_MS = 14 * DAY_MS;
 
 /**
  * An EarnTime page (the popup, settings) is considered open for this long after its last heartbeat.

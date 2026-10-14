@@ -2,7 +2,7 @@
 
 **Status: source logic, simulated flows and Chromium fixture tests verified on 2026-10-14.** The manual checklist with an installed Chrome extension and live YouTube has not been run.
 
-> `cd source && npm test` passes **272 tests**: 144 unit + 73 jsdom DOM + 55 simulated-browser flow tests, plus the strict TypeScript check. The separate Playwright/Chromium suite passes **15 tests**. These browser fixtures run the built content script and real controller, not a real Chrome extension installation.
+> `cd source && npm test` passes **291 tests**: 155 unit + 79 jsdom DOM + 57 simulated-browser flow tests, plus the strict TypeScript check. The separate Playwright/Chromium suite was **not re-run for this change** (its last verified run was 15/15); no Chromium binary was available. These browser fixtures run the built content script and real controller, not a real Chrome extension installation.
 
 ## Environment
 
@@ -17,22 +17,25 @@
 | --- | --- | --- |
 | Type check (strict, `noUnusedLocals`) | `npm run typecheck` | **pass** |
 | Build (root artifacts) | `npm run build` | **pass** |
-| Unit tests | `npm run test:unit` | **144 / 144 pass** |
-| DOM tests (jsdom: load-time gate, page lifecycle, YouTube filter) | `npm run test:dom` | **73 / 73 pass** |
-| Flow tests (simulated browser) | `npm run test:sim` | **55 / 55 pass** |
-| Complete source suite | `npm test` | **272 / 272 pass**, including type check |
-| Browser tests (Playwright + Chromium) | `npm run test:browser` | **15 / 15 pass** |
+| Unit tests | `npm run test:unit` | **155 / 155 pass** |
+| DOM tests (jsdom: load-time gate, page lifecycle, YouTube filter, Shorts trust) | `npm run test:dom` | **79 / 79 pass** |
+| Flow tests (simulated browser) | `npm run test:sim` | **57 / 57 pass** |
+| Complete source suite | `npm test` | **291 / 291 pass**, including type check |
+| Browser tests (Playwright + Chromium) | `npm run test:browser` | **not re-run** (last verified 15 / 15, needs a Chromium binary) |
 | Real Chrome extension end-to-end | manual checklist below | **not run** |
 
 The release build is verified separately with `npm run build`; browser-specific behaviours still need a real Chrome profile before relying on them.
 
 ## What each suite covers
 
-### Unit tests (`source/test/unit`, 144)
+### Unit tests (`source/test/unit`, 155)
 
 - **Host handling:** input normalisation, subdomain matching, most-specific entry wins, strictest list wins on ties, and list de-duplication.
 - **Time and accounting:** local day keys, splitting at midnight, formatting, the 60:5 earning example, unproductive spending, idle/background/internal pages, audible media, clock changes, checkpoints, and reconciliation boundaries.
 - **Half-productive roles:** mode selection and YouTube-only filter selection; pending or failed YouTube filters fail closed. An intentional `covered` YouTube state is distinct from failure and neither earns nor spends time.
+- **Half-time estimates:** a history stretch on a half-productive host is split half study / half unproductive; the study half credits at the current ratio, the other half charges (spending the balance first and creating debt past it), and closed intervals never produce a question. Repeated visits to one host merge into a single question with per-day parts, stretches under a minute are not questioned, at most 20 questions are kept (unanswered first), and a verified mode before the interruption keeps its own charge instead of being estimated.
+- **Answering an estimate:** `review.set` is free (the unlock cost is untouched), validated against the estimate (unknown id → `not-found`; an answer above the estimate → `invalid` with no side effect), re-prices the same local days, and updates balance, debt and the day totals in both directions; `review.keep` accepts the default and changes nothing. Corrections pay debt before the balance when they add credit, take the balance before creating debt when they remove it, and are audited with a `review` ledger entry that is exposed (minutes estimated, answer, credited and charged) in the audit export.
+- **Schema 6:** a schema-5 state keeps the reviews it has, gains the new counters, is not re-granted `historyGranted`, and is not re-given a WhatsApp half-rule the user had removed.
 - **Migration:** old storage formats and sanitisation, plus a realistic v2.1.1 state fixture proving balance, debt, daily totals, ledger, tasks, settings and non-retired site rules survive schema-3 migration. The retired integration settings/state and its old default half-list entry are removed.
 - **Protection and commands:** setup-once validation, starting-balance cap, free versus paid rule changes, confirmation before a paid change, debt restrictions, task rules, keyword matching, and audit export without page URLs.
 - **Worker message retry:** bounded retry timing, explicit refusal, eventual success when the worker starts late, and repeated asking (last pause held) until the budget runs out.
@@ -41,7 +44,7 @@ The release build is verified separately with `npm run build`; browser-specific 
 - **Worker-free page verdict (`src/content/local.ts`):** rule narrowing to the shared `DirectiveInput` shape, half-site chooser verdicts, productive/unproductive/neutral verdicts, the 30-second gate-cache TTL, the 100-entry cache limit, and cache read/write failure being non-fatal.
 - **Invariants:** 25 seeded random sequences (200 steps each) keep balance and debt non-negative and conserve value; a ledger-size limit test.
 
-### DOM tests (`source/test/dom`, 73)
+### DOM tests (`source/test/dom`, 79)
 
 **Load-time gate (`gate.test.ts`) and page lifecycle (`page.test.ts`)** run the real content-script code against jsdom with injected globals and a virtual clock:
 
@@ -66,9 +69,11 @@ The release build is verified separately with `npm run build`; browser-specific 
 - an absent page layout waits through the grace period, then fails closed and reports unhealthy; a layout appearing during the grace period is not treated as failure;
 - stopping the filter disconnects its observer, clears its cover and restores its own display overrides;
 - a Shorts player remains visible through cached homepage navigation, author hydration and existing-session startup before `<html>` exists;
-- only the active reel can qualify Shorts playback, and a new reel requires a new collaboration trust decision.
+- only the active reel can qualify Shorts playback, and a new reel requires a new collaboration trust decision;
+- an unreadable Short is no longer refused outright: the card shows `Shorts channel not verified` with `Continue (trust)`, the page pauses until the answer, continuing reports a healthy trust state, and the next reel asks again;
+- the channel name is read from the channel bar, the link's `title`/`aria-label`, the page's own data for the video id in the address bar, or the channel handle before the trust card appears — while prefetched reels, cached search/watch authors and handles belonging to other reels stay invisible to the check.
 
-### Flow tests on a simulated browser (`source/test/sim`, 55)
+### Flow tests on a simulated browser (`source/test/sim`, 57)
 
 The simulator (`test/sim/fakeBrowser.ts`) exposes a Chrome-shaped object and runs the real Chrome adapter, event wiring and controller. Time is virtual. It models tabs and normal/popup/app/devtools windows, focus, minimise, idle with a 15-second detection interval, audible tabs, history, declarativeNetRequest rules, service-worker suspension and restart, extension disable and enable, browser restart, wall-clock changes, and incognito gating. It does not model Chrome's own internals.
 
@@ -132,9 +137,9 @@ Use a dedicated Chrome profile. EarnTime redirects `chrome://extensions`, so rel
 7. **Chrome restart:** quit and reopen Chrome. Balance should persist, sessions should clear, and the closed period should not be charged live.
 8. **Protected-page redirects:** type `chrome://extensions` and `chrome://settings/extensions`; both should redirect to the block page. Note any flash and test the extensions-menu route.
 9. **Known bypass:** remove EarnTime from Chrome using the toolbar menu; confirm the documented limitation.
-10. **Interruption and debt:** in a test profile with 10 minutes, leave Instagram active and interrupt Chrome for 40 minutes. Check the reconciliation audit entry, debt explanation, and blocking (noting the per-visit cap).
+10. **Interruption and debt:** in a test profile with 10 minutes, leave Instagram active and interrupt Chrome for 40 minutes. Check the reconciliation audit entry, debt explanation, and blocking (noting the per-visit cap). Repeat the interruption with YouTube (half-productive) open instead: half of the estimated minutes must be credited as study and half charged, the popup must show the *Was that study time?* card, and a notification must say the same.
 11. **Debt repayment:** verify only productive sites open while in debt; productive time should repay debt before growing the balance.
-12. **YouTube:** choose Productive Mode. Verify study search and homepage shortcuts; open any channel and any playlist without starting a video and confirm both stay browsable; confirm study-channel Shorts play visibly, Shorts shelves and links stay visible in search, and non-study Shorts are covered and paused. Swipe between study and non-study Shorts and check that each active author is rechecked. Play a video from a channel that does not match, and one whose owner cannot be read, and verify the playback is refused and paused and that *Keep browsing* returns the page. Covers should not change charged or credited totals. Verify Unproductive Mode is unavailable at zero balance.
+12. **YouTube:** choose Productive Mode. Verify study search and homepage shortcuts; open any channel and any playlist without starting a video and confirm both stay browsable; confirm study-channel Shorts play visibly, Shorts shelves and links stay visible in search, and non-study Shorts are covered and paused. Swipe between study and non-study Shorts and check that each active author is rechecked. Play a video from a channel that does not match, and one whose owner cannot be read, and verify the playback is refused and paused and that *Keep browsing* returns the page. Covers should not change charged or credited totals. Verify Unproductive Mode is unavailable at zero balance. Then check the trust card: simulate an unreadable Short (or use a channel whose bar does not render) and confirm `Shorts channel not verified` appears with *Continue (trust)*, that continuing allows the Short and counts its time as productive, and that swiping to the next Short asks again.
 13. **Incognito:** with incognito access off, activity should not count; allow EarnTime in incognito and verify it does.
 14. **Clock change:** move the system clock backwards while a tracked page is active. Usage must not be erased; inspect the clock ledger entry.
 15. **Notifications:** verify the notifications for reaching zero and entering debt.
@@ -151,6 +156,8 @@ Use a dedicated Chrome profile. EarnTime redirects `chrome://extensions`, so rel
 26. **YouTube channel/playlist browsing (v2.4.2):** open a channel that does not match your keywords, a playlist whose title contains a keyword but whose owner does not, and a playlist whose owner EarnTime cannot read; all three must stay fully browsable and none may be covered. Start a video on one of them: the playback must be refused, paused and explained, *Keep browsing* must bring the page back, and pressing play again must refuse it again. Then open a video that navigates to a watch page and verify the video-level check still covers it.
 
 27. **Installed web apps / window shortcuts (v2.4.3):** in the same Chrome profile, install or create a shortcut for a productive site and an unproductive site with *Open as window* enabled. Focus each standalone window for 2 minutes: check earned/used balance and per-site screen time. Switch between each and a regular browser window: only the foreground site should count. Minimise the app, focus an unrelated application, idle, then restart Chrome and verify those periods are not counted. Repeat with a shortcut opened in a tab (it should continue to count normally).
+
+28. **Estimate questions (v2.6.3):** create an interruption that includes YouTube, then open the popup: the card must show the estimated minutes, the host and the last mode you chose. Answer "all study" and verify the charge is refunded and the extra credit repays debt first; answer "none" and verify the whole stretch is charged and debt appears if the balance cannot cover it; press *Keep half & half* and verify nothing changes. Check the audit export contains the question and the answer. Also verify the debt block page mentions the estimate while the question is unanswered.
 
 Record the result of each step, Chrome version and date before release.
 
@@ -173,3 +180,12 @@ The actual Chrome sync API and installation were not exercised during the earlie
 - `npm test`, `npm run build` and `CHROME_PATH=<chromium> npm run test:browser` pass (272 source tests + 15 browser tests). No live YouTube request or installed-extension end-to-end test was performed.
 
 Manual update check: reload EarnTime on `chrome://extensions`, refresh existing YouTube tabs, search for Shorts, open one from a study channel, swipe to a non-study channel and confirm the Productive/Unproductive behavior. Do not uninstall; reloading preserves local settings and balance.
+
+## Half-time estimate and Shorts trust regression checks (v2.6.3)
+
+Two user-reported problems drove this change: a half-productive site charged *entirely* as unproductive after an interruption (a debt the user could not correct), and a Shorts player that refused to play whenever the channel name could not be read.
+
+- The reconciliation split, the question records, the symmetric correction engine, the popup/block-page cards and the notifications are covered by unit tests (`halfReview`, `reconcile`, `commands`, `migrate`), simulated-browser flow tests (interruption → default split → answer → refund or re-charge → debt) and jsdom tests for the trust card. The estimate is derived from the same history visits as before; only the role of a history-sourced half-productive segment changed, so existing reconciliation windows, per-visit caps and day boundaries are unaffected.
+- Answering an estimate cannot be used as a bypass: it is free but strictly bounded by the estimated total, it changes only the days the estimate came from, and it is written to the ledger and the audit export.
+- The Shorts trust flow was added *after* the deeper readers: `test/dom/youtube.test.ts` pins that a prefetched reel, a cached watch-page owner and a cached search author can never qualify the active Short, that a non-study Short with a readable name is still covered, and that trust is per reel.
+- `npm test` (291 source tests) and `npm run build` pass. No live YouTube request or installed-extension end-to-end test was performed for this change, and the Chromium fixture suite was not re-run.

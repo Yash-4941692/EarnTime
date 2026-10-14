@@ -97,7 +97,7 @@ test('productive visits repay existing debt before growing the balance', () => {
   assert.equal(state.balanceMs, 0);
 });
 
-test('half-productive visits are charged as unproductive when their mode cannot be verified', () => {
+test('half-productive visits whose mode cannot be verified are split in half and asked about', () => {
   const state = freshState();
   state.balanceMs = 30 * MIN;
   const input: ReconcileInput = {
@@ -110,9 +110,70 @@ test('half-productive visits are charged as unproductive when their mode cannot 
     startupAt: null,
   };
   const { summary } = run(state, input);
-  assert.equal(summary.chargedMs, 10 * MIN);
+  // Half is treated as study (5 of 10 min at 60:5 credits 25 s), half is charged like before.
+  assert.equal(summary.chargedMs, 5 * MIN);
+  assert.equal(summary.productiveCreditMs, 25 * SEC);
+  assert.equal(state.balanceMs, 25 * MIN + 25 * SEC);
+  assert.deepEqual(summary.breakdown, [
+    { host: 'youtube.com', ms: 5 * MIN, kind: 'unproductive' },
+    { host: 'youtube.com', ms: 25 * SEC, kind: 'productive' },
+  ]);
+  assert.equal(state.halfReviews.length, 1, 'the stretch becomes a question');
+  const review = state.halfReviews[0];
+  assert.equal(review.host, 'youtube.com');
+  assert.equal(review.entry, 'youtube.com');
+  assert.equal(review.at, T0 + 10 * MIN);
+  assert.equal(review.from, T0);
+  assert.equal(review.to, T0 + 10 * MIN);
+  assert.equal(review.totalMs, 10 * MIN);
+  assert.equal(review.productiveMs, 5 * MIN, 'the default answer is half');
+  assert.equal(review.creditedMs, 25 * SEC);
+  assert.equal(review.chargedMs, 5 * MIN);
+  assert.deepEqual(review.parts, [{ day: '2026-10-08', ms: 10 * MIN }]);
+  assert.equal(review.lastMode, null);
+  assert.equal(review.resolvedAt, null);
+  // The day records the split, not a blanket charge.
+  const day = state.days['2026-10-08'];
+  assert.equal(day.halfProdMs, 5 * MIN);
+  assert.equal(day.halfUnprodMs, 5 * MIN);
+  assert.equal(day.unprodMs, 0);
+  assert.equal(day.earnedMs, 25 * SEC);
+});
+
+test('the mode verified for the page at the last checkpoint is not split again', () => {
+  const state = freshState();
+  state.balanceMs = 30 * MIN;
+  const input: ReconcileInput = {
+    from: T0,
+    to: T0 + 15 * MIN,
+    visits: [],
+    prevRole: { k: 'half', host: 'youtube.com', entry: 'youtube.com', mode: 'unproductive', degraded: false },
+    prevHost: 'youtube.com',
+    current: { counts: true, host: 'youtube.com' },
+    startupAt: null,
+  };
+  const { summary } = run(state, input);
+  assert.equal(summary.chargedMs, 15 * MIN, 'a chosen Unproductive Mode stays fully charged');
   assert.equal(summary.productiveCreditMs, 0);
-  assert.equal(state.balanceMs, 20 * MIN);
+  assert.equal(state.halfReviews.length, 0, 'nothing to ask: the mode was chosen before the gap');
+});
+
+test('a short estimated stretch is split without producing a question', () => {
+  const state = freshState();
+  state.balanceMs = 30 * MIN;
+  const input: ReconcileInput = {
+    from: T0,
+    to: T0 + 40 * SEC,
+    visits: [{ at: T0, host: 'youtube.com' }],
+    prevRole: null,
+    prevHost: null,
+    current: { counts: true, host: 'youtube.com' },
+    startupAt: null,
+  };
+  const { summary } = run(state, input);
+  assert.equal(summary.chargedMs, 20 * SEC);
+  assert.equal(summary.productiveCreditMs, 1667, '20 s of study credits 1.667 s at 60:5');
+  assert.equal(state.halfReviews.length, 0, 'below the question threshold the half/half default stands silently');
 });
 
 test('the page active at the start of the gap is attributed up to the continuation cap', () => {

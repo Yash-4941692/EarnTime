@@ -199,6 +199,25 @@ export function createController(opts: ControllerOptions): Controller {
     });
   }
 
+  /**
+   * Tells the user, once, about estimate questions a reconciliation just created: half-productive
+   * time EarnTime could not verify, already split half study / half unproductive, which they can
+   * correct in the popup.
+   */
+  async function notifyNewReviews(before: Set<number>, state: EarnState): Promise<void> {
+    const created = state.halfReviews.filter((review) => review.resolvedAt === null && !before.has(review.id));
+    if (created.length === 0) return;
+    const hosts = [...new Set(created.map((review) => review.entry))].slice(0, 3).join(', ');
+    const minutes = formatMinutes(created.reduce((sum, review) => sum + review.totalMs, 0));
+    await notify(
+      'Was that study time?',
+      `EarnTime estimated ${minutes} on ${hosts} while it was not running. Half already counts as study and half as unproductive. Open EarnTime to say how much was really study.`,
+    );
+  }
+
+  const unresolvedReviewIds = (state: EarnState): Set<number> =>
+    new Set(state.halfReviews.filter((review) => review.resolvedAt === null).map((review) => review.id));
+
   /** Brings accounting up to `now`. Runs history reconciliation first if the gap is too long to trust. */
   async function checkpoint(state: EarnState, now: number): Promise<void> {
     const obs = await observe(state, now, uiOpenAt !== null && now - uiOpenAt <= UI_OPEN_MS);
@@ -210,6 +229,7 @@ export function createController(opts: ControllerOptions): Controller {
     if (result.kind === 'reconcile') {
       const prev = state.last;
       const snapshot = makeSnapshot(state, obs);
+      const reviewsBefore = unresolvedReviewIds(state);
       const visits = await fetchVisits(state, result.from, result.to);
       const input: ReconcileInput = {
         from: result.from,
@@ -223,6 +243,7 @@ export function createController(opts: ControllerOptions): Controller {
       const plan = planReconcile(state, input);
       applyReconcile(state, plan, input, now);
       setLast(state, snapshot);
+      await notifyNewReviews(reviewsBefore, state);
     }
     if (state.last) state.live = liveFrom(state.last);
   }
@@ -255,10 +276,12 @@ export function createController(opts: ControllerOptions): Controller {
       current: { counts: countsForAccounting(snapshot.role), host: snapshot.host },
       startupAt: null, // Reconstruct entire day across browser and extension restarts
     };
+    const reviewsBefore = unresolvedReviewIds(state);
     const plan = planReconcile(state, input);
     const summary = applyReconcile(state, plan, input, now);
     setLast(state, snapshot);
     if (state.last) state.live = liveFrom(state.last);
+    await notifyNewReviews(reviewsBefore, state);
     return summary;
   }
 
@@ -383,8 +406,13 @@ export function createController(opts: ControllerOptions): Controller {
   async function finalize(state: EarnState, before: Flags, beforeJson: string, now: number): Promise<void> {
     const after = flagsOf(state);
     if (state.setupDone) {
+      const waiting = unresolvedReviewIds(state).size > 0;
+      const reviewHint = waiting ? ' Part of it is estimated half-productive time — open EarnTime to say how much was study.' : '';
       if (!before.debt && after.debt) {
-        await notify('Debt started', `You owe ${formatMinutes(state.debtMs)}. Only productive sites are open until you study it off.`);
+        await notify(
+          'Debt started',
+          `You owe ${formatMinutes(state.debtMs)}. Only productive sites are open until you study it off.${reviewHint}`,
+        );
       } else if (before.debt && !after.debt) {
         await notify('Debt cleared', 'Thanks for studying. Your debt is repaid and the normal limits apply again.');
       } else if (!before.exhausted && after.exhausted) {

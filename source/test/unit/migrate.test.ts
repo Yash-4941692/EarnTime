@@ -38,6 +38,45 @@ test('a schema-3 state that had WhatsApp stripped gets it back exactly once', ()
   assert.equal(afterRemoval.rules.half.includes('web.whatsapp.com'), false, 'never force-added again');
 });
 
+test('the schema-6 upgrade does not re-add WhatsApp or re-grant history to a schema-5 state', () => {
+  const v5 = {
+    schema: 5,
+    setupDone: true,
+    historyGranted: false,
+    historyScope: 'local' as const,
+    rules: { productive: ['khanacademy.org'], half: ['youtube.com'], unproductive: ['instagram.com'] },
+    balanceMs: 12 * MIN,
+    nextLedgerId: 1,
+    nextReviewId: 4,
+    halfReviews: [
+      {
+        id: 2,
+        at: T0,
+        host: 'youtube.com',
+        entry: 'youtube.com',
+        from: T0 - 5 * MIN,
+        to: T0,
+        totalMs: 5 * MIN,
+        productiveMs: 2.5 * MIN,
+        creditedMs: 12_500,
+        chargedMs: 2.5 * MIN,
+        parts: [{ day: '2026-10-08', ms: 5 * MIN }],
+        lastMode: 'productive',
+        resolvedAt: null,
+      },
+    ],
+  };
+
+  const state = sanitizeState(v5, T0 + 1);
+
+  assert.equal(state.schema, SCHEMA_VERSION, 'rewritten as the current schema');
+  assert.equal(state.rules.half.includes('web.whatsapp.com'), false, 'a schema-5 list is authoritative');
+  assert.equal(state.historyGranted, false, 'a stored screen-time answer wins from schema 5 on');
+  assert.equal(state.halfReviews.length, 1, 'the question survives the upgrade');
+  assert.equal(state.halfReviews[0].productiveMs, 2.5 * MIN);
+  assert.equal(state.nextReviewId, 4);
+});
+
 test('React prototype storage: balanceSeconds and blocked sites map to unproductive', () => {
   const raw = {
     wallet: { balanceSeconds: 600 },
@@ -181,8 +220,10 @@ test('loading a realistic v2.1.1 state preserves the wallet, core settings and t
 
   const state = sanitizeState(v211, T0 + 1);
 
-  assert.equal(SCHEMA_VERSION, 5);
-  assert.equal(state.schema, SCHEMA_VERSION, 'the old state is explicitly rewritten as schema 5');
+  assert.equal(SCHEMA_VERSION, 6);
+  assert.equal(state.schema, SCHEMA_VERSION, 'the old state is explicitly rewritten as the current schema');
+  assert.deepEqual(state.halfReviews, [], 'a state written before the estimate questions has none');
+  assert.equal(state.nextReviewId, 1);
   assert.equal(state.balanceMs, v211.balanceMs, 'exact balance survives');
   assert.deepEqual(
     state.days,

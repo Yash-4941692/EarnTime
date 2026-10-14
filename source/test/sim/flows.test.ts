@@ -233,6 +233,92 @@ test('disabling EarnTime for 40 minutes and re-enabling it creates debt from his
   assert.ok(b.dnr.size >= 2, 'debt rules are installed');
 });
 
+test('an interruption on a half-productive site is split half study / half unproductive and questioned', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 30 });
+  const { tabId } = await openedWindowWithTab(b, 'https://www.youtube.com/watch?v=start');
+  await b.runFor(30 * SEC); // a checkpoint is recorded before the user disables the extension
+
+  b.disableExtension();
+  for (let i = 0; i < 4; i++) {
+    await b.navigate(tabId, `https://www.youtube.com/watch?v=${i}`);
+    await b.runFor(10 * MIN);
+  }
+  await b.enableExtension();
+  await b.runFor(2 * MIN);
+
+  const s = b.storedState();
+  assert.equal(s.halfReviews.length, 1, 'the unverifiable stretch becomes one question');
+  const review = s.halfReviews[0];
+  assert.equal(review.host, 'www.youtube.com');
+  assert.equal(review.entry, 'youtube.com');
+  assert.equal(review.resolvedAt, null);
+  assert.ok(review.totalMs >= 30 * MIN, `estimated the gap (${review.totalMs / MIN} min)`);
+  assert.equal(review.productiveMs, Math.floor(review.totalMs / 2), 'the default answer is half');
+  assert.equal(review.chargedMs, review.totalMs - Math.floor(review.totalMs / 2));
+  assert.ok(review.parts.length === 1 && review.parts[0].day === '2026-10-08');
+
+  // Half of the estimate is charged as unproductive, half earns credit: 30 min − T/2 + creditFor(T/2).
+  near(
+    (s.balanceMs - (30 * MIN - review.totalMs / 2)) / SEC,
+    Math.round(((review.totalMs / 2) * 5) / 60) / SEC,
+    2,
+    'the balance reflects the half/half default',
+  );
+  assert.equal(s.debtMs, 0);
+  const day = s.days['2026-10-08'];
+  near(day.halfUnprodMs / MIN, review.totalMs / 2 / MIN, 0.01, 'half the estimate is in halfUnprodMs');
+  near(day.halfProdMs / MIN, review.totalMs / 2 / MIN, 0.01, 'and half in halfProdMs');
+  assert.ok(b.notifications.some((n) => n.title === 'Was that study time?'), 'the user is asked');
+  assert.equal(b.tabUrl(tabId).startsWith('https://www.youtube.com'), true, 'no debt, so nothing is blocked');
+});
+
+test('answering the estimate is free and re-prices the stretch in both directions', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 30 });
+  const { tabId } = await openedWindowWithTab(b, 'https://www.youtube.com/watch?v=start');
+  await b.runFor(30 * SEC);
+
+  b.disableExtension();
+  for (let i = 0; i < 4; i++) {
+    await b.navigate(tabId, `https://www.youtube.com/watch?v=${i}`);
+    await b.runFor(10 * MIN);
+  }
+  await b.enableExtension();
+  await b.runFor(2 * MIN);
+
+  const before = b.storedState();
+  const review = before.halfReviews[0];
+  const total = review.totalMs;
+
+  // "All of it was study": the charged half is refunded and the whole stretch earns credit.
+  const answered = await command(b, { type: 'review.set', id: review.id, productiveMs: total });
+  assert.equal(answered.ok, true, JSON.stringify(answered));
+  const after = b.storedState();
+  assert.equal(after.debtMs, 0);
+  // The refund gives the charged half back; the whole stretch now earns study credit.
+  near(after.balanceMs / SEC, 30 * 60 + Math.round((total * 5) / 60) / SEC, 3, 'the balance holds the whole credit');
+  assert.equal(after.halfReviews[0].resolvedAt !== null, true);
+  assert.equal(after.halfReviews[0].productiveMs, total);
+  near(after.days['2026-10-08'].halfProdMs / MIN, total / MIN, 0.01, 'the whole stretch is study now');
+  assert.equal(after.days['2026-10-08'].halfUnprodMs, 0);
+  assert.ok(after.ledger.some((e: { kind: string }) => e.kind === 'review'), 'the answer is audited');
+  assert.equal(after.settings.unlockCostMin, 10, 'answering is free');
+
+  // "None of it was study": the charge comes back and takes the credit with it.
+  const second = await command(b, { type: 'review.set', id: review.id, productiveMs: 0 });
+  assert.equal(second.ok, true, JSON.stringify(second));
+  const back = b.storedState();
+  // The whole estimate is charged now (not just half), the credit is gone, and the balance runs out.
+  assert.equal(back.balanceMs, 0, 'the balance is taken first');
+  assert.equal(back.debtMs, total - 30 * MIN, 'what the balance cannot cover becomes debt');
+  near(back.days['2026-10-08'].halfUnprodMs / MIN, total / MIN, 0.01, 'the whole stretch is charged now');
+  assert.equal(back.days['2026-10-08'].halfProdMs, 0);
+  assert.equal(back.halfReviews[0].productiveMs, 0);
+  assert.equal(back.halfReviews[0].chargedMs, total);
+  near(back.halfReviews[0].creditedMs, 0, 0.001, 'no credit is left for the stretch');
+});
+
 test('in debt only productive sites open; studying repays the debt and normal rules return', async () => {
   const b = newBrowser();
   await installAndSetup(b, { initialBalanceMin: 10 });
