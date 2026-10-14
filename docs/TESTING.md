@@ -1,14 +1,14 @@
 # Test report
 
-**Status: source logic and simulated flows verified; not yet exercised in real Chrome.** The complete source test command passed on 2026-10-10 (v2.4.2). The separate Playwright/Chromium suite and the manual extension checklist were not run because this environment has no Chromium binary.
+**Status: source logic, simulated flows and Chromium fixture tests verified on 2026-10-14.** The manual checklist with an installed Chrome extension and live YouTube has not been run.
 
-> `cd source && npm test` passes **223 tests**: 134 unit + 47 jsdom DOM + 42 simulated-browser flow tests. It includes the strict TypeScript check. The browser suite contains 12 tests but requires `CHROME_PATH`; those results are not included in the 219.
+> `cd source && npm test` passes **272 tests**: 144 unit + 73 jsdom DOM + 55 simulated-browser flow tests, plus the strict TypeScript check. The separate Playwright/Chromium suite passes **15 tests**. These browser fixtures run the built content script and real controller, not a real Chrome extension installation.
 
 ## Environment
 
 - Debian 12 sandbox, Node 22.22.3, npm 10.9.8, 2 CPU, no display.
 - Tests run with `TZ=Asia/Kolkata`. The simulated clock starts at 2026-10-08 09:00 local.
-- Browser tests use `playwright-core` and require a separately installed Chromium/Chrome binary. No compatible binary was available (`CHROME_PATH` unset, nothing on `PATH`).
+- Browser tests use `playwright-core` with Chromium 153.0.8010.0, supplied temporarily via `@sparticuz/chromium` in the ignored test-output directory. The binary and its libraries are not extension dependencies or release assets. Set `CHROME_PATH` to your own compatible binary when reproducing the tests.
 - Build and source: TypeScript 5.9 (strict), esbuild 0.25, React 18.3, Tailwind 3.4.
 
 ## Results
@@ -17,18 +17,18 @@
 | --- | --- | --- |
 | Type check (strict, `noUnusedLocals`) | `npm run typecheck` | **pass** |
 | Build (root artifacts) | `npm run build` | **pass** |
-| Unit tests | `npm run test:unit` | **134 / 134 pass** |
-| DOM tests (jsdom: load-time gate, page lifecycle, YouTube filter) | `npm run test:dom` | **47 / 47 pass** |
-| Flow tests (simulated browser) | `npm run test:sim` | **42 / 42 pass** |
-| Complete source suite | `npm test` | **223 / 223 pass**, including type check |
-| Browser tests (Playwright + Chromium) | `npm run test:browser` | **12 available; not run** |
+| Unit tests | `npm run test:unit` | **144 / 144 pass** |
+| DOM tests (jsdom: load-time gate, page lifecycle, YouTube filter) | `npm run test:dom` | **73 / 73 pass** |
+| Flow tests (simulated browser) | `npm run test:sim` | **55 / 55 pass** |
+| Complete source suite | `npm test` | **272 / 272 pass**, including type check |
+| Browser tests (Playwright + Chromium) | `npm run test:browser` | **15 / 15 pass** |
 | Real Chrome extension end-to-end | manual checklist below | **not run** |
 
 The release build is verified separately with `npm run build`; browser-specific behaviours still need a real Chrome profile before relying on them.
 
 ## What each suite covers
 
-### Unit tests (`source/test/unit`, 134)
+### Unit tests (`source/test/unit`, 144)
 
 - **Host handling:** input normalisation, subdomain matching, most-specific entry wins, strictest list wins on ties, and list de-duplication.
 - **Time and accounting:** local day keys, splitting at midnight, formatting, the 60:5 earning example, unproductive spending, idle/background/internal pages, audible media, clock changes, checkpoints, and reconciliation boundaries.
@@ -41,7 +41,7 @@ The release build is verified separately with `npm run build`; browser-specific 
 - **Worker-free page verdict (`src/content/local.ts`):** rule narrowing to the shared `DirectiveInput` shape, half-site chooser verdicts, productive/unproductive/neutral verdicts, the 30-second gate-cache TTL, the 100-entry cache limit, and cache read/write failure being non-fatal.
 - **Invariants:** 25 seeded random sequences (200 steps each) keep balance and debt non-negative and conserve value; a ledger-size limit test.
 
-### DOM tests (`source/test/dom`, 47)
+### DOM tests (`source/test/dom`, 73)
 
 **Load-time gate (`gate.test.ts`) and page lifecycle (`page.test.ts`)** run the real content-script code against jsdom with injected globals and a virtual clock:
 
@@ -55,18 +55,20 @@ The release build is verified separately with `npm run build`; browser-specific 
 
 **YouTube filter tests** exercise the real `src/content/youtube.ts` against jsdom YouTube fixture layouts:
 
-- search results stay visible, while Shorts shelves remain hidden;
+- all search results stay visible, including classic and modern Shorts shelves, cards and links;
 - channel and playlist pages stay open for browsing whatever their owner is, including an owner EarnTime cannot read, and videos the homepage had hidden are shown again on arrival;
 - playback on a channel or playlist page whose owner is non-matching or unreadable is covered and paused, *Keep browsing* clears that cover, and pressing play again is refused again;
 - a playback refusal belongs to its page (navigating to another channel opens it), and playlist titles alone cannot qualify an unrelated owner;
 - navigating from a browsed channel to a non-matching video still closes that video;
-- the homepage shows no videos; Shorts, unsupported sections, and non-matching watch pages report deliberate covers;
+- the homepage shows no videos; non-study Shorts, unsupported sections, and non-matching watch pages report deliberate covers;
 - deliberate covers pause media where applicable and report a healthy `covered` status;
 - matching watch pages remain usable while the related shelf stays hidden;
 - an absent page layout waits through the grace period, then fails closed and reports unhealthy; a layout appearing during the grace period is not treated as failure;
-- stopping the filter disconnects its observer.
+- stopping the filter disconnects its observer, clears its cover and restores its own display overrides;
+- a Shorts player remains visible through cached homepage navigation, author hydration and existing-session startup before `<html>` exists;
+- only the active reel can qualify Shorts playback, and a new reel requires a new collaboration trust decision.
 
-### Flow tests on a simulated browser (`source/test/sim`, 42)
+### Flow tests on a simulated browser (`source/test/sim`, 55)
 
 The simulator (`test/sim/fakeBrowser.ts`) exposes a Chrome-shaped object and runs the real Chrome adapter, event wiring and controller. Time is virtual. It models tabs and normal/popup/app/devtools windows, focus, minimise, idle with a 15-second detection interval, audible tabs, history, declarativeNetRequest rules, service-worker suspension and restart, extension disable and enable, browser restart, wall-clock changes, and incognito gating. It does not model Chrome's own internals.
 
@@ -76,9 +78,9 @@ The v2.4.0 scenarios add: gate-cache publication for half-classified tabs (first
 
 The simulator also models two behaviours Chrome has and earlier versions of the harness did not: `windows.getLastFocused` stops reporting the browser window as focused while a popup is open, and `enableExtension()` re-fires `onInstalled` so permissions are re-read from Chrome rather than trusted from storage.
 
-### Browser tests (`source/test/browser`, 12 available)
+### Browser tests (`source/test/browser`, 15)
 
-The Playwright harness builds the extension pages and content script, serves fixture pages for YouTube, and injects a simulated-browser/controller harness. It covers popup, settings, setup, mode chooser and cover presentation. It does **not** load the extension into Chrome and does not replace the real-browser checks below. The current suite was not run because no Chromium executable was available.
+The Playwright harness builds the extension pages and content script, serves fixture pages for YouTube, and injects a simulated-browser/controller harness. It covers popup, settings, setup, mode chooser and cover presentation. It does **not** load the extension into Chrome and does not replace the real-browser checks below. The suite now checks visible Shorts links, click-through to a player receiving real canvas-stream video frames, non-study swipe/pausing, mode changes, covered-time reporting and usable blocking-card actions. The harness accepts the array storage keys used by real content scripts; stale setup-step and rule-cost expectations have also been updated.
 
 ## Regression checks added for this change (v2.4.2)
 
@@ -107,7 +109,7 @@ These supersede the v2.4.1 checks, which covered a channel or playlist page whos
 
 ## Real-browser gap
 
-The automated source tests passed, but the browser suite and manual checklist were not run. The fixture-based Playwright harness is not a Chrome extension runtime. The following require a real Chrome profile:
+The automated source and fixture-browser tests passed, but the installed-extension manual checklist was not run. The fixture-based Playwright harness is not a Chrome extension runtime. The following require a real Chrome profile:
 
 - `chrome.permissions.request` from the setup page (needs a real user gesture) and revoking `history` from `chrome://extensions`;
 - `chrome.storage.session` availability and lifetime across worker restarts;
@@ -132,7 +134,7 @@ Use a dedicated Chrome profile. EarnTime redirects `chrome://extensions`, so rel
 9. **Known bypass:** remove EarnTime from Chrome using the toolbar menu; confirm the documented limitation.
 10. **Interruption and debt:** in a test profile with 10 minutes, leave Instagram active and interrupt Chrome for 40 minutes. Check the reconciliation audit entry, debt explanation, and blocking (noting the per-visit cap).
 11. **Debt repayment:** verify only productive sites open while in debt; productive time should repay debt before growing the balance.
-12. **YouTube:** choose Productive Mode. Verify study search and homepage shortcuts; open any channel and any playlist without starting a video and confirm both stay browsable; confirm Shorts are covered. Play a video from a channel that does not match, and one whose owner cannot be read, and verify the playback is refused and paused and that *Keep browsing* returns the page. Covers should not change charged or credited totals. Verify Unproductive Mode is unavailable at zero balance.
+12. **YouTube:** choose Productive Mode. Verify study search and homepage shortcuts; open any channel and any playlist without starting a video and confirm both stay browsable; confirm study-channel Shorts play visibly, Shorts shelves and links stay visible in search, and non-study Shorts are covered and paused. Swipe between study and non-study Shorts and check that each active author is rechecked. Play a video from a channel that does not match, and one whose owner cannot be read, and verify the playback is refused and paused and that *Keep browsing* returns the page. Covers should not change charged or credited totals. Verify Unproductive Mode is unavailable at zero balance.
 13. **Incognito:** with incognito access off, activity should not count; allow EarnTime in incognito and verify it does.
 14. **Clock change:** move the system clock backwards while a tracked page is active. Usage must not be erased; inspect the clock ledger entry.
 15. **Notifications:** verify the notifications for reaching zero and entering debt.
@@ -158,4 +160,16 @@ Record the result of each step, Chrome version and date before release.
 
 New checks cover local versus synced visits (including mixed visits to the same URL and unknown sources), opt-in all-device history and persistence, excluding synced visits during interruptions, 20 minutes of `arena.ai` use against a 10-minute balance, immediate badge/notification/open-tab/DNR enforcement, exact-balance exhaustion, per-host billing across live/history accounting, remove/re-add/move idempotence, subdomain exceptions, migration and local-day boundaries.
 
-The actual Chrome sync API and installation were not exercised in this environment; no Chromium binary was available. Manual checks: reload the unpacked extension, verify **Settings → Analytics → Devices used for history estimates**, compare local and synced visits on a signed-in profile, and add a previously neutral site after its recorded use exceeds the remaining balance. Confirm the existing tab is redirected and productive sites remain available for repayment.
+The actual Chrome sync API and installation were not exercised during the earlier v2.6.1 verification; no Chromium binary was available for that run. Manual checks: reload the unpacked extension, verify **Settings → Analytics → Devices used for history estimates**, compare local and synced visits on a signed-in profile, and add a previously neutral site after its recorded use exceeds the remaining balance. Confirm the existing tab is redirected and productive sites remain available for repayment.
+
+
+## Shorts visibility regression checks (2026-10-14)
+
+- Reproduced missing search Shorts and blank allowed players with failing ancestor-visibility tests before the fix.
+- Homepage-only hiding is reversed for cached search/player DOM and when switching mode or disabling EarnTime. Original display values, CSS priority and YouTube's own hidden elements are preserved.
+- Shorts author checks exclude prefetched reels and cached search/watch metadata. Active-flag changes and in-place channel-text hydration trigger rescans; collaboration trust is reset for a new reel, even before the URL changes.
+- A selected Productive Mode session can start at `document_start` without a document element. The observer attaches to the document and handles later parser output without throwing.
+- Chromium tests confirm that search links can be clicked, allowed players receive and display video frames, blocked media is paused, *Study search* is clickable, and switching to Unproductive Mode clears the old cover and allows non-study playback.
+- `npm test`, `npm run build` and `CHROME_PATH=<chromium> npm run test:browser` pass (272 source tests + 15 browser tests). No live YouTube request or installed-extension end-to-end test was performed.
+
+Manual update check: reload EarnTime on `chrome://extensions`, refresh existing YouTube tabs, search for Shorts, open one from a study channel, swipe to a non-study channel and confirm the Productive/Unproductive behavior. Do not uninstall; reloading preserves local settings and balance.

@@ -6,8 +6,8 @@
 const CSS = `
 :host { all: initial; }
 * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-.et-backdrop { position: fixed; inset: 0; z-index: 2147483646; background: rgba(2, 6, 23, 0.82); display: flex; align-items: center; justify-content: center; padding: 24px; color: #e2e8f0; }
-.et-cover { position: fixed; inset: 0; z-index: 2147483645; background: #020617; color: #e2e8f0; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.et-backdrop { pointer-events: auto; position: fixed; inset: 0; z-index: 2147483646; background: rgba(2, 6, 23, 0.82); display: flex; align-items: center; justify-content: center; padding: 24px; color: #e2e8f0; }
+.et-cover { pointer-events: auto; position: fixed; inset: 0; z-index: 2147483645; background: #020617; color: #e2e8f0; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .et-card { width: min(440px, 100%); background: #0f172a; border: 1px solid #1e293b; border-radius: 18px; padding: 24px; box-shadow: 0 24px 60px rgba(0,0,0,.45); }
 .et-eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #64748b; font-weight: 700; margin: 0 0 8px; }
 .et-title { font-size: 20px; font-weight: 700; margin: 0 0 8px; color: #f8fafc; }
@@ -107,7 +107,7 @@ export function chooserCard(opts: {
     class: 'et-option productive',
     type: 'button',
     attrs: { 'data-et-mode': 'productive' },
-  }, el('strong', {}, 'Productive Mode'), el('span', {}, 'Your time earns screen time at your ratio. On YouTube, study searches, keyword-matched channels/playlists, and their videos are open.'));
+  }, el('strong', {}, 'Productive Mode'), el('span', {}, 'Your time earns screen time at your ratio. On YouTube, search results and channel/playlist pages stay visible. Video and Shorts playback must match your study keywords.'));
   const unavailableText =
     opts.reason === 'debt'
       ? 'Locked while you are in debt mode. Study to repay first.'

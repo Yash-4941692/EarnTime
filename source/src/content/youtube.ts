@@ -18,9 +18,8 @@
  *
  * Shorts support: Shorts are mode-aware. In Productive Mode a Short is allowed only when its
  * channel (or any collaborator) matches the study keywords; otherwise it is covered and paused.
- * The channel's Shorts tab (/@handle/shorts) remains browsable — the cover only appears when
- * a non-study Short actually starts playing. In Unproductive Mode (no YouTube filter) Shorts
- * play unrestricted. This satisfies the user request to "watch shorts too, considering modes".
+ * Search Shorts and the channel's Shorts tab (/@handle/shorts) remain browsable — only playback
+ * is checked. In Unproductive Mode (no YouTube filter) Shorts play unrestricted.
  */
 
 import { anyChannelAllowed, youtubePageKind } from '../core/matchers';
@@ -40,13 +39,21 @@ const ITEM_SELECTOR = [
   'yt-lockup-view-model',
 ].join(',');
 
-const ALWAYS_HIDDEN = [
+/** Shorts are hidden only as homepage recommendations, never as search results or a player. */
+const HOME_SHORTS = [
   'ytd-reel-shelf-renderer',
   'ytd-rich-shelf-renderer',
   'ytd-shorts',
-  'ytd-merch-shelf-renderer',
   'ytd-reel-video-renderer',
+  'ytd-reel-item-renderer',
+  'ytm-shorts-lockup-view-model',
+  'ytm-shorts-lockup-view-model-v2',
   'a[href^="/shorts"]',
+].join(',');
+
+/** Distractions hidden in Productive Mode without hiding the content being browsed or played. */
+const DISTRACTIONS_HIDDEN = [
+  'ytd-merch-shelf-renderer',
   '#related',
   'ytd-watch-next-secondary-results-renderer',
 ].join(',');
@@ -130,6 +137,9 @@ const PLAYLIST_CHANNEL_SELECTORS = [
 
 /** Shorts channel selectors — Shorts uses reel renderers and a channel bar, not the watch owner. */
 const SHORTS_CHANNEL_SELECTORS = [
+  // These are evaluated inside the active reel, not its prefetched neighbours.
+  'ytd-channel-name a',
+  '#channel-name a',
   // Classic Shorts overlay
   'ytd-reel-player-overlay-renderer ytd-channel-name a',
   'ytd-reel-player-overlay-renderer #channel-name a',
@@ -209,7 +219,7 @@ export function isCollaborationDetected(scope: ParentNode = document): boolean {
     }
     // Text heuristic: "and 2 more" inside owner area
     const owner = scope.querySelector('#owner') ?? scope.querySelector('ytd-video-owner-renderer') ?? scope.querySelector('ytd-watch-metadata');
-    const text = (owner?.textContent ?? scope instanceof Document ? (scope as Document).documentElement.textContent : '') ?? '';
+    const text = owner?.textContent ?? scope.querySelector('html')?.textContent ?? (scope as Node).textContent ?? '';
     if (/and \d+ more/i.test(text)) return true;
   } catch {
     return false;
@@ -340,82 +350,43 @@ function getBrowsingChannelNames(kind: 'channel' | 'playlist'): string[] {
   return [...merged, ...extra];
 }
 
-/** Shorts-specific: reads channel names from the active reel and shorts containers, plus Collaboration. */
-function getShortsChannelNames(): string[] {
-  const merged: string[] = [];
+/** Only the active Short can qualify playback; YouTube keeps neighbouring reels prefetched. */
+function getShortsChannels(): { names: string[]; collab: boolean; reel: Element | null } {
+  const reel = document.querySelector('ytd-reel-video-renderer[is-active]');
+  const hasReels = Boolean(document.querySelector('ytd-reel-video-renderer'));
+  // If reels exist but none is active yet, do not accidentally authorise a prefetched Short.
+  const scope = reel ?? (hasReels ? null :
+    document.querySelector('ytd-shorts') ??
+    document.querySelector('#shorts-inner-container') ??
+    document.querySelector('#shorts-player') ??
+    document.querySelector('ytd-reel-player-overlay-renderer') ??
+    document.querySelector('yt-reel-channel-bar-view-model'));
+  const names = scope ? readAllChannelNames(scope, [...SHORTS_CHANNEL_SELECTORS, ...COLLAB_CHANNEL_SELECTORS, ...WATCH_CHANNEL_SELECTORS]) : [];
+  let collab = scope ? isCollaborationDetected(scope) : false;
+
+  // YouTube can mount the current collaboration list outside the reel. Keep supporting it, but
+  // never import collaborators from another reel or a cached watch page.
+  if (scope) {
+    for (const container of document.querySelectorAll('[aria-label="Collaboration channels"]')) {
+      if (container.closest('ytd-reel-video-renderer, ytd-watch-flexy, ytd-watch-metadata')) continue;
+      collab = true;
+      names.push(...readAllChannelNames(container, ['a', '#channel-name']));
+    }
+  }
+
   const seen = new Set<string>();
-  const allSelectors = [...SHORTS_CHANNEL_SELECTORS, ...COLLAB_CHANNEL_SELECTORS];
-  // Active reel has highest priority — YouTube stacks 3 reels, only one is-active
-  const activeReel = document.querySelector('ytd-reel-video-renderer[is-active]') as ParentNode | null;
-  if (activeReel) {
-    const activeNames = readAllChannelNames(activeReel, allSelectors);
-    for (const n of activeNames) {
-      const k = n.toLowerCase();
-      if (!seen.has(k)) {
-        seen.add(k);
-        merged.push(n);
-      }
-    }
-    // Also check global collab container even if not inside active reel
-    const collabNames = readAllChannelNames(document, COLLAB_CHANNEL_SELECTORS);
-    for (const n of collabNames) {
-      const k = n.toLowerCase();
-      if (!seen.has(k)) {
-        seen.add(k);
-        merged.push(n);
-      }
-    }
-  }
-  // Shorts player container fallback
-  const shortsContainers: ParentNode[] = [
-    document.querySelector('#shorts-player'),
-    document.querySelector('ytd-shorts'),
-    document.querySelector('#shorts-inner-container'),
-    document,
-  ].filter(Boolean) as ParentNode[];
-  for (const container of shortsContainers) {
-    const names = readAllChannelNames(container, allSelectors);
-    for (const n of names) {
-      const k = n.toLowerCase();
-      if (!seen.has(k)) {
-        seen.add(k);
-        merged.push(n);
-      }
-    }
-  }
-  // Channel header for browsing the Shorts tab of a channel (e.g. /@jee/shorts)
-  const headerNames = readAllChannelNames(document, CHANNEL_PAGE_SELECTORS);
-  for (const n of headerNames) {
-    const k = n.toLowerCase();
-    if (!seen.has(k)) {
-      seen.add(k);
+  const merged: string[] = [];
+  for (const name of names) {
+    const parts = [name, ...name.split(/\s+(?:and|&|\+|·|•)\s+/i)];
+    for (const part of parts) {
+      const n = part.trim();
+      const key = n.toLowerCase();
+      if (!n || n.length > 80 || seen.has(key)) continue;
+      seen.add(key);
       merged.push(n);
     }
   }
-  // Final fallback to watch selectors (layout sometimes reuses owner)
-  const watchNames = readAllChannelNames(document, WATCH_CHANNEL_SELECTORS);
-  for (const n of watchNames) {
-    const k = n.toLowerCase();
-    if (!seen.has(k)) {
-      seen.add(k);
-      merged.push(n);
-    }
-  }
-  // Also split concatenated like "A and B"
-  const splits: string[] = [];
-  for (const name of [...merged]) {
-    const parts = name.split(/\s+(?:and|&|\+|·|•)\s+/i).map((s) => s.trim()).filter(Boolean);
-    if (parts.length > 1) {
-      for (const p of parts) {
-        const k = p.toLowerCase();
-        if (!seen.has(k) && p.length > 1 && p.length <= 80) {
-          seen.add(k);
-          splits.push(p);
-        }
-      }
-    }
-  }
-  return [...merged, ...splits];
+  return { names: merged, collab, reel };
 }
 
 export interface YouTubeOptions {
@@ -466,6 +437,7 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
   let collabTrustPage: string | null = null;
   /** Page key of the last scan, so a navigation can drop the previous page's playback refusal. */
   let lastPage = '';
+  let lastShortsReel: Element | null = null;
 
   const studySearch = (query?: string) => {
     location.assign(query ? `/results?search_query=${encodeURIComponent(query)}` : '/results');
@@ -515,36 +487,46 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
       actions: [{ label: 'Back', onClick: opts.leave, secondary: true }],
     });
 
+  // YouTube reuses DOM across routes. Remember exactly what we changed so navigating away from
+  // Home (or leaving Productive Mode) restores players/cards without overriding YouTube's hiding.
+  const hiddenNodes = new Map<HTMLElement, { display: string; priority: string; marker: string | undefined }>();
+
   const hideNode = (node: HTMLElement) => {
+    const previous = hiddenNodes.get(node);
+    // If YouTube changed its inline display while hidden, preserve that newer value on restore.
+    if (!previous || node.style.display !== 'none' || node.style.getPropertyPriority('display') !== 'important') {
+      hiddenNodes.set(node, {
+        display: node.style.getPropertyValue('display'),
+        priority: node.style.getPropertyPriority('display'),
+        marker: previous ? previous.marker : node.dataset.etHidden,
+      });
+    }
     node.dataset.etHidden = '1';
     node.style.setProperty('display', 'none', 'important');
   };
 
   const showNode = (node: HTMLElement) => {
-    if (node.dataset.etHidden === '1') {
-      node.dataset.etHidden = '';
-      node.style.removeProperty('display');
+    const previous = hiddenNodes.get(node);
+    if (!previous) return;
+    // Restore only our own override, not a newer display value set by YouTube.
+    if (node.style.display === 'none' && node.style.getPropertyPriority('display') === 'important') {
+      if (previous.display) node.style.setProperty('display', previous.display, previous.priority);
+      else node.style.removeProperty('display');
     }
+    if (previous.marker === undefined) delete node.dataset.etHidden;
+    else node.dataset.etHidden = previous.marker;
+    hiddenNodes.delete(node);
   };
 
-  const hideAlwaysHidden = () => {
-    for (const node of document.querySelectorAll<HTMLElement>(ALWAYS_HIDDEN)) hideNode(node);
-  };
-
-  /** Homepage: no cover, no banner over the page — simply no videos at all. */
-  const hideHomeFeed = () => {
-    hideAlwaysHidden();
-    for (const node of document.querySelectorAll<HTMLElement>(`${ITEM_SELECTOR}, ${HOME_HIDDEN}`)) hideNode(node);
-  };
-
-  /**
-   * Search results, channel pages and playlist pages are all browsable in full — even content from
-   * an unmatched or unreadable channel. Anything an earlier page (the homepage) hid is shown again.
-   */
-  const showBrowsables = () => {
-    for (const node of document.querySelectorAll<HTMLElement>(HOME_HIDDEN)) showNode(node);
-    for (const node of document.querySelectorAll<HTMLElement>(ITEM_SELECTOR)) showNode(node);
-    hideAlwaysHidden();
+  const updateVisibility = (home: boolean) => {
+    const selector = home
+      ? `${DISTRACTIONS_HIDDEN},${HOME_HIDDEN},${HOME_SHORTS},${ITEM_SELECTOR}`
+      : DISTRACTIONS_HIDDEN;
+    for (const node of hiddenNodes.keys()) {
+      // Restore detached nodes too, so cached/recycled elements do not retain our old styles.
+      if (!node.isConnected || !node.matches(selector)) showNode(node);
+    }
+    for (const node of document.querySelectorAll<HTMLElement>(selector)) hideNode(node);
   };
 
   let healthDetail: string | undefined;
@@ -566,8 +548,6 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
    * Collab-aware: any visible channel name on the page may satisfy the keywords.
    */
   const checkBrowsingPage = (kind: 'channel' | 'playlist', page: string) => {
-    showBrowsables();
-
     if (!hasPlayingMedia() && playbackRefused !== page) {
       setHealthy(true);
       clearCover();
@@ -647,25 +627,30 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
       return;
     }
 
+    updateVisibility(kind === 'home');
+
     if (kind === 'home') {
       // Not a blocking banner: the page itself stays usable, it just contains no videos.
       setHealthy(true);
       clearCover();
-      hideHomeFeed();
       return;
     }
     if (kind === 'shorts') {
       // Shorts are now mode-aware: study Shorts (channel matches keywords) are allowed,
       // everything else remains covered. Channel Shorts tabs are browsable; playback is checked.
-      hideAlwaysHidden();
-      const names = getShortsChannelNames();
-      const collab = isCollaborationDetected();
+      const shorts = getShortsChannels();
+      if (shorts.reel !== lastShortsReel) {
+        lastShortsReel = shorts.reel;
+        playbackRefused = null;
+        collabTrustPage = null;
+      }
       const isChannelTab = /^\/(@[^/]+\/shorts|channel\/[^/]+\/shorts|c\/[^/]+\/shorts|user\/[^/]+\/shorts)(\/|$)/i.test(
         location.pathname.toLowerCase(),
       );
+      const names = isChannelTab && !shorts.reel ? getBrowsingChannelNames('channel') : shorts.names;
+      const collab = isChannelTab && !shorts.reel ? isCollaborationDetected() : shorts.collab;
       // Channel Shorts tab: browsing the grid is allowed, playback is gated
       if (isChannelTab) {
-        showBrowsables();
         if (!hasPlayingMedia() && playbackRefused !== page && collabTrustPage !== page) {
           // No playback yet — let the user browse
           if (names.length === 0 && collab) {
@@ -695,13 +680,6 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
         setHealthy(true, 'collab-trust');
         setCover(`shorts:collab-trust:${page}`, () => trustCollabCover(names, page));
         pauseMedia();
-        return;
-      }
-      // Channel tab without playback — keep browsable even if channel doesn't match
-      if (isChannelTab && !hasPlayingMedia()) {
-        // Keep the shelf visible but don't cover the whole tab; playback will be refused when it starts
-        setHealthy(true);
-        clearCover();
         return;
       }
       const display = names.length > 0 ? names.slice(0, 3).map((n) => `"${n}"`).join(', ') : null;
@@ -746,13 +724,11 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
     if (kind === 'search') {
       setHealthy(true);
       clearCover();
-      showBrowsables();
       return;
     }
     // Watch page: the channel is read from the page itself the moment the video plays. Unknown
     // channel = closed (fail closed), but Collaboration videos are checked for ANY collaborator and
     // fall back to trust if the layout exposes a Collaboration but no name can be parsed.
-    hideAlwaysHidden();
     const names = getWatchChannelNames();
     const collab = isCollaborationDetected();
     if (anyChannelAllowed(names, opts.keywords)) {
@@ -817,7 +793,16 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
   };
 
   const observer = new MutationObserver(schedule);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  // An existing Productive Mode session can start at document_start, before <html> exists.
+  observer.observe(document, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: true,
+    // A swipe can change only the active flag; author metadata may hydrate in place. Do not
+    // observe our own style/data-et-hidden writes, which would create a scan feedback loop.
+    attributeFilter: ['is-active', 'href'],
+  });
   document.addEventListener('yt-navigate-finish', schedule);
   document.addEventListener('play', onMediaPlay, true);
   const interval = window.setInterval(schedule, 2000);
@@ -831,6 +816,8 @@ export function startYouTubeFilter(opts: YouTubeOptions): YouTubeFilter {
       if (scheduled !== null) window.clearTimeout(scheduled);
       document.removeEventListener('yt-navigate-finish', schedule);
       document.removeEventListener('play', onMediaPlay, true);
+      for (const node of hiddenNodes.keys()) showNode(node);
+      clearCover();
     },
     health: () => (healthDetail === undefined ? { ok: healthy } : { ok: healthy, detail: healthDetail }),
   };

@@ -1,17 +1,20 @@
-# EarnTime 2.6.1
+# EarnTime 2.6.2
 
-## Device-source control and same-day debt enforcement
+## YouTube Shorts search and playback fixes
 
-- History imports now default to **This device only**, excluding synced and unknown-source visits. Choose **All devices with synced Chrome history** in **Settings → Analytics → Devices used for history estimates** if desired.
-- Chrome exposes local versus synced visits, not the identities of individual remote devices. A named remote-device picker is therefore not supported. Live tracking always remains local.
-- Adding or moving a website to **Unproductive** now charges its recorded use earlier today. With 20 recorded minutes on `arena.ai` and 10 minutes available, EarnTime immediately creates 10 minutes of debt, updates the badge, blocks the open tab and enforces navigation restrictions.
-- Per-host billing prevents repeat charges when removing, re-adding or moving sites. More-specific site rules and local-day boundaries are respected.
-- Existing balances and debt are preserved. Changing the history source affects future imports only and does not undo prior accounting.
+- **Shorts show up in search again.** Classic and modern Shorts shelves, cards and links stay visible in search results and on channel pages.
+- **Allowed Shorts have a visible player.** The homepage-only hiding rules no longer hide the Shorts player or its reel after playback is allowed. Cached content is restored on navigation, mode changes and extension shutdown, while preserving YouTube's own display settings.
+- **Modes still apply.** In Productive Mode, the active Short's channel or a credited collaborator must match a study keyword. Non-study or unreadable Shorts are covered and paused. In Unproductive Mode, Shorts remain unrestricted.
+- Only the active reel can qualify playback; prefetched study Shorts cannot authorise a different non-study Short. Active-reel and author-text changes trigger fresh checks, and collaboration trust is reset for a new reel.
+- Returning in an existing Productive Mode session no longer crashes when the content script starts before the page's HTML exists. Blocking-card buttons remain clickable after the load-time gate opens.
+- Existing settings, balances, history-source preferences and debt accounting are preserved.
 
 ## Verification
 
-TypeScript checking, **256 tests** (144 unit, 58 DOM, 54 simulated-browser) and the production build pass. Real Chrome sync and installation behavior were not tested in the development environment; see `docs/TESTING.md` for manual checks.
+Strict TypeScript checking, **272 source tests** (144 unit, 73 DOM, 55 simulated-browser), **15 Chromium fixture/browser tests**, and the production build pass. Browser fixtures verify visible video frames, non-study playback pausing, mode changes and clickable blocking-card actions. Live YouTube and a real installed Chrome extension still require manual verification; see `docs/TESTING.md`.
 
 ## Install or update
 
-Download `EarnTime-2.6.1.zip`, extract it, and load the folder containing `manifest.json` via Chrome's **Load unpacked** option. For an existing unpacked installation, replace its files with the extracted release and reload the extension to retain its local data. Do not uninstall if you want to keep your existing data.
+Download **EarnTime-2.6.2.zip**, extract it, and select the folder containing `manifest.json` via Chrome's **Load unpacked** option.
+
+For an existing unpacked installation, replace its files with the extracted release, click **Reload** for EarnTime at `chrome://extensions`, then refresh existing YouTube tabs so they load the updated content script. **Do not uninstall** if you want to keep your settings and balance.

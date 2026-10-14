@@ -93,19 +93,32 @@ function searchPage(items = ''): string {
   return `<ytd-app><div id="contents">${items}</div></ytd-app>`;
 }
 
+/** A player/card is not visible if any of its ancestors was hidden by the filter. */
+function assertVisible(h: Harness, selector: string): void {
+  let node = h.dom.window.document.querySelector<HTMLElement>(selector);
+  assert.ok(node, `${selector} exists`);
+  for (; node; node = node.parentElement) {
+    const style = h.dom.window.getComputedStyle(node);
+    assert.notEqual(style.display, 'none', `${selector}: ${node.tagName} must not be display:none`);
+    assert.notEqual(style.visibility, 'hidden', `${selector}: ${node.tagName} must not be hidden`);
+  }
+}
+
 function video(id: string, channel: string | null): string {
   return `<ytd-video-renderer id="${id}">${channel === null ? '' : `<ytd-channel-name><a>${channel}</a></ytd-channel-name>`}<a id="title">video</a></ytd-video-renderer>`;
 }
 
-test('search keeps every result visible — even unproductive channels — and only hides Shorts', () => {
-  const h = makeYouTube('/results', searchPage(`${video('study', 'JEE Physics Academy')}${video('random', 'Random Vlogs')}${video('nameless', null)}<ytd-reel-shelf-renderer id="shorts">Shorts</ytd-reel-shelf-renderer>`));
+test('search keeps every result visible, including Shorts from any channel', () => {
+  const h = makeYouTube('/results', searchPage(`${video('study', 'JEE Physics Academy')}${video('random', 'Random Vlogs')}${video('nameless', null)}<ytd-reel-shelf-renderer id="shorts"><ytd-reel-item-renderer><a id="short-link" href="/shorts/abc">Shorts</a></ytd-reel-item-renderer></ytd-reel-shelf-renderer><ytd-rich-shelf-renderer id="modern-shorts"><ytm-shorts-lockup-view-model><a href="/shorts/xyz">More Shorts</a></ytm-shorts-lockup-view-model></ytd-rich-shelf-renderer>`));
   const run = start(h);
   try {
     const doc = h.dom.window.document;
     assert.notEqual((doc.querySelector('#study') as HTMLElement).style.display, 'none');
     assert.notEqual((doc.querySelector('#random') as HTMLElement).style.display, 'none', 'unproductive-channel results stay in search');
     assert.notEqual((doc.querySelector('#nameless') as HTMLElement).style.display, 'none', 'unreadable-channel results stay in search; they are judged at play time');
-    assert.equal((doc.querySelector('#shorts') as HTMLElement).style.display, 'none');
+    assertVisible(h, '#shorts');
+    assertVisible(h, '#short-link');
+    assertVisible(h, '#modern-shorts a');
     assert.deepEqual(run.filter.health(), { ok: true });
   } finally {
     run.cleanup();
@@ -121,10 +134,11 @@ test('dynamically added search results appear without any channel filtering', as
     assert.notEqual(item.style.display, 'none', 'an unproductive channel result is not hidden');
     const added = doc.createElement('ytd-video-renderer');
     added.id = 'later';
-    added.innerHTML = '<ytd-channel-name><a>Random Vlogs</a></ytd-channel-name>';
+    added.innerHTML = '<ytd-channel-name><a>Random Vlogs</a></ytd-channel-name><ytd-reel-shelf-renderer><a id="later-short" href="/shorts/later">A Short</a></ytd-reel-shelf-renderer>';
     doc.querySelector('#contents')!.append(added);
     await wait();
     assert.notEqual(added.style.display, 'none', 'new results are shown as they render');
+    assertVisible(h, '#later-short');
   } finally {
     run.cleanup();
   }
@@ -641,11 +655,12 @@ test('browsing a channel page with collaboration owner is still browsable and pl
 test('Shorts from a study channel are now allowed in Productive Mode', () => {
   const h = makeYouTube(
     '/shorts/abc123',
-    '<ytd-app><ytd-reel-video-renderer is-active><div id=\"overlay\"><ytd-channel-name><a>JEE Study Shorts</a></ytd-channel-name></div></ytd-reel-video-renderer><video></video></ytd-app>',
+    '<ytd-app><ytd-shorts><ytd-reel-video-renderer is-active><video id="short-player"></video><div id="overlay"><ytd-channel-name><a>JEE Study Shorts</a></ytd-channel-name></div></ytd-reel-video-renderer></ytd-shorts></ytd-app>',
   );
   const run = start(h);
   try {
     assert.equal(h.currentOverlay(), null, 'study Shorts must not be blocked');
+    assertVisible(h, '#short-player');
     assert.deepEqual(run.filter.health(), { ok: true });
   } finally {
     run.cleanup();
@@ -715,6 +730,219 @@ test('Channel Shorts tab from a study channel stays browsable and its playback i
     Object.defineProperty(video, 'paused', { configurable: true, value: false });
     video.dispatchEvent(new h.dom.window.Event('play'));
     assert.equal(h.currentOverlay(), null, 'study channel shorts playback must be allowed');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('home-to-search navigation restores cached Shorts shelves and links without a reload', async () => {
+  const h = makeYouTube('/', '<ytd-app><ytd-rich-grid-renderer id="grid"><ytd-reel-shelf-renderer id="shorts"><a id="short-link" href="/shorts/study">Study Short</a></ytd-reel-shelf-renderer></ytd-rich-grid-renderer></ytd-app>');
+  const run = start(h);
+  try {
+    const doc = h.dom.window.document;
+    assert.equal((doc.querySelector('#shorts') as HTMLElement).style.display, 'none', 'homepage recommendations stay hidden');
+    h.dom.window.history.pushState({}, '', '/results?search_query=study');
+    doc.dispatchEvent(new h.dom.window.Event('yt-navigate-finish'));
+    await wait();
+    assertVisible(h, '#short-link');
+    assert.equal(h.currentOverlay(), null);
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('home-to-Shorts navigation restores the player and every cached ancestor', async () => {
+  const h = makeYouTube('/', '<ytd-app><ytd-rich-grid-renderer><ytd-rich-item-renderer><ytd-shorts><ytd-reel-video-renderer is-active><video id="short-player"></video><ytd-channel-name><a>Study Chemistry</a></ytd-channel-name></ytd-reel-video-renderer></ytd-shorts></ytd-rich-item-renderer></ytd-rich-grid-renderer></ytd-app>');
+  const run = start(h);
+  try {
+    const doc = h.dom.window.document;
+    assert.equal((doc.querySelector('ytd-shorts') as HTMLElement).style.display, 'none');
+    h.dom.window.history.pushState({}, '', '/shorts/study');
+    doc.dispatchEvent(new h.dom.window.Event('yt-navigate-finish'));
+    await wait();
+    assertVisible(h, '#short-player');
+    assert.equal(h.currentOverlay(), null, 'a study Short has neither a cover nor a hidden player');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a prefetched study reel cannot authorise the active non-study Short', () => {
+  const h = makeYouTube('/shorts/random', '<ytd-app><ytd-shorts><ytd-reel-video-renderer is-active><video></video><ytd-channel-name><a>Random Vlogs</a></ytd-channel-name></ytd-reel-video-renderer><ytd-reel-video-renderer><ytd-reel-player-overlay-renderer><ytd-channel-name><a>Study Chemistry</a></ytd-channel-name></ytd-reel-player-overlay-renderer><div aria-label="Collaboration channels"><a href="/@jee">JEE Academy</a></div></ytd-reel-video-renderer></ytd-shorts></ytd-app>');
+  const media = h.dom.window.document.querySelector('video')!;
+  Object.defineProperty(media, 'paused', { configurable: true, value: false });
+  const run = start(h);
+  try {
+    assert.match(h.overlayText(), /Shorts are off/);
+    assert.match(h.overlayText(), /Random Vlogs/);
+    assert.doesNotMatch(h.overlayText(), /Study Chemistry|JEE Academy/);
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+    assert.ok(h.pauseCount() > 0);
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('prefetched reels do not qualify a Short before its active author is available', () => {
+  const h = makeYouTube('/shorts/loading', '<ytd-app><ytd-shorts><ytd-reel-video-renderer><ytd-channel-name><a>JEE Academy</a></ytd-channel-name></ytd-reel-video-renderer></ytd-shorts></ytd-app>');
+  const run = start(h);
+  try {
+    assert.match(h.overlayText(), /could not read this Shorts channel name/);
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('changing only the active reel rechecks Shorts without waiting for a URL or DOM replacement', async () => {
+  const h = makeYouTube('/shorts/study', '<ytd-app><ytd-shorts><ytd-reel-video-renderer id="study-reel" is-active><ytd-channel-name><a>Study Chemistry</a></ytd-channel-name></ytd-reel-video-renderer><ytd-reel-video-renderer id="random-reel"><ytd-channel-name><a>Random Vlogs</a></ytd-channel-name></ytd-reel-video-renderer></ytd-shorts></ytd-app>');
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null);
+    const doc = h.dom.window.document;
+    doc.querySelector('#study-reel')!.removeAttribute('is-active');
+    doc.querySelector('#random-reel')!.setAttribute('is-active', '');
+    await wait();
+    assert.match(h.overlayText(), /Shorts are off/);
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+    doc.querySelector('#random-reel')!.removeAttribute('is-active');
+    doc.querySelector('#study-reel')!.setAttribute('is-active', '');
+    await wait();
+    assert.equal(h.currentOverlay(), null, 'swiping back to a study Short clears the cover');
+    assertVisible(h, '#study-reel');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('Shorts channel text hydration clears a cover without replacing the channel node', async () => {
+  const h = makeYouTube('/shorts/hydrating', '<ytd-app><ytd-shorts><ytd-reel-video-renderer is-active><ytd-channel-name><a>Loading</a></ytd-channel-name><video id="short-player"></video></ytd-reel-video-renderer></ytd-shorts></ytd-app>');
+  const run = start(h);
+  try {
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+    const text = h.dom.window.document.querySelector('ytd-channel-name a')!.firstChild!;
+    text.nodeValue = 'Study Chemistry';
+    await wait();
+    assert.equal(h.currentOverlay(), null);
+    assertVisible(h, '#short-player');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('Shorts trust acknowledgement does not carry over to another active reel on the same URL', async () => {
+  const h = makeYouTube('/shorts/trust', '<ytd-app><ytd-shorts><ytd-reel-video-renderer id="first" is-active><div aria-label="Collaboration channels"></div></ytd-reel-video-renderer><ytd-reel-video-renderer id="second"><div aria-label="Collaboration channels"></div></ytd-reel-video-renderer></ytd-shorts></ytd-app>');
+  const run = start(h);
+  try {
+    assert.match(h.overlayText(), /Collaboration — not fully verified/);
+    button(h, 'Continue (trust)')!.click();
+    assert.equal(h.currentOverlay(), null);
+    const doc = h.dom.window.document;
+    doc.querySelector('#first')!.removeAttribute('is-active');
+    doc.querySelector('#second')!.setAttribute('is-active', '');
+    await wait();
+    assert.match(h.overlayText(), /Collaboration — not fully verified/, 'the next reel needs its own trust decision');
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('a channel Shorts playback refusal stays explained until Keep browsing is chosen', async () => {
+  const h = makeYouTube('/@random/shorts', '<ytd-app><yt-page-header-renderer><div id="page-header-title">Random Vlogs</div></yt-page-header-renderer><ytd-rich-grid-renderer><a id="short-link" href="/shorts/random">Short</a></ytd-rich-grid-renderer><video></video></ytd-app>');
+  const run = start(h);
+  try {
+    const media = h.dom.window.document.querySelector('video')!;
+    Object.defineProperty(media, 'paused', { configurable: true, value: false });
+    media.dispatchEvent(new h.dom.window.Event('play'));
+    assert.match(h.overlayText(), /Shorts are off/);
+    // A later scan after EarnTime's pause must not dismiss its own explanation.
+    h.dom.window.document.body.append(h.dom.window.document.createElement('div'));
+    await wait();
+    assert.match(h.overlayText(), /Shorts are off/);
+    button(h, 'Keep browsing')!.click();
+    assert.equal(h.currentOverlay(), null);
+    assertVisible(h, '#short-link');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('stopping Productive Mode restores original display values without unhiding native YouTube elements', () => {
+  const h = makeYouTube('/', '<ytd-app><ytd-rich-grid-renderer style="display:grid !important"><ytd-reel-shelf-renderer style="display:flex"><a id="short-link" href="/shorts/study">Short</a></ytd-reel-shelf-renderer><ytd-rich-item-renderer id="native-hidden" style="display:none">Hidden by YouTube</ytd-rich-item-renderer></ytd-rich-grid-renderer><div id="related" style="display:block">Up next</div></ytd-app>');
+  const run = start(h);
+  try {
+    const doc = h.dom.window.document;
+    assert.equal((doc.querySelector('ytd-rich-grid-renderer') as HTMLElement).style.display, 'none');
+    run.filter.stop();
+    assertVisible(h, '#short-link');
+    const grid = doc.querySelector('ytd-rich-grid-renderer') as HTMLElement;
+    assert.equal(grid.style.display, 'grid');
+    assert.equal(grid.style.getPropertyPriority('display'), 'important');
+    assert.equal((doc.querySelector('ytd-reel-shelf-renderer') as HTMLElement).style.display, 'flex');
+    assert.equal((doc.querySelector('#related') as HTMLElement).style.display, 'block');
+    assert.equal((doc.querySelector('#native-hidden') as HTMLElement).style.display, 'none');
+    assert.equal(doc.querySelector('[data-et-hidden="1"]'), null, 'filter-owned hiding is fully removed');
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('stopping the filter also removes its playback cover', () => {
+  const h = makeYouTube('/shorts/random', '<ytd-app><ytd-shorts><ytd-reel-video-renderer is-active><ytd-channel-name><a>Random Vlogs</a></ytd-channel-name></ytd-reel-video-renderer></ytd-shorts></ytd-app>');
+  const run = start(h);
+  try {
+    assert.notEqual(h.currentOverlay(), null);
+    run.filter.stop();
+    assert.equal(h.currentOverlay(), null, 'switching away from Productive Mode must not leave a blocking card');
+  } finally {
+    run.cleanup();
+  }
+});
+
+
+test('cached search or watch authors cannot qualify a Short with no current Shorts metadata', () => {
+  const h = makeYouTube('/shorts/loading', '<ytd-app><div id="owner"><ytd-video-owner-renderer><ytd-channel-name><a>Study Chemistry</a></ytd-channel-name></ytd-video-owner-renderer></div><ytd-video-renderer><ytd-channel-name><a>JEE Academy</a></ytd-channel-name></ytd-video-renderer></ytd-app>');
+  const run = start(h);
+  try {
+    assert.match(h.overlayText(), /could not read this Shorts channel name/);
+    assert.deepEqual(run.filter.health(), { ok: true, detail: 'covered' });
+  } finally {
+    run.cleanup();
+  }
+});
+
+test('an existing Productive Mode session can start before the document has an HTML element', async () => {
+  const h = makeYouTube('/shorts/study', '<ytd-app><ytd-shorts><ytd-reel-video-renderer is-active><video id="short-player"></video><ytd-channel-name><a>Study Chemistry</a></ytd-channel-name></ytd-reel-video-renderer></ytd-shorts></ytd-app>');
+  const doc = h.dom.window.document;
+  const root = doc.documentElement;
+  root.remove();
+  assert.equal(doc.documentElement, null, 'document_start can precede the HTML parser');
+  const run = start(h);
+  try {
+    assert.deepEqual(run.filter.health(), { ok: true });
+    doc.append(root);
+    await wait();
+    assert.equal(h.currentOverlay(), null);
+    assertVisible(h, '#short-player');
+    assert.deepEqual(run.filter.health(), { ok: true });
+  } finally {
+    run.cleanup();
+  }
+});
+
+
+test('Shorts player-container layouts can reuse watch-style owner metadata without a reel renderer', () => {
+  const h = makeYouTube('/shorts/study', '<ytd-app><div id="shorts-player"><video id="short-player"></video><div id="owner"><a href="/@study">Study Chemistry</a></div></div></ytd-app>');
+  const run = start(h);
+  try {
+    assert.equal(h.currentOverlay(), null);
+    assertVisible(h, '#short-player');
     assert.deepEqual(run.filter.health(), { ok: true });
   } finally {
     run.cleanup();

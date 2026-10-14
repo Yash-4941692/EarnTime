@@ -30,7 +30,7 @@ test('matchingKeyword reports which keyword allowed the channel', () => {
   assert.equal(matchingKeyword('Cooking', KW), null);
 });
 
-test('YouTube page kinds include keyword-checked channel and playlist browsing, but still block Shorts', () => {
+test('YouTube page kinds distinguish browsing pages from watch and Shorts playback', () => {
   assert.equal(youtubePageKind('/'), 'home');
   assert.equal(youtubePageKind('/results'), 'search');
   assert.equal(youtubePageKind('/watch'), 'watch');

@@ -62,9 +62,9 @@ export function matchingChannels(
 export type YouTubePage = 'home' | 'search' | 'watch' | 'shorts' | 'playlist' | 'channel' | 'other';
 
 /**
- * Classifies a YouTube path. Productive Mode supports search/video pages, plus channel and playlist
- * browsing when their owning channel matches the user's study keywords. Shorts stay blocked,
- * including the Shorts tab on an otherwise allowed channel.
+ * Classifies a YouTube path. Search, channel and playlist pages are browsable; video/Shorts
+ * playback is checked against the user's study keywords. A channel's Shorts tab is also browsable,
+ * but uses the Shorts playback check if media starts.
  */
 export function youtubePageKind(pathname: string): YouTubePage {
   const path = pathname.toLowerCase();

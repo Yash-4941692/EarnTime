@@ -534,3 +534,48 @@ test('hostOfUrl only accepts http(s) pages', () => {
   assert.equal(hostOfUrl('chrome-extension://abc/popup.html'), null);
   assert.equal(hostOfUrl('not a url'), null);
 });
+
+test('switching to Unproductive Mode restores hidden YouTube content without reloading', async () => {
+  const h = new Harness({
+    url: 'https://www.youtube.com/',
+    replies: [{ ok: true, directive: activeDirective('productive', 'youtube'), tabId: 7 }],
+  });
+  const doc = h.dom.window.document;
+  doc.body.innerHTML = '<ytd-app><ytd-rich-grid-renderer id="feed"><a id="short-link" href="/shorts/study">Study Short</a></ytd-rich-grid-renderer></ytd-app>';
+  const control = attachPage(doc, h.env);
+  try {
+    await h.flush();
+    assert.equal(doc.querySelector<HTMLElement>('#feed')!.style.display, 'none');
+    await h.changeState(stateWith({ sessions: { '7': { entry: 'youtube.com', mode: 'unproductive', since: T0 } } }));
+    assert.equal(h.gated(), false);
+    assert.equal(h.banner(), 'EarnTime · Unproductive Mode');
+    assert.notEqual(doc.querySelector<HTMLElement>('#feed')!.style.display, 'none');
+    assert.notEqual(doc.querySelector<HTMLElement>('#short-link')!.style.display, 'none');
+    assert.equal(doc.querySelector('[data-et-hidden="1"]'), null);
+  } finally {
+    control.dispose();
+    h.cleanup();
+  }
+});
+
+test('disabling the extension restores content hidden by an active YouTube filter', async () => {
+  const h = new Harness({
+    url: 'https://www.youtube.com/',
+    replies: [{ ok: true, directive: activeDirective('productive', 'youtube'), tabId: 7 }],
+  });
+  const doc = h.dom.window.document;
+  doc.body.innerHTML = '<ytd-app><ytd-rich-grid-renderer id="feed">Videos and Shorts</ytd-rich-grid-renderer></ytd-app>';
+  const control = attachPage(doc, h.env);
+  try {
+    await h.flush();
+    assert.equal(doc.querySelector<HTMLElement>('#feed')!.style.display, 'none');
+    h.alive = false;
+    await h.advance(1000);
+    assert.notEqual(doc.querySelector<HTMLElement>('#feed')!.style.display, 'none', 'an unmanaged page is never left hidden');
+    assert.equal(h.hasOverlay(), false);
+    assert.equal(h.hasGateStyle(), false);
+  } finally {
+    control.dispose();
+    h.cleanup();
+  }
+});
