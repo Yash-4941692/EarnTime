@@ -352,7 +352,7 @@ test('dedicated adult-site domains show a motivational page; genuine mixed-use c
   await installAndSetup(b, { initialBalanceMin: 20 });
 
   const adult = await b.openTab('https://www.pornhub.com/view_video.php?id=sample', { active: true });
-  assert.equal(b.tabUrl(adult), `${EXT_ORIGIN}/block.html?reason=motivation`);
+  assert.equal(b.tabUrl(adult), `${EXT_ORIGIN}/motivation.html`);
 
   const health = await b.openTab('https://www.plannedparenthood.org/learn/health-and-wellness/sexual-health', { active: true });
   assert.equal(b.tabUrl(health), 'https://www.plannedparenthood.org/learn/health-and-wellness/sexual-health');
@@ -367,7 +367,21 @@ test('dedicated adult-site domains show a motivational page; genuine mixed-use c
   const exception = await command(b, { type: 'adult.exception.add', host: 'pornhub.com' });
   assert.equal(exception.ok, false, 'trusted exceptions are not user-editable');
   const stillAdult = await b.openTab('https://www.pornhub.com/', { active: true });
-  assert.equal(b.tabUrl(stillAdult), `${EXT_ORIGIN}/block.html?reason=motivation`, 'legacy edit commands cannot lift the fixed guard');
+  assert.equal(b.tabUrl(stillAdult), `${EXT_ORIGIN}/motivation.html`, 'legacy edit commands cannot lift the fixed guard');
+});
+
+test('an adult-site tab that is already open is also sent to the motivational page', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 20 });
+
+  // Opened while EarnTime is off, so it is the worker (not the redirect rule) that has to stop it.
+  b.disableExtension();
+  const { tabId } = await openedWindowWithTab(b, 'https://www.pornhub.com/view_video.php?id=open');
+  assert.equal(b.tabUrl(tabId), 'https://www.pornhub.com/view_video.php?id=open', 'nothing enforces while EarnTime is off');
+
+  await b.enableExtension();
+  await b.runFor(2 * MIN);
+  assert.equal(b.tabUrl(tabId), `${EXT_ORIGIN}/motivation.html`, 'the open tab gets the pause, not a block page');
 });
 
 test('chrome://extensions asks before continuing and allows only that confirmed navigation', async () => {

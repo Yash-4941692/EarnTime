@@ -34,6 +34,7 @@ const uiEntries = {
   settings: 'src/ui/settings/main.tsx',
   setup: 'src/ui/setup/main.tsx',
   block: 'src/ui/block/main.tsx',
+  motivation: 'src/ui/block/motivation.tsx',
 };
 
 /** Runs Tailwind and Autoprefixer over every stylesheet imported by a UI page. */

@@ -15,7 +15,17 @@ import { isDebtMode, isExhausted } from './roles';
 import type { EarnState } from './types';
 
 export const BLOCK_PAGE_PATH = '/block.html';
-export const MOTIVATION_PAGE_PATH = `${BLOCK_PAGE_PATH}?reason=motivation`;
+/**
+ * The adult-site pause is its own page, not `block.html` with a `reason` in the query string.
+ *
+ * A declarativeNetRequest redirect only carries the path, and a redirect target that has to survive
+ * a query parameter can lose it — which is exactly how the pause page used to fall back to the
+ * ordinary "screen time used up" block. `motivation.html` always is the motivational pause, so what
+ * the rule asks for is what the user gets. The page must also be listed in
+ * `web_accessible_resources`, or Chrome refuses to load it for a navigation that started on a
+ * website (for example a link click) instead of the address bar.
+ */
+export const MOTIVATION_PAGE_PATH = '/motivation.html';
 
 export interface DnrRule {
   id: number;
