@@ -1,4 +1,4 @@
-# Unreleased
+# EarnTime 2.6.4
 
 ## Adult-site focus and Chrome settings confirmation
 
@@ -7,6 +7,12 @@
 - Opening `chrome://extensions` or `chrome://settings/extensions` now asks first. The confirmation provides a way back and a target-specific, one-use continue action that expires after 15 seconds.
 - Schema 8 removes the former user-editable guard preferences while preserving the wallet, earned-time rules and history.
 - Verification: strict TypeScript check, **294 source tests** (157 unit, 79 DOM, 58 simulated-browser) and production build pass. The separate Playwright/Chromium suite and real-Chrome checks were not run because no Chromium binary was available.
+
+## Install or update
+
+Download **EarnTime-2.6.4.zip**, extract it, and select the folder containing `manifest.json` via Chrome's **Load unpacked** option.
+
+For an existing unpacked installation, replace its files with the extracted release and click **Reload** for EarnTime at `chrome://extensions`. **Do not uninstall** if you want to keep your settings and balance.
 
 # EarnTime 2.6.3
 
