@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { EXT_ORIGIN } from './fakeBrowser';
 import {
   BLOCK_EXHAUSTED,
-  BLOCK_EXTENSIONS,
+  blockExtensions,
   MIN,
   SEC,
   START,
@@ -343,18 +343,56 @@ test('in debt only productive sites open; studying repays the debt and normal ru
   const after = b.storedState();
   assert.equal(after.debtMs, 0, 'debt cleared');
   assert.ok(b.notifications.some((n) => n.title === 'Debt cleared'));
-  assert.equal(b.dnr.size, 0, 'no blocking rules once there is balance and no debt');
+  assert.equal(b.dnr.size, 1, 'the adult-site focus rule remains after wallet debt is cleared');
+  assert.equal(b.dnr.has(4), true, 'only the independent adult-site rule remains');
 });
 
-test('chrome://extensions is redirected to the block page (guard), including typed navigation', async () => {
+test('dedicated adult-site domains show a motivational page; genuine mixed-use content is left alone', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 20 });
+
+  const adult = await b.openTab('https://www.pornhub.com/view_video.php?id=sample', { active: true });
+  assert.equal(b.tabUrl(adult), `${EXT_ORIGIN}/block.html?reason=motivation`);
+
+  const health = await b.openTab('https://www.plannedparenthood.org/learn/health-and-wellness/sexual-health', { active: true });
+  assert.equal(b.tabUrl(health), 'https://www.plannedparenthood.org/learn/health-and-wellness/sexual-health');
+  const ordinaryDomainWithSensitiveWords = await b.openTab('https://example.org/explicit-health-education?topic=porn', { active: true });
+  assert.equal(b.tabUrl(ordinaryDomainWithSensitiveWords), 'https://example.org/explicit-health-education?topic=porn');
+
+  const unlisted = await b.openTab('https://sub.private.example/', { active: true });
+  assert.equal(b.tabUrl(unlisted), 'https://sub.private.example/', 'domains outside the fixed list stay untouched');
+
+  const disable = await command(b, { type: 'adult.guard.set', enabled: false });
+  assert.equal(disable.ok, false, 'the guard cannot be turned off through settings commands');
+  const exception = await command(b, { type: 'adult.exception.add', host: 'pornhub.com' });
+  assert.equal(exception.ok, false, 'trusted exceptions are not user-editable');
+  const stillAdult = await b.openTab('https://www.pornhub.com/', { active: true });
+  assert.equal(b.tabUrl(stillAdult), `${EXT_ORIGIN}/block.html?reason=motivation`, 'legacy edit commands cannot lift the fixed guard');
+});
+
+test('chrome://extensions asks before continuing and allows only that confirmed navigation', async () => {
   const b = newBrowser();
   await installAndSetup(b);
   const created = await b.openTab('chrome://extensions/', { active: true });
-  assert.equal(b.tabUrl(created), BLOCK_EXTENSIONS);
-  await b.navigate(created, 'chrome://extensions/?id=abcdefghijklmnop');
-  assert.equal(b.tabUrl(created), BLOCK_EXTENSIONS);
-  const settingsRoute = await b.openTab('chrome://settings/extensions', { active: true });
-  assert.equal(b.tabUrl(settingsRoute), BLOCK_EXTENSIONS, 'chrome://settings/extensions is redirected too');
+  assert.equal(b.tabUrl(created), blockExtensions('chrome://extensions/'));
+
+  const target = 'chrome://extensions/?id=abcdefghijklmnop';
+  await b.navigate(created, target);
+  assert.equal(b.tabUrl(created), blockExtensions(target));
+
+  const refusedTarget = await b.sendFromTab(created, { type: 'ui.guardContinue', target: 'chrome://settings/privacy' });
+  assert.equal(refusedTarget.ok, false, 'the confirmation cannot open an unrelated internal page');
+  assert.equal(b.tabUrl(created), blockExtensions(target), 'the invalid request leaves the confirmation in place');
+
+  const continued = await b.sendFromTab(created, { type: 'ui.guardContinue', target });
+  assert.equal(continued.ok, true, 'explicit confirmation is accepted');
+  assert.equal(b.tabUrl(created), target, 'the one-time approval allows the requested management page');
+  await b.navigate(created, target);
+  assert.equal(b.tabUrl(created), blockExtensions(target), 'the approval is consumed and cannot be reused');
+
+  const settingsTarget = 'chrome://settings/extensions';
+  const settingsRoute = await b.openTab(settingsTarget, { active: true });
+  assert.equal(b.tabUrl(settingsRoute), blockExtensions(settingsTarget), 'the alternate management route asks too');
   await b.navigate(created, 'chrome://settings/privacy');
   assert.equal(b.tabUrl(created), 'chrome://settings/privacy', 'other chrome pages are not affected');
   assert.ok(b.storedState().ledger.some((e: { kind: string }) => e.kind === 'guard'));
@@ -653,7 +691,7 @@ test('workers started after time passes continue cleanly (no duplicate DNR rules
   await b.runFor(MIN);
   b.suspendWorker();
   await b.runFor(MIN);
-  assert.ok(b.dnr.size <= 1);
+  assert.ok(b.dnr.size <= 2, 'the adult-site rule plus at most one exhausted-site rule remain');
   assert.equal(balanceMin(b), 0);
 });
 

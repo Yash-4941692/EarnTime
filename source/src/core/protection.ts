@@ -1,8 +1,9 @@
 /**
- * Protection rules. After setup, any change that makes usage easier costs screen time ("unlock cost").
- * Tightening changes are always free. Nothing here is a hard lock: it is a cost model the
- * extension can enforce inside its own UI and storage. See the limitations report for what Chrome
- * does and does not let an extension protect.
+ * Earned-time protection rules. After setup, a change to the balance/debt rules that makes usage
+ * easier costs screen time ("unlock cost"); tightening changes are free. The hostname-only adult-site
+ * focus guard is a fixed policy outside this wallet cost model. Nothing here is a hard lock:
+ * it is a cost model the extension can enforce inside its own UI and storage. See the limitations
+ * report for what Chrome does and does not let an extension protect.
  */
 
 import { MINUTE_MS } from './constants';

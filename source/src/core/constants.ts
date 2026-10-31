@@ -13,8 +13,10 @@ export const DAY_MS = 24 * HOUR_MS;
  * `historyGranted` flag for the optional screen-time permission.
  * 6 adds `halfReviews`: the estimated half-productive time of an interruption, half credited and
  * half charged by default, which the user can correct afterwards.
+ * 7 added the hostname-only adult-site focus guard, custom domains and trusted-site exceptions.
+ * 8 makes that guard a fixed, always-on policy rather than a user preference.
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 8;
 
 /** Storage key holding the entire persisted state (one key = atomic writes). */
 export const STATE_KEY = 'state';

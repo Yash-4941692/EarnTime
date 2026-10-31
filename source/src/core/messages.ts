@@ -10,6 +10,7 @@ export type PageMessage =
   | { type: 'page.health'; ok: boolean; detail?: string };
 
 export type UiMessage =
+  | { type: 'ui.guardContinue'; target: string }
   | { type: 'ui.command'; command: Command }
   | { type: 'ui.export' }
   | { type: 'ui.reconcileNow' }
@@ -55,6 +56,7 @@ export function isUiMessage(value: unknown): value is UiMessage {
   if (!value || typeof value !== 'object') return false;
   const type = (value as { type?: unknown }).type;
   return (
+    type === 'ui.guardContinue' ||
     type === 'ui.command' ||
     type === 'ui.export' ||
     type === 'ui.reconcileNow' ||

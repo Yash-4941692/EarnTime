@@ -835,6 +835,7 @@ export class FakeBrowser {
         matches = new RegExp(rule.condition.regexFilter).test(url);
       }
       if (!matches) continue;
+      if (rule.condition.excludedRequestDomains?.some((d) => host === d || host.endsWith(`.${d}`))) continue;
       if (rule.action.type === 'allow') return 'allow';
       if (rule.action.type === 'redirect') return `redirect:/${rule.action.redirect.extensionPath.replace(/^\//, '')}`;
     }

@@ -32,6 +32,17 @@ export async function exportAudit(): Promise<Record<string, unknown> | null> {
   return reply && reply.ok ? (reply.data as Record<string, unknown>) : null;
 }
 
+/** Continues to a Chrome extension-management page only after the user confirms on the interstitial. */
+export async function continueToGuardedPage(target: string): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const reply = (await chrome.runtime.sendMessage({ type: 'ui.guardContinue', target })) as Reply | undefined;
+    if (!reply) return { ok: false, message: 'EarnTime did not respond. Try again.' };
+    return reply.ok ? { ok: true } : { ok: false, message: reply.error.message };
+  } catch {
+    return { ok: false, message: 'EarnTime did not respond. Try again.' };
+  }
+}
+
 /** Reads the stored state and re-renders whenever the service worker writes a new one. */
 export function useStoredState(): EarnState | null {
   const [state, setState] = useState<EarnState | null>(null);

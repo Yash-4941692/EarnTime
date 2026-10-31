@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBlockingRules } from '../../src/core/dnr';
+import { buildBlockingRules, MOTIVATION_PAGE_PATH } from '../../src/core/dnr';
+import { DEFAULT_ADULT_SITE_HOSTS, isAdultSiteHost } from '../../src/core/adultSites';
 import { pageDirective } from '../../src/core/directive';
 import { blockReasonForHost, filterStateNeeded, isGuardedUrl, roleOf } from '../../src/core/roles';
 import { freshState, MIN, obs, T0 } from './helpers';
@@ -96,6 +97,20 @@ test('blockReasonForHost: debt allows only productive and productive-mode half s
   assert.equal(blockReasonForHost(state, null, 1), null, 'non-web pages are not blocked here');
 });
 
+test('fixed adult-site guard matches dedicated domains only', () => {
+  const state = freshState();
+  assert.equal(DEFAULT_ADULT_SITE_HOSTS.length, 45, 'ships a curated fixed starter set');
+  assert.equal(isAdultSiteHost('www.pornhub.com'), true, 'subdomains of listed adult destinations match');
+  assert.equal(blockReasonForHost(state, 'www.pornhub.com', 1), 'adult', 'independent of earned balance');
+  for (const host of ['youtube.com', 'plannedparenthood.org', 'mayoclinic.org', 'example.org']) {
+    assert.equal(isAdultSiteHost(host), false, `${host} is not classified by page wording or mixed-use content`);
+    assert.equal(blockReasonForHost(state, host, 1), null);
+  }
+  for (const setting of ['adultSiteGuard', 'adultSiteHosts', 'adultSiteExemptions']) {
+    assert.equal(setting in state.settings, false, `${setting} is not a user-editable setting`);
+  }
+});
+
 test('pageDirective: choose screen offers Unproductive Mode only when the balance is positive', () => {
   const state = freshState();
   state.balanceMs = 0;
@@ -144,24 +159,39 @@ test('pageDirective: neutral and internal pages get no directive', () => {
   assert.equal(pageDirective(state, 1, null).directive.kind, 'none');
 });
 
-test('DNR rules: none while funded, redirect unproductive when empty, allow-list plus block-all in debt', () => {
+test('DNR rules: fixed adult-site pause is independent of wallet limits', () => {
   const state = freshState();
   state.balanceMs = 5 * MIN;
-  assert.deepEqual(buildBlockingRules(state), []);
+  let rules = buildBlockingRules(state);
+  assert.equal(rules.length, 1, 'only the fixed adult-site rule applies while funded');
+  const adult = rules.find((rule) => rule.id === 4);
+  assert.ok(adult);
+  assert.equal(adult.priority, 4);
+  assert.equal(adult.action.type, 'redirect');
+  if (adult.action.type === 'redirect') assert.equal(adult.action.redirect.extensionPath, MOTIVATION_PAGE_PATH);
+  assert.ok(adult.condition.requestDomains?.includes('pornhub.com'));
+  assert.deepEqual(adult.condition.resourceTypes, ['main_frame']);
+  assert.equal(adult.condition.regexFilter, undefined, 'no URL or page text matching');
+  assert.equal(adult.condition.excludedRequestDomains, undefined, 'the fixed policy has no user exceptions');
 
   state.balanceMs = 0;
-  const exhausted = buildBlockingRules(state);
-  assert.equal(exhausted.length, 1);
-  assert.deepEqual(exhausted[0].condition.requestDomains, ['instagram.com']);
-  assert.deepEqual(exhausted[0].action, { type: 'redirect', redirect: { extensionPath: '/block.html' } });
+  rules = buildBlockingRules(state);
+  assert.equal(rules.length, 2);
+  assert.ok(rules.some((rule) => rule.id === 4));
+  const exhausted = rules.find((rule) => rule.id === 1);
+  assert.ok(exhausted);
+  assert.deepEqual(exhausted.condition.requestDomains, ['instagram.com']);
+  assert.deepEqual(exhausted.action, { type: 'redirect', redirect: { extensionPath: '/block.html' } });
 
   state.debtMs = 10 * MIN;
-  const debt = buildBlockingRules(state);
-  assert.equal(debt.length, 2);
-  const allow = debt.find((r) => r.action.type === 'allow');
-  const block = debt.find((r) => r.action.type === 'redirect');
-  assert.ok(allow && block);
-  assert.ok(allow.priority > block.priority, 'allow must outrank block-all');
+  rules = buildBlockingRules(state);
+  assert.equal(rules.length, 3);
+  const adultInDebt = rules.find((rule) => rule.id === 4);
+  const allow = rules.find((rule) => rule.action.type === 'allow');
+  const block = rules.find((rule) => rule.id === 3);
+  assert.ok(adultInDebt && allow && block);
+  assert.ok(adultInDebt.priority > allow.priority, 'adult destinations stay restricted even if a productive domain rule overlaps');
+  assert.ok(allow.priority > block.priority, 'productive allow must outrank debt redirect');
   assert.deepEqual(allow.condition.requestDomains, ['khanacademy.org', 'youtube.com']);
   assert.equal(block.condition.regexFilter, '^https?://');
 });

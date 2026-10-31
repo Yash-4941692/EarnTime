@@ -260,6 +260,16 @@ test('YouTube keywords: adding and removing are free, duplicates are refused cas
   assert.equal(state.balanceMs, 30 * MIN);
 });
 
+test('legacy adult-site edit commands are rejected', () => {
+  const state = freshState(true);
+  const result = applyCommand(
+    state,
+    { type: 'adult.guard.set', enabled: false } as unknown as Command,
+    T0,
+  );
+  assert.equal(result.ok === false && result.code, 'invalid', 'the guard is not an editable command');
+});
+
 test('tasks: adding and raising rewards costs, deleting and lowering is free', () => {
   const state = freshState(true);
   state.balanceMs = 30 * MIN;

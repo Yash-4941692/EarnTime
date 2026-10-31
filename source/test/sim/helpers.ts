@@ -13,7 +13,7 @@ export function localTime(y: number, mo: number, d: number, h = 0, mi = 0, s = 0
 export const START = localTime(2026, 10, 8, 9, 0, 0);
 
 export const BLOCK_EXHAUSTED = `${EXT_ORIGIN}/block.html?reason=exhausted`;
-export const BLOCK_EXTENSIONS = `${EXT_ORIGIN}/block.html?reason=extensions`;
+export const blockExtensions = (target: string) => `${EXT_ORIGIN}/block.html?reason=extensions&target=${encodeURIComponent(target)}`;
 
 export function setupPayload(overrides: Partial<SetupPayload> = {}): SetupPayload {
   return {

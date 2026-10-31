@@ -21,7 +21,7 @@ import {
 } from '../core/constants';
 import { GATE_CACHE_KEY, withCacheEntry, type GateCache } from '../content/local';
 import { pageDirective, type DirectiveResult } from '../core/directive';
-import { buildBlockingRules, type DnrRule } from '../core/dnr';
+import { buildBlockingRules, MOTIVATION_PAGE_PATH, type DnrRule } from '../core/dnr';
 import { classifyHost, hostFromUrl } from '../core/domains';
 import { advance, liveFrom, makeSnapshot, setLast } from '../core/engine';
 import { isPageMessage, isUiMessage, type Reply } from '../core/messages';
@@ -75,11 +75,23 @@ interface Flags {
   rulesKey: string;
 }
 
+/** Normalises Chrome's optional trailing slash when matching a one-time management-page approval. */
+function canonicalGuardUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol.toLowerCase()}//${parsed.host.toLowerCase()}${parsed.pathname.replace(/\/+$/, '')}${parsed.search}${parsed.hash}`;
+  } catch {
+    return url;
+  }
+}
+
 export function createController(opts: ControllerOptions): Controller {
   const { api, clock, mono } = opts;
 
   let chain: Promise<unknown> = Promise.resolve();
   const health = new Map<number, { ok: boolean; detail?: string; at: number }>();
+  /** Short-lived, one-navigation approval from the confirmation page for a chrome:// route. */
+  const approvedGuardNavigations = new Map<number, { url: string; expiresAt: number }>();
   let lastMono: number | null = null;
   let appliedRulesKey: string | null = null;
   let lastBadge = '';
@@ -285,14 +297,15 @@ export function createController(opts: ControllerOptions): Controller {
     return summary;
   }
 
-  async function syncRules(state: EarnState): Promise<void> {
+  async function syncRules(state: EarnState): Promise<boolean> {
     const desired: DnrRule[] = buildBlockingRules(state);
     const key = JSON.stringify(desired);
-    if (key === appliedRulesKey) return;
-    await safe('dnr.replace', undefined, async () => {
+    if (key === appliedRulesKey) return false;
+    return safe('dnr.replace', false, async () => {
       const existing = await api.dnr.getDynamicRuleIds();
       await api.dnr.replaceDynamicRules(existing, desired);
       appliedRulesKey = key;
+      return true;
     });
   }
 
@@ -305,7 +318,9 @@ export function createController(opts: ControllerOptions): Controller {
       if (!host) continue;
       const reason = blockReasonForHost(state, host, tab.id);
       if (reason) {
-        await safe('tabs.update', undefined, () => api.tabs.update(tab.id as number, api.pageUrl(`block.html?reason=${reason}`)));
+        const page = reason === 'adult' ? MOTIVATION_PAGE_PATH : `/block.html?reason=${reason}`;
+        const path = page.startsWith('/') ? page.slice(1) : page;
+        await safe('tabs.update', undefined, () => api.tabs.update(tab.id as number, api.pageUrl(path)));
       }
     }
   }
@@ -419,8 +434,8 @@ export function createController(opts: ControllerOptions): Controller {
         await notify('Screen time used up', 'Unproductive sites are blocked until you earn more time by studying.');
       }
     }
-    await syncRules(state);
-    if (after.debt || after.exhausted || after.rulesKey !== before.rulesKey) {
+    const rulesSynced = await syncRules(state);
+    if (after.debt || after.exhausted || after.rulesKey !== before.rulesKey || rulesSynced) {
       await enforceOpenTabs(state);
     }
     await publishGateCache(state, now);
@@ -483,10 +498,17 @@ export function createController(opts: ControllerOptions): Controller {
   }
 
   async function guardTab(tabId: number | undefined, url: string | undefined): Promise<boolean> {
-    if (tabId === undefined || !isGuardedUrl(url)) return false;
-    await safe('guard.redirect', undefined, () => api.tabs.update(tabId, api.pageUrl('block.html?reason=extensions')));
+    if (tabId === undefined) return false;
+    const approved = approvedGuardNavigations.get(tabId);
+    if (approved) {
+      approvedGuardNavigations.delete(tabId);
+      if (clock() <= approved.expiresAt && url && isGuardedUrl(url) && canonicalGuardUrl(url) === approved.url) return false;
+    }
+    if (!url || !isGuardedUrl(url)) return false;
+    const confirmation = `block.html?reason=extensions&target=${encodeURIComponent(url)}`;
+    await safe('guard.redirect', undefined, () => api.tabs.update(tabId, api.pageUrl(confirmation)));
     await job('guard', false, (state, now) => {
-      addLedger(state, 'guard', now, 0, 'Redirected an extensions management page', undefined, true);
+      addLedger(state, 'guard', now, 0, 'Asked before opening an extensions management page', undefined, true);
     });
     return true;
   }
@@ -566,12 +588,18 @@ export function createController(opts: ControllerOptions): Controller {
 
     async onTabRemoved(tabId) {
       health.delete(tabId);
+      approvedGuardNavigations.delete(tabId);
       await job('tab-removed', true, (state) => {
         delete state.sessions[String(tabId)];
       });
     },
 
     async onTabReplaced(addedId, removedId) {
+      const approval = approvedGuardNavigations.get(removedId);
+      if (approval) {
+        approvedGuardNavigations.set(addedId, approval);
+        approvedGuardNavigations.delete(removedId);
+      }
       const report = health.get(removedId);
       if (report) {
         health.set(addedId, report);
@@ -655,6 +683,27 @@ export function createController(opts: ControllerOptions): Controller {
     }
 
     if (isUiMessage(message)) {
+      if (message.type === 'ui.guardContinue') {
+        const tabId = sender.tabId;
+        const blockPage = api.pageUrl('block.html');
+        if (tabId === undefined || !sender.url?.startsWith(`${blockPage}?reason=extensions`)) {
+          return fail('unavailable', 'Open the EarnTime confirmation page first.');
+        }
+        if (!isGuardedUrl(message.target)) {
+          return fail('invalid', 'That Chrome settings page is not available from this prompt.');
+        }
+        return job('guard-continue', false, async (state, now): Promise<Reply> => {
+          approvedGuardNavigations.set(tabId, { url: canonicalGuardUrl(message.target), expiresAt: now + 15_000 });
+          try {
+            await api.tabs.update(tabId, message.target);
+          } catch {
+            approvedGuardNavigations.delete(tabId);
+            return fail('unavailable', 'Chrome could not open its extension settings.');
+          }
+          addLedger(state, 'guard', now, 0, 'User chose to open Chrome extension settings', undefined, true);
+          return { ok: true };
+        });
+      }
       if (message.type === 'ui.command') {
         const command = message.command as Command;
         return job('command', true, async (state, now): Promise<Reply> => {
