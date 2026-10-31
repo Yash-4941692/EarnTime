@@ -2,7 +2,7 @@
 
 **Status: source logic, simulated flows and jsdom tests verified on 2026-10-31; build passed.** The current Playwright/Chromium suite and the manual checklist with an installed Chrome extension and live YouTube have not been run because no Chromium binary is available.
 
-> `cd source && npm test` passes **302 tests**: 164 unit + 79 jsdom DOM + 59 simulated-browser flow tests, plus the strict TypeScript check. The current separate Playwright/Chromium suite was not run. These browser fixtures run the built content script and real controller, not a real Chrome extension installation.
+> `cd source && npm test` passes **315 tests**: 169 unit + 84 jsdom DOM + 62 simulated-browser flow tests, plus the strict TypeScript check. The current separate Playwright/Chromium suite was not run. These browser fixtures run the built content script and real controller, not a real Chrome extension installation.
 
 ## Environment
 
@@ -17,10 +17,10 @@
 | --- | --- | --- |
 | Type check (strict, `noUnusedLocals`) | `npm run typecheck` | **pass** |
 | Build (root artifacts) | `npm run build` | **pass** |
-| Unit tests | `npm run test:unit` | **164 / 164 pass** |
-| DOM tests (jsdom: load-time gate, page lifecycle, YouTube filter, Shorts trust) | `npm run test:dom` | **79 / 79 pass** |
-| Flow tests (simulated browser) | `npm run test:sim` | **59 / 59 pass** |
-| Complete source suite | `npm test` | **302 / 302 pass**, including type check |
+| Unit tests | `npm run test:unit` | **169 / 169 pass** |
+| DOM tests (jsdom: load-time gate, adult pause, page lifecycle, YouTube filter, Shorts trust) | `npm run test:dom` | **84 / 84 pass** |
+| Flow tests (simulated browser) | `npm run test:sim` | **62 / 62 pass** |
+| Complete source suite | `npm test` | **315 / 315 pass**, including type check |
 | Browser tests (Playwright + Chromium) | `npm run test:browser` | **not run for this change** (needs a Chromium binary) |
 | Real Chrome extension end-to-end | manual checklist below | **not run** |
 
@@ -37,6 +37,8 @@ The release build is verified separately with `npm run build`; browser-specific 
 - **Answering an estimate:** `review.set` is free (the unlock cost is untouched), validated against the estimate (unknown id → `not-found`; an answer above the estimate → `invalid` with no side effect), re-prices the same local days, and updates balance, debt and the day totals in both directions; `review.keep` accepts the default and changes nothing. Corrections pay debt before the balance when they add credit, take the balance before creating debt when they remove it, and are audited with a `review` ledger entry that is exposed (minutes estimated, answer, credited and charged) in the audit export.
 - **Motivational lines (`src/core/motivation.ts`):** the pause page is a path of its own with no query string for a redirect to lose; a line is stable inside a minute and rotates after it; the adult-site lines mention neither the intervention, the wallet nor a site name.
 - **Schema 8:** the adult-site guard is fixed and always on; upgrading from schema 7 drops the former user-editable enable/domain/exception preferences while preserving the wallet, rules, reviews and `historyGranted`.
+- **Schema 9 and the personal pause list:** the upgrade starts the list empty and preserves everything else; the sanitiser reduces stored entries to normalised hostnames, de-duplicates them and drops anything that is not a hostname. Commands are free in both directions, refuse a built-in domain and a duplicate, and write a `guard` ledger entry each way.
+- **The adult-site hostname tests:** the curated list, the adult sponsored TLDs, distinctive fragments and whole-label words each match, and their deliberate near-misses (`sussex`, `analytics`, `nudestix`, `xxxlutz`) do not.
 - **Migration:** old storage formats and sanitisation, plus a realistic v2.1.1 state fixture proving balance, debt, daily totals, ledger, tasks, settings and non-retired site rules survive schema-3 migration. The retired integration settings/state and its old default half-list entry are removed.
 - **Protection and commands:** setup-once validation, starting-balance cap, free versus paid rule changes, confirmation before a paid change, debt restrictions, task rules, keyword matching, the fixed hostname-only adult-site policy, rejection of legacy adult-site edit commands, and audit export without page URLs.
 - **Worker message retry:** bounded retry timing, explicit refusal, eventual success when the worker starts late, and repeated asking (last pause held) until the budget runs out.
@@ -210,3 +212,17 @@ The reported problem was that a visit to a guarded adult site showed the ordinar
 - `npm test` (302 source tests) and `npm run build` pass.
 
 Manual update check: reload EarnTime on `chrome://extensions`, visit a domain from the fixed list (for example `pornhub.com`) and confirm the motivational pause appears with *Back to my goal* and no balance line; then run the balance to zero and confirm the block page shows a study line above the numbers.
+
+## Adult-site guard regression checks (v2.6.6)
+
+Two reports drove this change: an adult site showed only an ordinary block instead of the pause, and one site (`xhaccess`) opened anyway.
+
+- **Recognition.** Unit tests pin the four hostname tests and, just as importantly, their deliberate non-matches: `sussex.ac.uk`, `essex.gov.uk`, `analytics.example.com`, `nudestix.com`, `classictube.com` and `xxxlutz.at` stay open, while `pornhub.com`, `xhaccess.com`, `xhaccess.xxx` (adult TLD), `a-free-porn-tube.example` (fragment), `free-sex-videos.example` (whole label) and `xxx1.example` (brand label) are caught. Nothing reads page text, paths or embedded content.
+- **No drift between the package and the runtime.** A unit test parses the committed `rules/adult_guard.json` and requires it to be deep-equal to `buildAdultGuardRuleSet()`, the function the extension uses. `npm run build` regenerates the file from the same `data/adultDomains.json` and `data/adultTlds.json` the core imports, so a domain added to the list cannot be missing from the packaged ruleset.
+- **Static rules before the worker.** The simulated browser now models packaged rulesets (`loadStaticRules`), competing with dynamic rules on priority like Chrome does. A flow test starts with **no dynamic rules at all** and asserts that a navigation to `pornhub.com` still lands on `motivation.html`.
+- **The personal list.** Commands are tested in both directions (free in both, duplicate and built-in additions refused, ledger entries written), as is the storage sanitiser (hostnames only, normalised, invalid entries dropped). Flow tests add a site in Protection, assert the pause for a later navigation **and** for a tab that was already open, then remove it and assert it opens again.
+- **The in-page pause.** jsdom tests drive the real content script: an adult address is gated synchronously at `document_start` with the pause on screen and *no* `page.init` round trip, an adult TLD is paused without being on any list, a personal entry is paused from stored settings, a worker answering `{kind:'none'}` cannot open a guarded page, and adding a site to the list closes a page that is already open.
+- **Time on a guarded page is charged.** Unit tests assert that `roleOf` and `gapRoleForHost` return an unproductive role for a guarded host, so a page that slips through is neither credited nor uncounted.
+- `npm test` (315 source tests) and `npm run build` pass. The Playwright/Chromium suite and a real installed Chrome were **not** run for this change (no Chromium binary available), so the static ruleset's behaviour in real Chrome and the redirect timing still need a manual check.
+
+Manual update check: reload EarnTime on `chrome://extensions`, then open `https://www.xhaccess.xxx/` and confirm the motivational pause (encouragement plus three steps, no balance line). Open Settings → Protection, add a site of your own (for example a domain that is not on the built-in list), load it and confirm the pause; remove it and confirm it opens again. Then confirm an ordinary site such as `khanacademy.org` and a health site still open normally.

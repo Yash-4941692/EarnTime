@@ -14,6 +14,12 @@ export interface Settings {
   /** Minutes charged for each loosening change after setup. */
   unlockCostMin: number;
   youtubeKeywords: string[];
+  /**
+   * Sites the user added to the always-on adult-site pause themselves. The built-in guard is a fixed
+   * policy; this is the add-only side of it, because no list can name every adult destination that
+   * exists. Adding is free (it can only restrict) and so is removing an entry the user added.
+   */
+  guardedHosts: string[];
 }
 
 export interface Rules {

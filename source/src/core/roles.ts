@@ -4,7 +4,7 @@
  */
 
 import { GUARDED_PAGE_PREFIXES, YOUTUBE_HOST_SUFFIX } from './constants';
-import { isAdultSiteHost } from './adultSites';
+import { isGuardedHost } from './adultSites';
 import { classifyHost } from './domains';
 import type { EarnState, FilterState, HalfSession, Observation, Role } from './types';
 
@@ -60,6 +60,10 @@ export function roleOf(state: EarnState, obs: Observation): Role {
   if (obs.internalPage || obs.host === null) return { k: 'none', why: 'internal' };
 
   const host = obs.host;
+  // A guarded adult destination is never study and never free: if one is somehow in front of the
+  // user while EarnTime runs (a page guard that has not painted yet, a redirect still in flight),
+  // its time is charged like unproductive time instead of being credited or left uncounted.
+  if (isGuardedHost(host, state.settings.guardedHosts)) return { k: 'unproductive', host };
   const cls = classifyHost(host, state.rules);
   switch (cls.kind) {
     case 'productive':
@@ -98,6 +102,9 @@ export function countsForAccounting(role: Role): boolean {
  * so half-productive visits are charged as unproductive (fail closed).
  */
 export function gapRoleForHost(state: EarnState, host: string): Role {
+  // Adult destinations are blocked whenever EarnTime runs, so a history visit during an interruption
+  // means the pause was avoided. It is charged, exactly like an unproductive site.
+  if (isGuardedHost(host, state.settings.guardedHosts)) return { k: 'unproductive', host };
   const cls = classifyHost(host, state.rules);
   if (cls.kind === 'productive') return { k: 'productive', host: cls.entry ?? host };
   if (cls.kind === 'unproductive') return { k: 'unproductive', host: cls.entry ?? host };
@@ -114,8 +121,9 @@ export function gapRoleForHost(state: EarnState, host: string): Role {
  */
 export function blockReasonForHost(state: EarnState, host: string | null, tabId: number | null): BlockReason | null {
   if (host === null) return null;
-  // A fixed hostname-only self-control guard, independent of the earned-time wallet.
-  if (isAdultSiteHost(host)) return 'adult';
+  // A hostname-only self-control guard, independent of the earned-time wallet: the fixed policy plus
+  // the sites the user added to it in Settings → Protection.
+  if (isGuardedHost(host, state.settings.guardedHosts)) return 'adult';
   const cls = classifyHost(host, state.rules);
   if (isDebtMode(state)) {
     if (cls.kind === 'productive') return null;

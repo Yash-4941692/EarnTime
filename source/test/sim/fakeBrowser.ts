@@ -105,6 +105,12 @@ export class FakeBrowser {
   focusOrder: number[] = [];
   visits: SimVisit[] = [];
   dnr = new Map<number, DnrRule>();
+  /**
+   * Rules Chrome reads from the packaged `declarative_net_request` rulesets. They exist from the
+   * moment the extension is enabled, before the service worker has run anything, and they compete
+   * with the dynamic rules on priority — exactly like the real thing.
+   */
+  staticRules: DnrRule[] = [];
   notifications: Array<{ title: string; message: string; at: number }> = [];
   badge = { text: '', color: '' };
   incognitoAllowed = false;
@@ -816,6 +822,11 @@ export class FakeBrowser {
     });
   }
 
+  /** Loads a packaged ruleset, as Chrome does when the extension is enabled. */
+  loadStaticRules(rules: DnrRule[]): void {
+    this.staticRules = clone(rules);
+  }
+
   // ---------------------------------------------------------------- DNR evaluation
 
   /**
@@ -825,14 +836,15 @@ export class FakeBrowser {
   evaluateDnr(url: string): string | null {
     const host = hostOf(url);
     if (!host || !this.extensionEnabled) return null;
-    const rules = [...this.dnr.values()].sort((a, b) => b.priority - a.priority);
+    const rules = [...this.staticRules, ...this.dnr.values()].sort((a, b) => b.priority - a.priority);
     for (const rule of rules) {
       if (!rule.condition.resourceTypes.includes('main_frame')) continue;
       let matches = false;
       if (rule.condition.requestDomains) {
         matches = rule.condition.requestDomains.some((d) => host === d || host.endsWith(`.${d}`));
       } else if (rule.condition.regexFilter) {
-        matches = new RegExp(rule.condition.regexFilter).test(url);
+        const flags = rule.condition.isUrlFilterCaseSensitive === false ? 'i' : '';
+        matches = new RegExp(rule.condition.regexFilter, flags).test(url);
       }
       if (!matches) continue;
       if (rule.condition.excludedRequestDomains?.some((d) => host === d || host.endsWith(`.${d}`))) continue;

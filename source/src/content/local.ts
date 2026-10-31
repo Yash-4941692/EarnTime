@@ -52,6 +52,11 @@ export interface LocalVerdictInput {
   balanceMs: number;
   debtMs: number;
   youtubeKeywords: string[];
+  /**
+   * Sites the user added to the always-on adult-site pause (Settings → Protection). Optional because
+   * state written before schema 9 has none, and the guard then simply uses the fixed policy.
+   */
+  guardedHosts?: string[];
   setupDone: boolean;
   /** The worker's own verdict for this tab and URL, if it published one. */
   cached?: GateCacheEntry | null;
@@ -73,6 +78,7 @@ export async function readLocalVerdictInput(
   let balanceMs = 0;
   let debtMs = 0;
   let youtubeKeywords: string[] = [];
+  let guardedHosts: string[] = [];
   let setupDone = false;
   let cached: GateCacheEntry | null = null;
 
@@ -103,6 +109,7 @@ export async function readLocalVerdictInput(
         setupDone = s.setupDone === true;
         const settings = (s.settings && typeof s.settings === 'object' ? s.settings : {}) as Record<string, unknown>;
         youtubeKeywords = stringList(settings.youtubeKeywords, 60);
+        guardedHosts = stringList(settings.guardedHosts, 200);
       }
     } catch {
       rules = null;
@@ -116,6 +123,7 @@ export async function readLocalVerdictInput(
     balanceMs,
     debtMs,
     youtubeKeywords,
+    guardedHosts,
     setupDone,
     cached,
   };

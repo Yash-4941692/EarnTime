@@ -11,6 +11,7 @@ import {
   DEFAULT_YOUTUBE_KEYWORDS,
   HALF_REVIEW_RETENTION_MS,
   MAX_EARN_FROM_MIN,
+  MAX_GUARDED_HOSTS,
   MAX_HALF_REVIEWS,
   MAX_LIST_ITEMS,
   MAX_UNLOCK_COST_MIN,
@@ -55,6 +56,7 @@ export function createInitialState(now: number): EarnState {
       earnToMin: DEFAULT_EARN_TO_MIN,
       unlockCostMin: DEFAULT_UNLOCK_COST_MIN,
       youtubeKeywords: [...DEFAULT_YOUTUBE_KEYWORDS],
+      guardedHosts: [],
     },
     rules: { productive: [], half: [...DEFAULT_HALF_SITES], unproductive: [] },
     balanceMs: 0,
@@ -134,6 +136,9 @@ function sanitizeSettings(raw: unknown): Settings {
     earnToMin,
     unlockCostMin: clampInt(r.unlockCostMin, 0, MAX_UNLOCK_COST_MIN, base.unlockCostMin),
     youtubeKeywords: stringList(r.youtubeKeywords, 60),
+    // Sites the user added to the fixed pause (schema 9). Stored as normalised hostnames, so a
+    // hand-edited value cannot make the guard match something other than a hostname and subdomains.
+    guardedHosts: cleanHostList(r.guardedHosts, MAX_GUARDED_HOSTS),
   };
 }
 

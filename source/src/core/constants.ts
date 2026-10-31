@@ -15,8 +15,10 @@ export const DAY_MS = 24 * HOUR_MS;
  * half charged by default, which the user can correct afterwards.
  * 7 added the hostname-only adult-site focus guard, custom domains and trusted-site exceptions.
  * 8 makes that guard a fixed, always-on policy rather than a user preference.
+ * 9 adds `settings.guardedHosts`: sites the user adds to the always-on pause themselves, because no
+ * fixed list can name every adult destination.
  */
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 /** Storage key holding the entire persisted state (one key = atomic writes). */
 export const STATE_KEY = 'state';
@@ -83,6 +85,8 @@ export const MAX_EARN_FROM_MIN = 1440;
 export const MAX_TASK_REWARD_MIN = 60;
 export const MAX_TITLE_LEN = 80;
 export const MAX_LIST_ITEMS = 200;
+/** Personal adult-site guard entries (Settings → Protection). Separate from the three site lists. */
+export const MAX_GUARDED_HOSTS = 200;
 
 export const DEFAULT_YOUTUBE_KEYWORDS = ['JEE', 'NDA', 'Study', 'Learn', 'Education', 'PW'] as const;
 export const DEFAULT_HALF_SITES = ['youtube.com', 'web.whatsapp.com'] as const;

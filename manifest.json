@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "EarnTime",
-  "version": "2.6.5",
+  "version": "2.6.6",
   "description": "Study to earn screen time. Counts only active study time, enforces unproductive-site limits, and repays overspending through study.",
   "permissions": [
     "storage",
@@ -33,6 +33,15 @@
   },
   "background": {
     "service_worker": "background.js"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "adult_guard",
+        "enabled": true,
+        "path": "rules/adult_guard.json"
+      }
+    ]
   },
   "content_scripts": [
     {

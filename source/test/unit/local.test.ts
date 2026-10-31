@@ -29,7 +29,7 @@ function stored(overrides: Partial<EarnState> = {}): EarnState {
     historyGranted: true,
     historyScope: 'local',
     createdAt: T0,
-    settings: { earnFromMin: 60, earnToMin: 5, unlockCostMin: 10, youtubeKeywords: ['Study', 'JEE'] },
+    settings: { earnFromMin: 60, earnToMin: 5, unlockCostMin: 10, youtubeKeywords: ['Study', 'JEE'], guardedHosts: [] },
     rules: { productive: ['khanacademy.org'], half: ['youtube.com'], unproductive: ['instagram.com'] },
     balanceMs: 30 * MIN,
     debtMs: 0,

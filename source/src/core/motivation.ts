@@ -33,6 +33,22 @@ export const ADULT_PAUSE_LINES: readonly MotivationLine[] = [
     title: 'Your future self is counting on you.',
     text: 'Pause, reset, and put your attention where you meant it to go.',
   },
+  {
+    title: "You are stronger than this minute.",
+    text: 'An urge is a wave: it rises, it crests, and it passes. Ride it out and get back to your work.',
+  },
+  {
+    title: 'Close it and walk away for two minutes.',
+    text: 'Stand up, drink some water, look out of the window. The pull gets weaker the moment you move.',
+  },
+  {
+    title: 'The version of you that you are building is watching.',
+    text: 'Every time you choose your goal here, the habit gets a little stronger and the urge a little weaker.',
+  },
+  {
+    title: 'Nothing here will remember you. Your goals will.',
+    text: 'Come back to the work that is actually yours: the exam, the skill, the person you are becoming.',
+  },
 ];
 
 /** Shown on the block pages that stop you for time reasons (debt, or an empty balance). */

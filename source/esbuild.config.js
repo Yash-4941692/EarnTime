@@ -12,6 +12,7 @@ const path = require('path');
 const watch = process.argv.includes('--watch');
 const outdir = path.join(__dirname, '..');
 const pagesDir = path.join(__dirname, 'pages');
+const dataDir = path.join(__dirname, 'data');
 
 const shared = {
   bundle: true,
@@ -56,6 +57,47 @@ const tailwindPlugin = {
   },
 };
 
+/**
+ * Writes `rules/adult_guard.json`, the static declarativeNetRequest ruleset Chrome loads with the
+ * extension.
+ *
+ * The service worker installs the same guard as *dynamic* rules, but only once it has run a job — so
+ * right after an install, a reload or an update there is a moment when a navigation could beat it.
+ * A static ruleset ships with the package and is active from the first moment, which is what makes
+ * the pause reliable rather than eventual.
+ *
+ * The domains and TLDs come from the same `data/*.json` files the core imports, so the packaged
+ * ruleset cannot drift from what the extension itself considers adult. A unit test compares the two.
+ */
+function writeAdultRules() {
+  const domains = JSON.parse(fs.readFileSync(path.join(dataDir, 'adultDomains.json'), 'utf8'));
+  const tlds = JSON.parse(fs.readFileSync(path.join(dataDir, 'adultTlds.json'), 'utf8'));
+  const pause = { type: 'redirect', redirect: { extensionPath: '/motivation.html' } };
+  const ruleset = {
+    rules: [
+      {
+        id: 1,
+        priority: 100,
+        action: pause,
+        condition: { requestDomains: domains, resourceTypes: ['main_frame'] },
+      },
+      {
+        id: 2,
+        priority: 100,
+        action: pause,
+        condition: {
+          regexFilter: `^https?://[^/]+\\.(${tlds.join('|')})([:/?#]|$)`,
+          isUrlFilterCaseSensitive: false,
+          resourceTypes: ['main_frame'],
+        },
+      },
+    ],
+  };
+  const target = path.join(outdir, 'rules', 'adult_guard.json');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, `${JSON.stringify(ruleset, null, 2)}\n`);
+}
+
 function copyPages() {
   for (const file of fs.readdirSync(pagesDir)) {
     if (file.endsWith('.html')) fs.copyFileSync(path.join(pagesDir, file), path.join(outdir, file));
@@ -64,6 +106,7 @@ function copyPages() {
 
 async function build() {
   copyPages();
+  writeAdultRules();
   const contexts = [];
 
   // Service worker and content script: IIFE so they run as classic scripts.

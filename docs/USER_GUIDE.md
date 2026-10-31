@@ -42,7 +42,11 @@ The setup wizard opens the first time. It has eight steps:
 
 ## Adult-site focus
 
-The adult-site focus guard is always on and uses a fixed, curated list of dedicated adult-site hostnames. It cannot be turned off or edited in Settings. The list is not exhaustive and does not have a user-editable exception list; the separate balance and debt rules still apply independently.
+The adult-site focus guard is always on. It covers a curated list of dedicated adult-site hostnames, adult top-level domains such as `.xxx` and `.porn`, and unmistakable adult words in the hostname itself. It cannot be turned off and its built-in list cannot be edited.
+
+No list can name every site, so you can add your own: open **Settings → Protection → Your own pause list**, type a site such as `example.com` and press **Add**. From then on that site (and its subdomains) opens the same motivational pause instead of the page, whatever your balance is. Adding is free and so is removing something you added. The pause shows a short encouragement and three things to do instead; it never names the site, the reason or your balance.
+
+If a page does open before the pause can replace it, EarnTime covers the page with the pause itself, so there is nothing to use behind it. The separate balance and debt rules still apply independently.
 
 Matching is by hostname and covers subdomains. EarnTime does **not** inspect page text, URL paths, images, search terms or embedded content, so a health, education, news or social page is not classified because of words on it. Mixed-use domains are excluded from the curated list. A matching visit opens a short motivational pause page of its own (not a block page): it does not name the site or the reason, and it says nothing about your balance or debt — it is a pause, not an accounting statement.
 

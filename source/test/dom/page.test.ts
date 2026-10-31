@@ -17,6 +17,7 @@ import { JSDOM } from 'jsdom';
 import type { PageDirective } from '../../src/core/directive';
 import { GATE_STYLE_ID, OVERLAY_HOST_ID } from '../../src/content/gate';
 import { GATE_CACHE_KEY } from '../../src/content/local';
+import { ADULT_PAUSE_LINES } from '../../src/core/motivation';
 import { attachPage, hostOfUrl, type PageEnv, type Reply } from '../../src/content/page';
 import type { EarnState } from '../../src/core/types';
 
@@ -31,7 +32,7 @@ function stateWith(overrides: Partial<EarnState> = {}): EarnState {
     setupDone: true,
     historyGranted: true,
     createdAt: T0,
-    settings: { earnFromMin: 60, earnToMin: 5, unlockCostMin: 10, youtubeKeywords: ['Study'] },
+    settings: { earnFromMin: 60, earnToMin: 5, unlockCostMin: 10, youtubeKeywords: ['Study'], guardedHosts: [] },
     rules: { productive: ['khanacademy.org'], half: ['youtube.com'], unproductive: ['instagram.com'] },
     balanceMs: 30 * MIN,
     debtMs: 0,
@@ -578,4 +579,69 @@ test('disabling the extension restores content hidden by an active YouTube filte
     control.dispose();
     h.cleanup();
   }
+});
+
+test('an adult site is covered by the motivational pause before anything can paint', async () => {
+  const h = new Harness({ url: 'https://www.pornhub.com/view_video.php?id=x', replies: [undefined] });
+  attachPage(h.dom.window.document, h.env);
+  // The address alone is the verdict: the gate is already closed synchronously, with no awaits.
+  assert.equal(h.gated(), true, 'the page is closed from document_start');
+  await h.flush();
+  assert.equal(h.gated(), true, 'and it stays closed');
+  const title = h.cardTitle();
+  assert.ok(title && ADULT_PAUSE_LINES.some((line) => line.title === title), `an encouragement is on screen, got ${title}`);
+  assert.ok(h.sent.every((m) => m.type !== 'page.init'), 'no service-worker round trip is needed to pause');
+  assert.equal(h.banner(), null, 'nothing about the wallet or the reason is shown');
+  h.cleanup();
+});
+
+test('an adult sponsored TLD is paused without being on any list', async () => {
+  const h = new Harness({ url: 'https://xhaccess.xxx/watch/123', replies: [undefined] });
+  attachPage(h.dom.window.document, h.env);
+  await h.flush();
+  assert.equal(h.gated(), true);
+  assert.ok(ADULT_PAUSE_LINES.some((line) => line.title === h.cardTitle()));
+  h.cleanup();
+});
+
+test('a site the user added to their own pause list is paused, even though it is not on any built-in list', async () => {
+  const state = stateWith({ settings: { ...stateWith().settings, guardedHosts: ['mystery.example'] } });
+  const h = new Harness({ url: 'https://www.mystery.example/feed', state, replies: [{ ok: true, directive: { kind: 'none' }, tabId: 3 }] });
+  attachPage(h.dom.window.document, h.env);
+  await h.flush();
+  assert.equal(h.gated(), true, 'the personal list closes the page too');
+  assert.ok(ADULT_PAUSE_LINES.some((line) => line.title === h.cardTitle()));
+  h.cleanup();
+});
+
+test('a worker answer never opens a guarded page', async () => {
+  const h = new Harness({
+    url: 'https://www.xhamster.com/videos/1',
+    replies: [{ ok: true, directive: { kind: 'none' }, tabId: 5 }],
+  });
+  attachPage(h.dom.window.document, h.env);
+  await h.flush();
+  assert.equal(h.gated(), true, 'the "nothing to do" answer cannot open an adult page');
+  assert.ok(ADULT_PAUSE_LINES.some((line) => line.title === h.cardTitle()));
+  h.cleanup();
+});
+
+test('adding a site to the personal pause list closes the page that is already open', async () => {
+  const plain = stateWith();
+  const h = new Harness({
+    url: 'https://www.mystery.example/feed',
+    state: plain,
+    replies: [{ ok: true, directive: { kind: 'none' }, tabId: 6 }],
+  });
+  attachPage(h.dom.window.document, h.env);
+  await h.flush();
+  assert.equal(h.gated(), false, 'not guarded until the user says so');
+
+  const guarded = stateWith({
+    settings: { ...plain.settings, guardedHosts: ['mystery.example'] },
+  });
+  await h.changeState(guarded);
+  assert.equal(h.gated(), true, 'the rule change is picked up live, with no reload');
+  assert.ok(ADULT_PAUSE_LINES.some((line) => line.title === h.cardTitle()));
+  h.cleanup();
 });

@@ -23,12 +23,14 @@
  * because a page nobody manages must not stay hidden.
  */
 
+import { isAdultSiteHost, isGuardedHost } from '../core/adultSites';
 import type { PageDirective } from '../core/directive';
+import { ADULT_PAUSE_LINES, pickMotivationLine } from '../core/motivation';
 import type { HalfMode } from '../core/types';
 import { askWorker, type AskOptions } from './askWorker';
 import { createGate, extensionContextAlive, type Gate } from './gate';
 import { provisionalVerdict, readLocalVerdictInput, stripHash, type LocalVerdictInput, type Provisional } from './local';
-import { chooserCard, coverCard, createOverlay, type Overlay } from './overlay';
+import { chooserCard, coverCard, createOverlay, pauseCard, type Overlay } from './overlay';
 import { startYouTubeFilter, type YouTubeFilter } from './youtube';
 
 const HEALTH_INTERVAL_MS = 10_000;
@@ -166,6 +168,13 @@ async function run(rt: Runtime): Promise<void> {
     return;
   }
 
+  // 0. The adult-site pause is decided from the address alone. It runs before the first await, so a
+  //    guarded page is closed and covered before it can paint, with no worker round trip at all.
+  if (isAdultSiteHost(rt.host)) {
+    showAdultPause(rt);
+    return;
+  }
+
   // The cover for a still-undecided page. It does nothing when a decision has already been applied.
   const waiting = env.setTimeout(() => {
     if (rt.answered || rt.abandoned || rt.disposed || rt.lastKey !== '') return;
@@ -177,6 +186,12 @@ async function run(rt: Runtime): Promise<void> {
   //    chooser for a half-productive first visit is on screen before the site paints.
   await refreshLocal(rt);
   if (stopped(rt)) return;
+  // Sites the user added themselves live in stored settings, so they are known from here on — still
+  // without the worker, and still before the page has painted.
+  if (guardActive(rt)) {
+    showAdultPause(rt);
+    return;
+  }
   applyProvisional(rt, provisionalVerdict(rt.host, rt.tabId, rt.local));
   watchUrl(rt);
   watchRules(rt);
@@ -240,6 +255,13 @@ function applyProvisional(rt: Runtime, verdict: Provisional): void {
 
 function applyDirective(rt: Runtime, directive: PageDirective | undefined): void {
   if (stopped(rt)) return;
+  // A guarded adult destination never opens, whatever the worker said: the pause wins over every
+  // directive, including the "nothing to do" answer for a page EarnTime does not track and a
+  // half-productive mode that was chosen before the site was added to the list.
+  if (guardActive(rt)) {
+    showAdultPause(rt);
+    return;
+  }
   if (!directive || directive.kind === 'none') {
     release(rt, 'none');
     return;
@@ -301,12 +323,56 @@ function applyDirective(rt: Runtime, directive: PageDirective | undefined): void
 /** The page is open and EarnTime has nothing on it. */
 function release(rt: Runtime, key: string): void {
   if (stopped(rt)) return;
+  // "Nothing on it" is never true for a guarded site: the address alone is the whole verdict.
+  if (guardActive(rt)) {
+    showAdultPause(rt);
+    return;
+  }
   teardownFilters(rt);
   rt.overlay?.set(null);
   rt.overlay?.banner(null);
   rt.gate.open();
   rt.lastKey = key;
 }
+
+/** True when this page is an adult destination (fixed policy or the user's own list). */
+function guardActive(rt: Runtime): boolean {
+  return isGuardedHost(rt.host, rt.local?.guardedHosts ?? []);
+}
+
+/**
+ * Covers the page with the motivational pause and keeps it covered.
+ *
+ * This is the layer that makes the guard independent of redirect rules: a site that opens anyway —
+ * because the dynamic rules were not installed yet, because the address changed inside a single-page
+ * app, or because it matches the guard by a hostname fragment a domain list cannot express — is
+ * closed before its first paint and replaced by a line of encouragement. It needs no service worker
+ * and no stored state: the address is enough.
+ */
+function showAdultPause(rt: Runtime): void {
+  if (stopped(rt)) return;
+  rt.gate.close();
+  if (rt.lastKey === ADULT_PAUSE_KEY) {
+    // Keep the card asserted in case the page removed it.
+    return;
+  }
+  rt.lastKey = ADULT_PAUSE_KEY;
+  teardownFilters(rt);
+  const overlay = ensureOverlay(rt);
+  overlay.banner(null);
+  const line = pickMotivationLine(ADULT_PAUSE_LINES, rt.env.now());
+  overlay.set(
+    pauseCard({
+      title: line.title,
+      text: line.text,
+      onLeave: () => leave(rt),
+      onClose: () => rt.win?.close(),
+    }),
+  );
+}
+
+/** Key used in `lastKey` while the adult-site pause is on screen. */
+const ADULT_PAUSE_KEY = '__adult_pause__';
 
 function showWaiting(rt: Runtime): void {
   if (stopped(rt)) return;

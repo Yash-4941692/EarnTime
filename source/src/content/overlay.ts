@@ -154,6 +154,41 @@ export function chooserCard(opts: {
   );
 }
 
+/**
+ * The motivational pause, rendered over the page itself.
+ *
+ * The redirect rule can only stop navigations it sees; when a page opens anyway (the rules were not
+ * installed yet, the address changed inside a single-page app, or the site matches the guard by a
+ * hostname fragment no domain list can express) this card is what the user gets instead of the site:
+ * a line of encouragement, a way back to the goal, and nothing about the site, the reason or the
+ * wallet. It is deliberately not dismissible: there is no "continue" on it.
+ */
+export function pauseCard(opts: {
+  title: string;
+  text: string;
+  onLeave: () => void;
+  onClose: () => void;
+}): HTMLElement {
+  return el(
+    'div',
+    { class: 'et-cover', attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'A moment for yourself' } },
+    el(
+      'div',
+      { class: 'et-card' },
+      el('p', { class: 'et-eyebrow' }, 'EarnTime · a moment for yourself'),
+      el('h2', { class: 'et-title' }, opts.title),
+      el('p', { class: 'et-text' }, opts.text),
+      el('p', { class: 'et-text' }, 'Take three slow breaths. Nothing here is worth the goal you set.'),
+      el(
+        'div',
+        { class: 'et-row' },
+        el('button', { class: 'et-button', type: 'button', onclick: () => opts.onLeave() }, 'Back to my goal'),
+        el('button', { class: 'et-button secondary', type: 'button', onclick: () => opts.onClose() }, 'Close this tab'),
+      ),
+    ),
+  );
+}
+
 /** Full-page cover, used for blank YouTube pages and fail-closed states. */
 export function coverCard(opts: {
   eyebrow: string;

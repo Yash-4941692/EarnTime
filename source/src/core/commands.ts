@@ -5,12 +5,14 @@
 
 import {
   MAX_EARN_FROM_MIN,
+  MAX_GUARDED_HOSTS,
   MAX_LIST_ITEMS,
   MAX_SETUP_BALANCE_MIN,
   MAX_UNLOCK_COST_MIN,
   MINUTE_MS,
   SCHEMA_VERSION,
 } from './constants';
+import { isAdultSiteHost, isGuardedHost } from './adultSites';
 import { chargeReclassifiedSite } from './reclassify';
 import { applyHalfReview } from './halfReview';
 import { cleanHostList, dedupeRules } from './state';
@@ -50,6 +52,12 @@ export type Command =
   | { type: 'site.add'; list: ListName; host: string; confirm?: boolean }
   | { type: 'site.remove'; host: string; confirm?: boolean }
   | { type: 'site.move'; host: string; to: ListName; confirm?: boolean }
+  /**
+   * Adds or removes one site on the user's own adult-site pause list. Free: adding can only restrict,
+   * and removing an entry the user added only restores what the fixed policy never covered.
+   */
+  | { type: 'guard.add'; host: string }
+  | { type: 'guard.remove'; host: string }
   | { type: 'youtube.add'; keyword: string }
   | { type: 'youtube.remove'; keyword: string }
   | { type: 'task.add'; title: string; rewardMin: number; recurring: boolean; confirm?: boolean }
@@ -184,6 +192,33 @@ function applySite(state: EarnState, now: number, cmd: Extract<Command, { type: 
   if (cmd.to === 'unproductive') chargeReclassifiedSite(state, host, now);
   addLedger(state, 'rule', now, 0, `Moved ${host} to ${LIST_LABEL[cmd.to].toLowerCase()} sites`, host);
   return { ok: true };
+}
+
+/**
+ * The user's own side of the always-on adult-site pause. The fixed policy cannot be edited, so this
+ * is add-only by construction: `guard.remove` can only drop an entry the user added themselves.
+ */
+function applyGuard(state: EarnState, now: number, cmd: Extract<Command, { type: 'guard.add' | 'guard.remove' }>): RuleResult {
+  const host = normalizeHostInput(cmd.host);
+  if (!host) return fail('invalid', 'Enter a website such as example.com.');
+
+  if (cmd.type === 'guard.add') {
+    if (isAdultSiteHost(host)) {
+      return fail('duplicate', `${host} is already covered by the built-in pause.`);
+    }
+    if (state.settings.guardedHosts.includes(host)) return fail('duplicate', `${host} is already on your pause list.`);
+    if (state.settings.guardedHosts.length >= MAX_GUARDED_HOSTS) return fail('limit', 'That list is full.');
+    state.settings.guardedHosts.push(host);
+    addLedger(state, 'guard', now, 0, `Added ${host} to the adult-site pause`, host);
+    return { ok: true };
+  }
+
+  const index = state.settings.guardedHosts.indexOf(host);
+  if (index < 0) return fail('not-found', `${host} is not on your pause list.`);
+  const covered = isGuardedHost(host, []);
+  state.settings.guardedHosts.splice(index, 1);
+  addLedger(state, 'guard', now, 0, `Removed ${host} from the adult-site pause`, host);
+  return { ok: true, data: { stillGuarded: covered } };
 }
 
 function applyYouTubeKeyword(state: EarnState, now: number, value: string, add: boolean): RuleResult {
@@ -327,6 +362,7 @@ export function applySetup(state: EarnState, payload: SetupPayload, now: number)
     earnToMin: ratio.data.earnToMin,
     unlockCostMin: cost,
     youtubeKeywords: payload.youtubeKeywords.map((k) => k.trim()).filter(Boolean).slice(0, 60),
+    guardedHosts: [...state.settings.guardedHosts],
   };
   state.settings = settings;
   state.rules = { productive: deduped.productive, half: deduped.half, unproductive: deduped.unproductive };
@@ -373,6 +409,9 @@ export function applyCommand(state: EarnState, cmd: Command, now: number): RuleR
     case 'site.remove':
     case 'site.move':
       return applySite(state, now, cmd);
+    case 'guard.add':
+    case 'guard.remove':
+      return applyGuard(state, now, cmd);
     case 'youtube.add':
       return applyYouTubeKeyword(state, now, cmd.keyword, true);
     case 'youtube.remove':
