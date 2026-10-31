@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { CHROME_LIMITATION_SENTENCE } from '../../core/constants';
+import { ADULT_PAUSE_LINES, STUDY_LINES, pickMotivationLine, type MotivationLine } from '../../core/motivation';
 import { isGuardedUrl } from '../../core/roles';
 import { unresolvedReviews } from '../../core/halfReview';
 import { dashboardView } from '../../core/view';
@@ -12,6 +13,21 @@ import type { EarnState } from '../../core/types';
 function studyTarget(state: EarnState | null): string {
   const first = state?.rules.productive[0];
   return first ? `https://${first}/` : 'chrome://newtab/';
+}
+
+/**
+ * One line of encouragement where EarnTime stops you for time reasons. It is picked once per minute
+ * and repeats, so the page does not change under the cursor while it is being read.
+ */
+function MotivationNote({ lines }: { lines: readonly MotivationLine[] }) {
+  const [line] = useState(() => pickMotivationLine(lines, Date.now()));
+  return (
+    <div className="mt-3 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3" data-et-motivation="study">
+      <p className="text-[12.5px] leading-snug text-emerald-100/90">
+        <span className="font-semibold text-emerald-100">{line.title}</span> {line.text}
+      </p>
+    </div>
+  );
 }
 
 function DebtBlock({ state }: { state: EarnState }) {
@@ -28,6 +44,7 @@ function DebtBlock({ state }: { state: EarnState }) {
         Only productive sites are open until the debt is repaid. Study{' '}
         <strong className="text-rose-100">{formatDuration(view.requiredProductiveMs)}</strong> of productive time to clear it.
       </p>
+      <MotivationNote lines={STUDY_LINES} />
       <div className="mt-4 space-y-1.5">
         <div className="flex justify-between text-[12px] text-slate-400">
           <span>Repaid {formatDuration(view.debtRepaidMs)} of {formatDuration(view.debtOriginMs)}</span>
@@ -61,6 +78,7 @@ function ExhaustedBlock({ state }: { state: EarnState }) {
       <p className="mt-2 text-[14px] leading-relaxed text-slate-300">
         Unproductive sites are blocked until you earn more time. Study on a productive site, then come back.
       </p>
+      <MotivationNote lines={STUDY_LINES} />
       <p className="mt-3 text-[12.5px] text-slate-500">
         Earn rule: {state.settings.earnFromMin} productive minutes → {state.settings.earnToMin} minutes.
       </p>
@@ -103,29 +121,16 @@ function ExtensionsBlock({ target }: { target: string | null }) {
   );
 }
 
-const MOTIVATION_LINES = [
-  {
-    title: "Bro/Sis, don't lose to lust.",
-    text: 'Remember why you started. One small choice now protects the future you are working for.',
-  },
-  {
-    title: 'Did you forget why you started?',
-    text: "Don't trade your goal for a passing urge. Take a breath, close this tab, and choose your next step.",
-  },
-  {
-    title: "Time can't be bought this cheap.",
-    text: 'Every distraction is paid back with interest called regret. Spend this moment on the life you want.',
-  },
-  {
-    title: 'Your future self is counting on you.',
-    text: 'Pause, reset, and put your attention where you meant it to go.',
-  },
-] as const;
-
+/**
+ * The motivational pause for the fixed adult-site focus guard. It says nothing about the site, the
+ * reason, the balance or the debt: the point is the pause, and the wallet has nothing to do with it.
+ * Rendered both by `block.html?reason=motivation` and by the dedicated `motivation.html` page the
+ * declarativeNetRequest rule redirects to.
+ */
 function MotivationBlock() {
-  const [line] = useState(() => MOTIVATION_LINES[Math.floor(Date.now() / 60_000) % MOTIVATION_LINES.length]);
+  const [line] = useState(() => pickMotivationLine(ADULT_PAUSE_LINES, Date.now()));
   return (
-    <div className="rounded-2xl border border-emerald-400/20 bg-gradient-to-b from-slate-900/80 to-slate-950/80 p-5 text-center">
+    <div className="rounded-2xl border border-emerald-400/20 bg-gradient-to-b from-slate-900/80 to-slate-950/80 p-5 text-center" data-et-motivation="pause">
       <p className="eyebrow">A MOMENT FOR YOURSELF</p>
       <h1 className="mt-3 text-[24px] font-semibold leading-snug text-slate-50">{line.title}</h1>
       <p className="mt-3 text-[14px] leading-relaxed text-slate-300">{line.text}</p>
@@ -133,11 +138,36 @@ function MotivationBlock() {
   );
 }
 
+/**
+ * True when the page is inside a frame. EarnTime never frames its own pages, so this only happens
+ * when a website loads one of them — possible because the block pages have to be web-accessible for
+ * the redirect rules to work. In that case nothing about the wallet is rendered.
+ */
+function useIsFramed(): boolean {
+  const [framed] = useState(() => typeof window !== 'undefined' && window.top !== window);
+  return framed;
+}
+
 export function Block({ reason, target }: { reason: string | null; target: string | null }) {
   const state = useStoredState();
+  const framed = useIsFramed();
   const extensions = reason === 'extensions';
   const motivation = reason === 'motivation';
   const debt = state !== null && state.debtMs > 0;
+
+  if (framed) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-xl items-center px-5 py-10">
+        <Card className="w-full space-y-2 p-6">
+          <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" aria-hidden="true" />
+            EarnTime
+          </div>
+          <p className="text-[14px] leading-relaxed text-slate-300">EarnTime pages are not shown inside another site.</p>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex min-h-screen max-w-xl items-center px-5 py-10">

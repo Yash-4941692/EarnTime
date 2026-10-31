@@ -317,11 +317,13 @@ try {
     const exhausted = await newPage(context, { role: 'ui' });
     await exhausted.goto(`${base}/block.html`);
     await exhausted.getByText('Screen time used up').waitFor();
+    await exhausted.locator('[data-et-motivation="study"]').waitFor();
     await exhausted.screenshot({ path: join(shots, 'block-exhausted.png') });
 
     await setState(exhausted, 's.debtMs = 20*60000; s.debtOriginMs = 20*60000; s.debtSince = Date.now();');
     await exhausted.getByText('DEBT MODE', { exact: true }).waitFor();
     expect((await exhausted.locator('body').innerText()).includes('You owe 20m 00s'), 'debt amount on block page');
+    await exhausted.locator('[data-et-motivation="study"]').waitFor();
     await exhausted.screenshot({ path: join(shots, 'block-debt.png') });
 
     await exhausted.goto(`${base}/block.html?reason=extensions&target=chrome%3A%2F%2Fextensions%2F`);
@@ -332,12 +334,22 @@ try {
       'exact wording on extensions confirmation page',
     );
 
-    await exhausted.goto(`${base}/block.html?reason=motivation`);
+    // The page the declarativeNetRequest rule redirects to: motivation with nothing to lose.
+    await exhausted.goto(`${base}/motivation.html`);
     await exhausted.getByRole('heading', { name: /Bro\/Sis|Did you forget why you started|Time can't be bought|Your future self/ }).waitFor();
     await exhausted.getByRole('link', { name: 'Back to my goal' }).waitFor();
     const motivationText = await exhausted.locator('body').innerText();
     expect(!motivationText.toLowerCase().includes('block'), 'motivation page does not mention the intervention');
     expect(!motivationText.includes('Balance'), 'motivation page hides wallet details');
+    await exhausted.screenshot({ path: join(shots, 'motivation.png') });
+
+    // The same pause still renders from the block page entry kept for tabs redirected before this.
+    await exhausted.goto(`${base}/block.html?reason=motivation`);
+    await exhausted.getByRole('link', { name: 'Back to my goal' }).waitFor();
+    expect(
+      !(await exhausted.locator('body').innerText()).includes('Balance'),
+      'the block-page entry hides wallet details too',
+    );
     await context.close();
   });
 

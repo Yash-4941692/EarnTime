@@ -1,3 +1,23 @@
+# EarnTime 2.6.5
+
+## The motivational pause shows again, and the block pages encourage you
+
+- **Fixed: a guarded adult-site visit opened the ordinary block page instead of the motivational pause.** The pause lived at `block.html?reason=motivation`, so it depended on a query parameter surviving the `declarativeNetRequest` redirect. When the parameter did not arrive, the page had no reason to go on and fell back to the debt or "screen time used up" block — motivation never appeared, only blocking. The pause is now a page of its own, `motivation.html`, which is the motivational pause whatever the redirect carries. `block.html?reason=motivation` still shows it, so a tab redirected by an older build keeps working.
+- **Chrome can now load the redirected pages at all.** `block.html` and `motivation.html` are declared in `web_accessible_resources`. Chrome refuses to load an extension page reached through a redirect from a navigation that started on a website (a link click, for example) unless it is declared, which is the other way a pause or a block could fail to appear. No other EarnTime page is exposed.
+- **The debt and "screen time used up" pages now say something worth reading.** Each shows one short encouragement from a small rotating set beside the numbers — "Debt is only time you have not studied yet…", "Earn it, then enjoy it…", "Small sessions still count…" — picked once a minute. The adult-site pause keeps its own wording and still says nothing about the site, the reason, the balance or the debt.
+- **A block page inside a frame shows nothing about the wallet.** Because those two pages have to be web-accessible, a site could load one in a frame; in that case EarnTime renders one line instead of your balance and debt.
+- Existing settings, balances, day totals, ledger, tasks, reviews and site rules are preserved. The storage schema stays at 8.
+
+## Verification
+
+Strict TypeScript checking, **302 source tests** (164 unit, 79 DOM, 59 simulated-browser) and the production build pass. The separate Playwright/Chromium suite and real-Chrome checks were not run because no Chromium binary was available.
+
+## Install or update
+
+Download **EarnTime-2.6.5.zip**, extract it, and select the folder containing `manifest.json` via Chrome's **Load unpacked** option.
+
+For an existing unpacked installation, replace its files with the extracted release and click **Reload** for EarnTime at `chrome://extensions`. **Do not uninstall** if you want to keep your settings and balance.
+
 # EarnTime 2.6.4
 
 ## Adult-site focus and Chrome settings confirmation

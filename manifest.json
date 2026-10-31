@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "EarnTime",
-  "version": "2.6.4",
+  "version": "2.6.5",
   "description": "Study to earn screen time. Counts only active study time, enforces unproductive-site limits, and repays overspending through study.",
   "permissions": [
     "storage",
@@ -45,6 +45,17 @@
       ],
       "run_at": "document_start",
       "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "block.html",
+        "motivation.html"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
