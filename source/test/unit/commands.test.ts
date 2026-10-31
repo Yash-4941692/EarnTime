@@ -260,6 +260,35 @@ test('YouTube keywords: adding and removing are free, duplicates are refused cas
   assert.equal(state.balanceMs, 30 * MIN);
 });
 
+test('the personal pause list is free in both directions and can never contain a built-in site', () => {
+  const state = freshState(true);
+  state.balanceMs = 30 * MIN;
+  const added = applyCommand(state, { type: 'guard.add', host: 'https://Mystery.example/watch' }, T0);
+  assert.equal(added.ok, true);
+  assert.deepEqual(state.settings.guardedHosts, ['mystery.example'], 'stored as a bare hostname');
+  assert.equal(state.balanceMs, 30 * MIN, 'adding a restriction is free');
+
+  const again = applyCommand(state, { type: 'guard.add', host: 'mystery.example' }, T0);
+  assert.equal(again.ok === false && again.code, 'duplicate');
+
+  const builtIn = applyCommand(state, { type: 'guard.add', host: 'www.pornhub.com' }, T0);
+  assert.equal(builtIn.ok === false && builtIn.code, 'duplicate', 'the fixed policy already covers it');
+
+  const notThere = applyCommand(state, { type: 'guard.remove', host: 'other.example' }, T0);
+  assert.equal(notThere.ok === false && notThere.code, 'not-found');
+
+  const removed = applyCommand(state, { type: 'guard.remove', host: 'mystery.example' }, T0);
+  assert.equal(removed.ok, true);
+  assert.deepEqual(state.settings.guardedHosts, [], 'the user can always undo their own addition');
+  assert.equal(state.balanceMs, 30 * MIN, 'removing an entry the user added is free');
+
+  const ledger = state.ledger.filter((entry) => entry.kind === 'guard').map((entry) => entry.note);
+  assert.deepEqual(ledger, [
+    'Added mystery.example to the adult-site pause',
+    'Removed mystery.example from the adult-site pause',
+  ], 'both directions are auditable');
+});
+
 test('legacy adult-site edit commands are rejected', () => {
   const state = freshState(true);
   const result = applyCommand(

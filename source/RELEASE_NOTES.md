@@ -1,3 +1,27 @@
+# EarnTime 2.6.6
+
+## The pause actually pauses, and you can add any site you find
+
+This release answers two reports: an adult site showed only an ordinary block instead of the motivation, and some sites (one of them `xhaccess`) opened anyway.
+
+- **More sites are recognised.** The curated list grows from 45 to about 260 dedicated destinations, and two hostname tests now run beside it: the adult sponsored top-level domains (`.xxx`, `.porn`, `.adult`, `.sex`, `.sexy`) and unmistakable whole-label words or brand fragments (`xhaccess`, `xnxx`, `hentai`, …). Matching is still hostname-only — never page text, paths, images or embedded content — and the word tests use label boundaries, so `sussex.ac.uk`, `analytics.example.com` and `xxxlutz.at` are not caught.
+- **You can add any site yourself.** *Settings → Protection → Your own pause list* takes any hostname; it is paused exactly like a built-in one, from then on and for its subdomains. Adding is free (it can only restrict), removing your own entry is free, and both are written to the audit log. The built-in policy still cannot be removed.
+- **The pause no longer depends on a redirect surviving.** Three layers now enforce it: a **static** `declarativeNetRequest` ruleset shipped in the package (active from the moment EarnTime is enabled, before the service worker has done anything), the same guard as **dynamic** rules (which include your own additions), and the **content script**, which closes the page at `document_start` and draws the pause over it. If a site opens anyway — a hostname fragment no rule can express, a single-page navigation, a redirect that lost — the page is covered by the pause and cannot be used.
+- **The pause itself now motivates.** Eight rotating lines instead of four, plus three concrete things to do in the next minute, on both `motivation.html` and the in-page pause. It still says nothing about the site, the reason, the balance or the debt.
+- **Time on a guarded page is charged, never credited.** If a guarded page is ever in front of you (a page guard that has not painted yet, or a visit recorded from history while EarnTime was not running), its time counts as unproductive instead of being uncounted.
+- **The debt and "screen time used up" block pages keep their encouragement** (introduced in 2.6.5) and still show the balance and debt.
+- Existing settings, balances, day totals, ledger, tasks, reviews and site rules are preserved. The storage schema moves to 9, which adds the empty personal pause list.
+
+## Verification
+
+Strict TypeScript checking, **315 source tests** (169 unit, 84 DOM, 62 simulated-browser) and the production build pass. New tests cover the hostname tests and their deliberate non-matches, the personal list in both directions, the static ruleset being byte-identical to the runtime guard, and the in-page pause on a guarded page (including a worker answering "nothing to do"). The separate Playwright/Chromium suite and real-Chrome checks were not run because no Chromium binary was available. See `docs/TESTING.md`.
+
+## Install or update
+
+Download **EarnTime-2.6.6.zip**, extract it, and select the folder containing `manifest.json` via Chrome's **Load unpacked** option.
+
+For an existing unpacked installation, replace its files with the extracted release and click **Reload** for EarnTime at `chrome://extensions`. **Do not uninstall** if you want to keep your settings and balance. Reload once after updating: the new static ruleset is read when the extension loads.
+
 # EarnTime 2.6.5
 
 ## The motivational pause shows again, and the block pages encourage you

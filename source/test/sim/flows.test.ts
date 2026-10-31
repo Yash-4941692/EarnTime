@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import type { DnrRule } from '../../src/core/dnr';
 import { EXT_ORIGIN } from './fakeBrowser';
 import {
   BLOCK_EXHAUSTED,
@@ -16,6 +18,17 @@ import {
   openedWindowWithTab,
   setupPayload,
 } from './helpers';
+
+/** The static ruleset as Chrome reads it out of the package. */
+function packagedAdultRules(): DnrRule[] {
+  const raw = JSON.parse(readFileSync('../rules/adult_guard.json', 'utf8')) as { rules: DnrRule[] };
+  return raw.rules;
+}
+
+/** Counts how many tabs currently sit on the pause page. */
+function pauseTabs(b: { tabs: Map<number, { url: string }> }): number {
+  return [...b.tabs.values()].filter((tab) => tab.url.startsWith(`${EXT_ORIGIN}/motivation.html`)).length;
+}
 
 const near = (actual: number, expected: number, tolerance: number, label: string) =>
   assert.ok(Math.abs(actual - expected) <= tolerance, `${label}: expected ${expected} ± ${tolerance}, got ${actual}`);
@@ -343,8 +356,9 @@ test('in debt only productive sites open; studying repays the debt and normal ru
   const after = b.storedState();
   assert.equal(after.debtMs, 0, 'debt cleared');
   assert.ok(b.notifications.some((n) => n.title === 'Debt cleared'));
-  assert.equal(b.dnr.size, 1, 'the adult-site focus rule remains after wallet debt is cleared');
-  assert.equal(b.dnr.has(4), true, 'only the independent adult-site rule remains');
+  assert.equal(b.dnr.size, 2, 'the adult-site pause and its adult-TLD rule remain after wallet debt is cleared');
+  assert.equal(b.dnr.has(4), true, 'the independent adult-site rule remains');
+  assert.equal(b.dnr.has(5), true, 'and the adult-TLD rule with it');
 });
 
 test('dedicated adult-site domains show a motivational page; genuine mixed-use content is left alone', async () => {
@@ -368,6 +382,43 @@ test('dedicated adult-site domains show a motivational page; genuine mixed-use c
   assert.equal(exception.ok, false, 'trusted exceptions are not user-editable');
   const stillAdult = await b.openTab('https://www.pornhub.com/', { active: true });
   assert.equal(b.tabUrl(stillAdult), `${EXT_ORIGIN}/motivation.html`, 'legacy edit commands cannot lift the fixed guard');
+});
+
+test('an adult address that no list could name is paused by the adult-TLD rule', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 20 });
+  const tab = await b.openTab('https://xhaccess.xxx/watch/9', { active: true });
+  assert.equal(b.tabUrl(tab), `${EXT_ORIGIN}/motivation.html`, 'the pause, not the ordinary block page');
+});
+
+test('a site the user adds in Protection is paused from then on, and can be removed again', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 20 });
+
+  const first = await b.openTab('https://www.mystery.example/feed', { active: true });
+  assert.equal(b.tabUrl(first), 'https://www.mystery.example/feed', 'not guarded yet');
+
+  const added = await command(b, { type: 'guard.add', host: 'mystery.example' });
+  assert.equal(added.ok, true);
+  assert.equal(balanceMin(b), 20, 'restricting is free');
+
+  const paused = await b.openTab('https://sub.mystery.example/feed', { active: true });
+  assert.equal(b.tabUrl(paused), `${EXT_ORIGIN}/motivation.html`, 'the personal addition pauses the site');
+  assert.equal(pauseTabs(b), 2, 'both the new tab and the one that was already open are paused');
+
+  const removed = await command(b, { type: 'guard.remove', host: 'mystery.example' });
+  assert.equal(removed.ok, true);
+  const openAgain = await b.openTab('https://www.mystery.example/feed', { active: true });
+  assert.equal(b.tabUrl(openAgain), 'https://www.mystery.example/feed');
+});
+
+test('the packaged static ruleset pauses an adult site before the worker has installed anything', async () => {
+  const b = newBrowser();
+  // A fresh profile: no dynamic rules yet, only the ruleset that ships in the package.
+  b.loadStaticRules(packagedAdultRules());
+  assert.equal(b.dnr.size, 0, 'the worker has not run a job yet');
+  const tab = await b.openTab('https://www.pornhub.com/view_video.php?id=early', { active: true });
+  assert.equal(b.tabUrl(tab), `${EXT_ORIGIN}/motivation.html`, 'the pause applies from the first navigation');
 });
 
 test('an adult-site tab that is already open is also sent to the motivational page', async () => {
@@ -705,7 +756,7 @@ test('workers started after time passes continue cleanly (no duplicate DNR rules
   await b.runFor(MIN);
   b.suspendWorker();
   await b.runFor(MIN);
-  assert.ok(b.dnr.size <= 2, 'the adult-site rule plus at most one exhausted-site rule remain');
+  assert.ok(b.dnr.size <= 3, 'the two adult-site rules plus at most one exhausted-site rule remain');
   assert.equal(balanceMin(b), 0);
 });
 

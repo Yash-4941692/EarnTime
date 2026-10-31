@@ -616,8 +616,22 @@ function AnalyticsSection({ state }: { state: EarnState }) {
   );
 }
 
-function ProtectionSection({ state }: { state: EarnState }) {
+function ProtectionSection({ state, act }: { state: EarnState; act: Act }) {
   const [incognito, setIncognito] = useState<boolean | null>(null);
+  const [guardDraft, setGuardDraft] = useState('');
+  const [guardError, setGuardError] = useState<string | null>(null);
+  const guarded = state.settings.guardedHosts;
+
+  const addGuard = async (event: FormEvent) => {
+    event.preventDefault();
+    const host = normalizeHostInput(guardDraft);
+    if (!host) {
+      setGuardError('Enter a website such as example.com.');
+      return;
+    }
+    setGuardError(null);
+    if (await act({ type: 'guard.add', host: guardDraft }, `${host} now shows the pause instead of opening.`)) setGuardDraft('');
+  };
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   useEffect(() => {
@@ -651,7 +665,7 @@ function ProtectionSection({ state }: { state: EarnState }) {
       <Card className="space-y-3">
         <h2 className="text-[15px] font-semibold text-slate-50">What EarnTime enforces</h2>
         <ul className="list-disc space-y-1.5 pl-5 text-[13px] leading-snug text-slate-300">
-          <li>The fixed adult-site focus guard is always on. Dedicated adult-site hostnames open a motivational pause page regardless of balance; mixed-use page content is not inspected. This policy cannot be changed in Settings.</li>
+          <li>The fixed adult-site focus guard is always on. Dedicated adult-site hostnames, adult top-level domains such as <span className="font-mono text-[12px]">.xxx</span>, and anything on your own pause list below open a motivational pause page regardless of balance; mixed-use page content is not inspected. The built-in policy cannot be removed in Settings.</li>
           <li>Unproductive sites are blocked while the balance is empty. Half-productive sites in Unproductive Mode are blocked too.</li>
           <li>
             Time is counted only for the focused window's active tab, while you are at the computer or media is playing. Idle time is not counted.
@@ -666,6 +680,40 @@ function ProtectionSection({ state }: { state: EarnState }) {
           <li>Setup runs once. Balance cannot be reset through settings.</li>
           <li>Every change, charge and debt is written to an audit log. Export it below.</li>
         </ul>
+      </Card>
+
+      <Card className="space-y-3">
+        <div>
+          <h2 className="text-[15px] font-semibold text-slate-50">Your own pause list</h2>
+          <p className="mt-1 text-[13px] leading-snug text-slate-400">
+            No fixed list can name every adult site. Add any site you find here and it opens the same motivational pause instead of the page, whatever
+            your balance is. Adding is free and removing your own entry is free; the built-in list is always on and cannot be edited.
+          </p>
+        </div>
+        <form onSubmit={addGuard} className="grid grid-cols-[1fr_auto] gap-2">
+          <Field label="Add a site to the pause" htmlFor="guard-add" hint={guardError ?? 'Hostname only, for example example.com. Subdomains are covered too.'}>
+            <input id="guard-add" className="field" placeholder="e.g. example.com" value={guardDraft} onChange={(e) => setGuardDraft(e.target.value)} />
+          </Field>
+          <div className="flex items-end">
+            <Button variant="primary" type="submit" className="w-full">
+              Add
+            </Button>
+          </div>
+        </form>
+        {guarded.length === 0 ? (
+          <Empty>No sites of your own yet. The built-in guard is still active.</Empty>
+        ) : (
+          <ul className="divide-y divide-slate-800/80 rounded-xl border border-slate-800/80">
+            {guarded.map((host) => (
+              <li key={host} className="flex flex-wrap items-center gap-2 px-3 py-2.5">
+                <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-slate-100">{host}</span>
+                <Button variant="secondary" onClick={() => void act({ type: 'guard.remove', host }, `${host} removed from your pause list.`)}>
+                  Remove
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
 
       <Card className="space-y-3 border-amber-500/30">
@@ -770,7 +818,7 @@ export function Settings() {
       case 'analytics':
         return <AnalyticsSection state={state} />;
       case 'protection':
-        return <ProtectionSection state={state} />;
+        return <ProtectionSection state={state} act={act} />;
     }
   }, [state, section, act]);
 

@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBlockingRules, MOTIVATION_PAGE_PATH } from '../../src/core/dnr';
-import { DEFAULT_ADULT_SITE_HOSTS, isAdultSiteHost } from '../../src/core/adultSites';
+import { readFileSync } from 'node:fs';
+import { ADULT_TLD_REGEX, buildAdultGuardRuleSet, buildBlockingRules, MOTIVATION_PAGE_PATH } from '../../src/core/dnr';
+import { DEFAULT_ADULT_SITE_HOSTS, isAdultSiteHost, isGuardedHost } from '../../src/core/adultSites';
 import { pageDirective } from '../../src/core/directive';
-import { blockReasonForHost, filterStateNeeded, isGuardedUrl, roleOf } from '../../src/core/roles';
+import { blockReasonForHost, filterStateNeeded, gapRoleForHost, isGuardedUrl, roleOf } from '../../src/core/roles';
 import { freshState, MIN, obs, T0 } from './helpers';
 
 test('roleOf: background, locked, idle and internal pages are not counted', () => {
@@ -97,18 +98,56 @@ test('blockReasonForHost: debt allows only productive and productive-mode half s
   assert.equal(blockReasonForHost(state, null, 1), null, 'non-web pages are not blocked here');
 });
 
-test('fixed adult-site guard matches dedicated domains only', () => {
+test('the adult-site guard covers a curated list, adult TLDs and unmistakable hostname words', () => {
   const state = freshState();
-  assert.equal(DEFAULT_ADULT_SITE_HOSTS.length, 45, 'ships a curated fixed starter set');
-  assert.equal(isAdultSiteHost('www.pornhub.com'), true, 'subdomains of listed adult destinations match');
+  assert.ok(DEFAULT_ADULT_SITE_HOSTS.length >= 200, 'ships a broad curated set, not a token dozen');
+  assert.equal(isAdultSiteHost('www.pornhub.com'), true, 'subdomains of listed destinations match');
+  assert.equal(isAdultSiteHost('xhaccess.com'), true, 'the sites users actually meet are listed');
+  assert.equal(isAdultSiteHost('www.xhaccess.xxx'), true, 'a sponsored adult TLD is adult by definition');
+  assert.equal(isAdultSiteHost('anything.porn'), true);
+  assert.equal(isAdultSiteHost('a-free-porn-tube.example'), true, 'a distinctive fragment anywhere in the host');
+  assert.equal(isAdultSiteHost('free-sex-videos.example'), true, 'an unambiguous whole-label word');
+  assert.equal(isAdultSiteHost('xxxvideos.example'), true, 'known xxx-brand labels');
+  assert.equal(isAdultSiteHost('xxx1.example'), true, 'numbered mirrors of a brand label');
   assert.equal(blockReasonForHost(state, 'www.pornhub.com', 1), 'adult', 'independent of earned balance');
-  for (const host of ['youtube.com', 'plannedparenthood.org', 'mayoclinic.org', 'example.org']) {
-    assert.equal(isAdultSiteHost(host), false, `${host} is not classified by page wording or mixed-use content`);
+});
+
+test('the adult-site guard stays off ordinary sites, including mixed-use ones', () => {
+  const state = freshState();
+  for (const host of [
+    'youtube.com',
+    'plannedparenthood.org',
+    'mayoclinic.org',
+    'example.org',
+    'sussex.ac.uk',
+    'essex.gov.uk',
+    'analytics.example.com',
+    'nudestix.com',
+    'classictube.com',
+    'xxxlutz.at',
+  ]) {
+    assert.equal(isAdultSiteHost(host), false, `${host} is not classified by page wording or a partial word`);
     assert.equal(blockReasonForHost(state, host, 1), null);
   }
   for (const setting of ['adultSiteGuard', 'adultSiteHosts', 'adultSiteExemptions']) {
     assert.equal(setting in state.settings, false, `${setting} is not a user-editable setting`);
   }
+});
+
+test('a site the user adds to the pause is guarded like a built-in one, and its time is charged', () => {
+  const state = freshState();
+  assert.equal(isGuardedHost('mystery.example', []), false, 'nothing is guarded before it is added');
+  state.settings.guardedHosts = ['mystery.example'];
+  assert.equal(isGuardedHost('www.mystery.example', state.settings.guardedHosts), true, 'subdomains follow');
+  assert.equal(blockReasonForHost(state, 'sub.mystery.example', 1), 'adult', 'the pause beats every wallet rule');
+  assert.deepEqual(roleOf(state, obs({ at: T0, host: 'www.mystery.example' })), {
+    k: 'unproductive',
+    host: 'www.mystery.example',
+  }, 'time on a guarded page is charged, never credited and never free');
+  assert.deepEqual(gapRoleForHost(state, 'www.mystery.example'), {
+    k: 'unproductive',
+    host: 'www.mystery.example',
+  }, 'a visit recorded while EarnTime was off is charged as well');
 });
 
 test('pageDirective: choose screen offers Unproductive Mode only when the balance is positive', () => {
@@ -159,25 +198,39 @@ test('pageDirective: neutral and internal pages get no directive', () => {
   assert.equal(pageDirective(state, 1, null).directive.kind, 'none');
 });
 
-test('DNR rules: fixed adult-site pause is independent of wallet limits', () => {
+test('DNR rules: the adult-site pause is independent of wallet limits', () => {
   const state = freshState();
   state.balanceMs = 5 * MIN;
   let rules = buildBlockingRules(state);
-  assert.equal(rules.length, 1, 'only the fixed adult-site rule applies while funded');
+  assert.equal(rules.length, 2, 'the pause and its adult-TLD rule apply while funded');
   const adult = rules.find((rule) => rule.id === 4);
-  assert.ok(adult);
-  assert.equal(adult.priority, 4);
+  const tld = rules.find((rule) => rule.id === 5);
+  assert.ok(adult && tld);
+  assert.equal(adult.priority, 6);
   assert.equal(adult.action.type, 'redirect');
   if (adult.action.type === 'redirect') assert.equal(adult.action.redirect.extensionPath, MOTIVATION_PAGE_PATH);
   assert.ok(adult.condition.requestDomains?.includes('pornhub.com'));
+  assert.ok(adult.condition.requestDomains?.includes('xhaccess.com'));
   assert.deepEqual(adult.condition.resourceTypes, ['main_frame']);
-  assert.equal(adult.condition.regexFilter, undefined, 'no URL or page text matching');
+  assert.equal(adult.condition.regexFilter, undefined, 'domains are matched as domains');
   assert.equal(adult.condition.excludedRequestDomains, undefined, 'the fixed policy has no user exceptions');
+  assert.equal(tld.condition.regexFilter, ADULT_TLD_REGEX, 'adult TLDs are matched by hostname, not page text');
+  // The pattern has to behave, not just round-trip: a literal-dot escape is the whole point.
+  const tldPattern = new RegExp(ADULT_TLD_REGEX, 'i');
+  assert.equal(tldPattern.test('https://xhaccess.xxx/watch/1'), true);
+  assert.equal(tldPattern.test('https://a.porn:8443/x'), true);
+  assert.equal(tldPattern.test('https://example.com/porn'), false, 'the path is never read');
+  assert.equal(tldPattern.test('https://notporn.example.com/'), false);
+  assert.equal(tld.condition.isUrlFilterCaseSensitive, false);
+  if (tld.action.type === 'redirect') assert.equal(tld.action.redirect.extensionPath, MOTIVATION_PAGE_PATH);
+
+  state.settings.guardedHosts = ['mystery.example'];
+  rules = buildBlockingRules(state);
+  assert.ok(rules.find((rule) => rule.id === 4)?.condition.requestDomains?.includes('mystery.example'), 'personal additions ride the same rule');
 
   state.balanceMs = 0;
   rules = buildBlockingRules(state);
-  assert.equal(rules.length, 2);
-  assert.ok(rules.some((rule) => rule.id === 4));
+  assert.equal(rules.length, 3);
   const exhausted = rules.find((rule) => rule.id === 1);
   assert.ok(exhausted);
   assert.deepEqual(exhausted.condition.requestDomains, ['instagram.com']);
@@ -185,7 +238,7 @@ test('DNR rules: fixed adult-site pause is independent of wallet limits', () => 
 
   state.debtMs = 10 * MIN;
   rules = buildBlockingRules(state);
-  assert.equal(rules.length, 3);
+  assert.equal(rules.length, 4);
   const adultInDebt = rules.find((rule) => rule.id === 4);
   const allow = rules.find((rule) => rule.action.type === 'allow');
   const block = rules.find((rule) => rule.id === 3);
@@ -194,6 +247,14 @@ test('DNR rules: fixed adult-site pause is independent of wallet limits', () => 
   assert.ok(allow.priority > block.priority, 'productive allow must outrank debt redirect');
   assert.deepEqual(allow.condition.requestDomains, ['khanacademy.org', 'youtube.com']);
   assert.equal(block.condition.regexFilter, '^https?://');
+});
+
+test('the packaged static ruleset is the same guard the extension applies at runtime', () => {
+  const path = new URL('../../../rules/adult_guard.json', import.meta.url);
+  const packaged = JSON.parse(readFileSync(path, 'utf8')) as ReturnType<typeof buildAdultGuardRuleSet>;
+  assert.deepEqual(packaged, buildAdultGuardRuleSet(), 'rules/adult_guard.json must be the built guard (npm run build regenerates it)');
+  assert.equal(packaged.rules[0].condition.requestDomains?.length, DEFAULT_ADULT_SITE_HOSTS.length);
+  assert.equal(packaged.rules[0].action.redirect.extensionPath, MOTIVATION_PAGE_PATH);
 });
 
 test('isGuardedUrl matches extension management pages only', () => {

@@ -134,6 +134,12 @@ function MotivationBlock() {
       <p className="eyebrow">A MOMENT FOR YOURSELF</p>
       <h1 className="mt-3 text-[24px] font-semibold leading-snug text-slate-50">{line.title}</h1>
       <p className="mt-3 text-[14px] leading-relaxed text-slate-300">{line.text}</p>
+      {/* Concrete next steps, not a lecture: something to do in the next minute. */}
+      <ul className="mt-4 space-y-1.5 text-left text-[13px] leading-snug text-slate-400" data-et-motivation="steps">
+        <li>Take three slow breaths, in through the nose and out through the mouth.</li>
+        <li>Close this tab and open the page you had actually planned to work on.</li>
+        <li>Give it two minutes. Two honest minutes are enough to break the pull.</li>
+      </ul>
     </div>
   );
 }

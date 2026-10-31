@@ -60,6 +60,7 @@ const EXPECTED_ENTRIES = [
   'popup.css',
   'popup.html',
   'popup.js',
+  'rules/adult_guard.json',
   'screenshots/mode-chooser.png',
   'screenshots/popup-debt.png',
   'screenshots/popup.png',
