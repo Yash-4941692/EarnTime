@@ -1,18 +1,21 @@
 /**
- * Pure builder for declarativeNetRequest dynamic rules that block main-frame navigations.
+ * Pure builder for declarativeNetRequest dynamic rules that redirect main-frame navigations.
  * Only top-level page loads are matched; sub-resources are never touched.
  *
+ *  - The hostname-only adult-site guard is independent of the wallet and wins over every other rule.
  *  - Zero balance: unproductive domains redirect to the block page.
  *  - Debt: every http(s) navigation redirects, except productive and half-productive domains
- *    (priority 3 allow beats priority 1 block-all).
+ *    (priority 3 allow beats priority 1 redirect).
  *
  * Tabs that are already open are handled by the controller, which navigates them directly.
  */
 
+import { adultSiteDomains } from './adultSites';
 import { isDebtMode, isExhausted } from './roles';
 import type { EarnState } from './types';
 
 export const BLOCK_PAGE_PATH = '/block.html';
+export const MOTIVATION_PAGE_PATH = `${BLOCK_PAGE_PATH}?reason=motivation`;
 
 export interface DnrRule {
   id: number;
@@ -22,6 +25,7 @@ export interface DnrRule {
     | { type: 'redirect'; redirect: { extensionPath: string } };
   condition: {
     requestDomains?: string[];
+    excludedRequestDomains?: string[];
     regexFilter?: string;
     resourceTypes: string[];
   };
@@ -30,6 +34,12 @@ export interface DnrRule {
 export function buildBlockingRules(state: EarnState): DnrRule[] {
   const rules: DnrRule[] = [];
   const redirect = { type: 'redirect' as const, redirect: { extensionPath: BLOCK_PAGE_PATH } };
+  rules.push({
+    id: 4,
+    priority: 4,
+    action: { type: 'redirect', redirect: { extensionPath: MOTIVATION_PAGE_PATH } },
+    condition: { requestDomains: adultSiteDomains(), resourceTypes: ['main_frame'] },
+  });
 
   if (isDebtMode(state)) {
     const allowed = [...state.rules.productive, ...state.rules.half];

@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { CHROME_LIMITATION_SENTENCE } from '../../core/constants';
+import { isGuardedUrl } from '../../core/roles';
 import { unresolvedReviews } from '../../core/halfReview';
 import { dashboardView } from '../../core/view';
 import { formatDuration } from '../../core/time';
 import { Button, Card, InlineCode, Notice, ProgressBar } from '../components';
 import { HalfReviewCard } from '../halfReview';
-import { useNow, useStoredState } from '../lib/extension';
+import { continueToGuardedPage, useNow, useStoredState } from '../lib/extension';
 import type { EarnState } from '../../core/types';
 
 function studyTarget(state: EarnState | null): string {
@@ -67,23 +68,75 @@ function ExhaustedBlock({ state }: { state: EarnState }) {
   );
 }
 
-function ExtensionsBlock() {
+function ExtensionsBlock({ target }: { target: string | null }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canContinue = target !== null && isGuardedUrl(target);
+
+  const continueToChrome = async () => {
+    if (!target || !canContinue) return;
+    setBusy(true);
+    setError(null);
+    const result = await continueToGuardedPage(target);
+    setBusy(false);
+    if (!result.ok) setError(result.message ?? 'Chrome could not open its extension settings.');
+  };
+
   return (
     <>
       <h1 className="text-[24px] font-semibold text-slate-50">Extension settings are protected</h1>
       <p className="mt-2 text-[14px] leading-relaxed text-slate-300">
-        EarnTime sends extension management pages here so changes are not made in the middle of a study session. Use EarnTime's settings page to change rules.
+        Before opening Chrome's extension controls, pause and remember why you started. Would you still like to continue? You can change EarnTime's rules in its settings page.
       </p>
       <p className="mt-3 rounded-xl bg-amber-950/30 p-3 text-[12.5px] leading-snug text-amber-100/90">
         <InlineCode text={CHROME_LIMITATION_SENTENCE} />
       </p>
+      {canContinue ? (
+        <div className="space-y-2">
+          <Button variant="danger" onClick={() => void continueToChrome()} disabled={busy}>
+            {busy ? 'Opening Chrome settings…' : 'Continue to Chrome settings'}
+          </Button>
+          {error ? <Notice tone="error">{error}</Notice> : null}
+        </div>
+      ) : null}
     </>
   );
 }
 
-export function Block({ reason }: { reason: string | null }) {
+const MOTIVATION_LINES = [
+  {
+    title: "Bro/Sis, don't lose to lust.",
+    text: 'Remember why you started. One small choice now protects the future you are working for.',
+  },
+  {
+    title: 'Did you forget why you started?',
+    text: "Don't trade your goal for a passing urge. Take a breath, close this tab, and choose your next step.",
+  },
+  {
+    title: "Time can't be bought this cheap.",
+    text: 'Every distraction is paid back with interest called regret. Spend this moment on the life you want.',
+  },
+  {
+    title: 'Your future self is counting on you.',
+    text: 'Pause, reset, and put your attention where you meant it to go.',
+  },
+] as const;
+
+function MotivationBlock() {
+  const [line] = useState(() => MOTIVATION_LINES[Math.floor(Date.now() / 60_000) % MOTIVATION_LINES.length]);
+  return (
+    <div className="rounded-2xl border border-emerald-400/20 bg-gradient-to-b from-slate-900/80 to-slate-950/80 p-5 text-center">
+      <p className="eyebrow">A MOMENT FOR YOURSELF</p>
+      <h1 className="mt-3 text-[24px] font-semibold leading-snug text-slate-50">{line.title}</h1>
+      <p className="mt-3 text-[14px] leading-relaxed text-slate-300">{line.text}</p>
+    </div>
+  );
+}
+
+export function Block({ reason, target }: { reason: string | null; target: string | null }) {
   const state = useStoredState();
   const extensions = reason === 'extensions';
+  const motivation = reason === 'motivation';
   const debt = state !== null && state.debtMs > 0;
 
   return (
@@ -94,7 +147,9 @@ export function Block({ reason }: { reason: string | null }) {
           EarnTime
         </div>
         {extensions ? (
-          <ExtensionsBlock />
+          <ExtensionsBlock target={target} />
+        ) : motivation ? (
+          <MotivationBlock />
         ) : state === null ? (
           <p className="text-slate-500">Loading…</p>
         ) : debt ? (
@@ -104,13 +159,13 @@ export function Block({ reason }: { reason: string | null }) {
         )}
         <div className="flex flex-wrap gap-2 pt-2">
           <a className="btn btn-primary" href={extensions ? 'settings.html' : studyTarget(state)}>
-            {extensions ? 'Open EarnTime settings' : 'Study now'}
+            {extensions ? 'Open EarnTime settings' : motivation ? 'Back to my goal' : 'Study now'}
           </a>
           <Button variant="secondary" onClick={() => (history.length > 1 ? history.back() : undefined)}>
             Go back
           </Button>
         </div>
-        {state ? (
+        {state && !motivation ? (
           <p className="text-[12px] text-slate-500">
             Balance {formatDuration(state.balanceMs)}
             {state.debtMs > 0 ? ` · debt ${formatDuration(state.debtMs)}` : ''}

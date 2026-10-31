@@ -4,10 +4,11 @@
  */
 
 import { GUARDED_PAGE_PREFIXES, YOUTUBE_HOST_SUFFIX } from './constants';
+import { isAdultSiteHost } from './adultSites';
 import { classifyHost } from './domains';
 import type { EarnState, FilterState, HalfSession, Observation, Role } from './types';
 
-export type BlockReason = 'debt' | 'exhausted';
+export type BlockReason = 'debt' | 'exhausted' | 'adult';
 
 /**
  * The money fields alone. Several rules only need the balance and the debt, and taking the narrow
@@ -113,6 +114,8 @@ export function gapRoleForHost(state: EarnState, host: string): Role {
  */
 export function blockReasonForHost(state: EarnState, host: string | null, tabId: number | null): BlockReason | null {
   if (host === null) return null;
+  // A fixed hostname-only self-control guard, independent of the earned-time wallet.
+  if (isAdultSiteHost(host)) return 'adult';
   const cls = classifyHost(host, state.rules);
   if (isDebtMode(state)) {
     if (cls.kind === 'productive') return null;

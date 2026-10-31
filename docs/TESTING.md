@@ -1,8 +1,8 @@
 # Test report
 
-**Status: source logic, simulated flows and Chromium fixture tests verified on 2026-10-14.** The manual checklist with an installed Chrome extension and live YouTube has not been run.
+**Status: source logic, simulated flows and jsdom tests verified on 2026-10-31; build passed.** The current Playwright/Chromium suite and the manual checklist with an installed Chrome extension and live YouTube have not been run because no Chromium binary is available.
 
-> `cd source && npm test` passes **291 tests**: 155 unit + 79 jsdom DOM + 57 simulated-browser flow tests, plus the strict TypeScript check. The separate Playwright/Chromium suite was **not re-run for this change** (its last verified run was 15/15); no Chromium binary was available. These browser fixtures run the built content script and real controller, not a real Chrome extension installation.
+> `cd source && npm test` passes **294 tests**: 157 unit + 79 jsdom DOM + 58 simulated-browser flow tests, plus the strict TypeScript check. The current separate Playwright/Chromium suite was not run. These browser fixtures run the built content script and real controller, not a real Chrome extension installation.
 
 ## Environment
 
@@ -17,27 +17,27 @@
 | --- | --- | --- |
 | Type check (strict, `noUnusedLocals`) | `npm run typecheck` | **pass** |
 | Build (root artifacts) | `npm run build` | **pass** |
-| Unit tests | `npm run test:unit` | **155 / 155 pass** |
+| Unit tests | `npm run test:unit` | **157 / 157 pass** |
 | DOM tests (jsdom: load-time gate, page lifecycle, YouTube filter, Shorts trust) | `npm run test:dom` | **79 / 79 pass** |
-| Flow tests (simulated browser) | `npm run test:sim` | **57 / 57 pass** |
-| Complete source suite | `npm test` | **291 / 291 pass**, including type check |
-| Browser tests (Playwright + Chromium) | `npm run test:browser` | **not re-run** (last verified 15 / 15, needs a Chromium binary) |
+| Flow tests (simulated browser) | `npm run test:sim` | **58 / 58 pass** |
+| Complete source suite | `npm test` | **294 / 294 pass**, including type check |
+| Browser tests (Playwright + Chromium) | `npm run test:browser` | **not run for this change** (needs a Chromium binary) |
 | Real Chrome extension end-to-end | manual checklist below | **not run** |
 
 The release build is verified separately with `npm run build`; browser-specific behaviours still need a real Chrome profile before relying on them.
 
 ## What each suite covers
 
-### Unit tests (`source/test/unit`, 155)
+### Unit tests (`source/test/unit`, 157)
 
 - **Host handling:** input normalisation, subdomain matching, most-specific entry wins, strictest list wins on ties, and list de-duplication.
 - **Time and accounting:** local day keys, splitting at midnight, formatting, the 60:5 earning example, unproductive spending, idle/background/internal pages, audible media, clock changes, checkpoints, and reconciliation boundaries.
 - **Half-productive roles:** mode selection and YouTube-only filter selection; pending or failed YouTube filters fail closed. An intentional `covered` YouTube state is distinct from failure and neither earns nor spends time.
 - **Half-time estimates:** a history stretch on a half-productive host is split half study / half unproductive; the study half credits at the current ratio, the other half charges (spending the balance first and creating debt past it), and closed intervals never produce a question. Repeated visits to one host merge into a single question with per-day parts, stretches under a minute are not questioned, at most 20 questions are kept (unanswered first), and a verified mode before the interruption keeps its own charge instead of being estimated.
 - **Answering an estimate:** `review.set` is free (the unlock cost is untouched), validated against the estimate (unknown id → `not-found`; an answer above the estimate → `invalid` with no side effect), re-prices the same local days, and updates balance, debt and the day totals in both directions; `review.keep` accepts the default and changes nothing. Corrections pay debt before the balance when they add credit, take the balance before creating debt when they remove it, and are audited with a `review` ledger entry that is exposed (minutes estimated, answer, credited and charged) in the audit export.
-- **Schema 6:** a schema-5 state keeps the reviews it has, gains the new counters, is not re-granted `historyGranted`, and is not re-given a WhatsApp half-rule the user had removed.
+- **Schema 8:** the adult-site guard is fixed and always on; upgrading from schema 7 drops the former user-editable enable/domain/exception preferences while preserving the wallet, rules, reviews and `historyGranted`.
 - **Migration:** old storage formats and sanitisation, plus a realistic v2.1.1 state fixture proving balance, debt, daily totals, ledger, tasks, settings and non-retired site rules survive schema-3 migration. The retired integration settings/state and its old default half-list entry are removed.
-- **Protection and commands:** setup-once validation, starting-balance cap, free versus paid rule changes, confirmation before a paid change, debt restrictions, task rules, keyword matching, and audit export without page URLs.
+- **Protection and commands:** setup-once validation, starting-balance cap, free versus paid rule changes, confirmation before a paid change, debt restrictions, task rules, keyword matching, the fixed hostname-only adult-site policy, rejection of legacy adult-site edit commands, and audit export without page URLs.
 - **Worker message retry:** bounded retry timing, explicit refusal, eventual success when the worker starts late, and repeated asking (last pause held) until the budget runs out.
 - **Screen-time accounting:** per-site recording inside `chargeSlice` (present roles only, covered and mode-pending time counted but unbilled), the `MAX_DAY_HOSTS` eviction order, `screenMs >= estimatedScreenMs` sanitising, day pruning, and the `historyGranted` migration rule (a pre-schema-5 state keeps access; a fresh install does not have it yet).
 - **Analytics view model (`src/core/analytics.ts`):** today's totals, per-site grouping and `www` collapsing, "other sites" roll-up, the 14-day trend with empty days marked, deltas against yesterday and the average, study share, and the `partlyEstimated` flag.
@@ -73,11 +73,11 @@ The release build is verified separately with `npm run build`; browser-specific 
 - an unreadable Short is no longer refused outright: the card shows `Shorts channel not verified` with `Continue (trust)`, the page pauses until the answer, continuing reports a healthy trust state, and the next reel asks again;
 - the channel name is read from the channel bar, the link's `title`/`aria-label`, the page's own data for the video id in the address bar, or the channel handle before the trust card appears — while prefetched reels, cached search/watch authors and handles belonging to other reels stay invisible to the check.
 
-### Flow tests on a simulated browser (`source/test/sim`, 57)
+### Flow tests on a simulated browser (`source/test/sim`, 58)
 
 The simulator (`test/sim/fakeBrowser.ts`) exposes a Chrome-shaped object and runs the real Chrome adapter, event wiring and controller. Time is virtual. It models tabs and normal/popup/app/devtools windows, focus, minimise, idle with a 15-second detection interval, audible tabs, history, declarativeNetRequest rules, service-worker suspension and restart, extension disable and enable, browser restart, wall-clock changes, and incognito gating. It does not model Chrome's own internals.
 
-Scenarios cover install and setup; 60:5 earning; spending and blocking; background tabs, focus, idle and audible media; worker/browser restarts; interruption reconciliation and debt; protected Chrome-page redirects; YouTube mode choice, intentional covers (no credit or charge), and actual filter failure (charged fail-closed); half-productive mode lifetimes; recurring tasks; legacy migration; clock changes; incognito; audit export; unlock quotes; tab replacement; and setup reopening.
+Scenarios cover install and setup; 60:5 earning; spending; fixed adult-domain motivational redirects, neutral content and rejected legacy edit commands; background tabs, focus, idle and audible media; worker/browser restarts; interruption reconciliation and debt; extension-management confirmation plus one-time continuation; YouTube mode choice, intentional covers (no credit or charge), and actual filter failure (charged fail-closed); half-productive mode lifetimes; recurring tasks; legacy migration; clock changes; incognito; audit export; unlock quotes; tab replacement; and setup reopening.
 
 The v2.4.0 scenarios add: gate-cache publication for half-classified tabs (first visit publishes `choose`, following a choice publishes `active`, leaving and returning republishes `choose`, non-half tabs publish nothing); per-site screen time for a whole foreground day including unbilled neutral time; idle time not counting as screen time; history-reconstructed gaps recorded as estimated screen time against the right site; no reconstruction and no invented sites when access is absent; granting and removing access through the worker route with a ledger line for each; a revoked permission being noticed on the next worker start; setup recording the access answer and the worker correcting it against Chrome; and the popup heartbeat keeping the timer (and the charging) alive while the popup holds OS focus, then stopping once it closes.
 
@@ -85,7 +85,7 @@ The simulator also models two behaviours Chrome has and earlier versions of the 
 
 ### Browser tests (`source/test/browser`, 15)
 
-The Playwright harness builds the extension pages and content script, serves fixture pages for YouTube, and injects a simulated-browser/controller harness. It covers popup, settings, setup, mode chooser and cover presentation. It does **not** load the extension into Chrome and does not replace the real-browser checks below. The suite now checks visible Shorts links, click-through to a player receiving real canvas-stream video frames, non-study swipe/pausing, mode changes, covered-time reporting and usable blocking-card actions. The harness accepts the array storage keys used by real content scripts; stale setup-step and rule-cost expectations have also been updated.
+The Playwright harness builds the extension pages and content script, serves fixture pages for YouTube, and injects a simulated-browser/controller harness. It covers popup, settings, setup, mode chooser, the adult-site motivational page, extension-management confirmation and cover presentation. It does **not** load the extension into Chrome and does not replace the real-browser checks below. The suite also checks visible Shorts links, click-through to a player receiving real canvas-stream video frames, non-study swipe/pausing, mode changes, covered-time reporting and usable cover-card actions. The harness accepts the array storage keys used by real content scripts; stale setup-step and rule-cost expectations have also been updated.
 
 ## Regression checks added for this change (v2.4.2)
 
@@ -135,7 +135,7 @@ Use a dedicated Chrome profile. EarnTime redirects `chrome://extensions`, so rel
 5. **Idle and audible media:** stop all input for 1 minute; counting should stop after the idle threshold. Audible media should continue to count while away.
 6. **Worker restart:** stop the service worker while an unproductive page is active. Time should continue without a duplicate charge.
 7. **Chrome restart:** quit and reopen Chrome. Balance should persist, sessions should clear, and the closed period should not be charged live.
-8. **Protected-page redirects:** type `chrome://extensions` and `chrome://settings/extensions`; both should redirect to the block page. Note any flash and test the extensions-menu route.
+8. **Extension-management confirmation:** type `chrome://extensions` and `chrome://settings/extensions`; both should show the confirmation page. Test **Go back** and **Open EarnTime settings**, then explicitly continue once and verify the requested Chrome page opens. Note any flash and test the extensions-menu route.
 9. **Known bypass:** remove EarnTime from Chrome using the toolbar menu; confirm the documented limitation.
 10. **Interruption and debt:** in a test profile with 10 minutes, leave Instagram active and interrupt Chrome for 40 minutes. Check the reconciliation audit entry, debt explanation, and blocking (noting the per-visit cap). Repeat the interruption with YouTube (half-productive) open instead: half of the estimated minutes must be credited as study and half charged, the popup must show the *Was that study time?* card, and a notification must say the same.
 11. **Debt repayment:** verify only productive sites open while in debt; productive time should repay debt before growing the balance.
@@ -148,6 +148,13 @@ Use a dedicated Chrome profile. EarnTime redirects `chrome://extensions`, so rel
 18. **Uninstall/reinstall:** verify a reinstall opens setup and the starting balance is capped at 30 minutes.
 19. **Layout:** inspect popup, settings and setup at 100% and 125% zoom, plus the chooser and cover in a narrow window.
 20. **Setup recovery:** close setup unfinished and restart Chrome; setup should reopen. Finish it and restart again; it should not reopen.
+
+### Additional checks for the current change
+
+- Visit a built-in adult-only hostname and a subdomain; both should show the motivational pause page without explaining why. **Back to my goal** should open a productive target.
+- Confirm Settings → Protection discloses that the fixed guard is always on and that there is no Focus guard toggle, custom-domain editor or exception editor.
+- Visit a mixed-use health/education site, an unlisted domain, and an ordinary domain with words such as `explicit` or `porn` in the URL path/query; none should match the hostname-only list.
+- Upgrade a schema-7 profile with adult-site preferences and verify the fixed guard remains on while balance, rules and history are preserved.
 21. **Free changes:** after setup, add a productive site and a YouTube keyword; neither should ask for the unlock cost. Removing an unproductive site should ask for confirmation.
 22. **First-visit gate (v2.4.0):** open `youtube.com` in a brand-new tab with no prior choice for it. The chooser must appear over the page immediately — the video list must never be usable or scrollable first, and answering must not require a reload. Repeat in a second window and after restarting Chrome.
 23. **SPA re-check (v2.4.0):** inside `web.whatsapp.com`, click through chats, and inside YouTube navigate by clicking rather than reloading. Each in-page navigation that changes the classification must re-ask or re-cover without a reload.

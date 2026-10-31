@@ -291,6 +291,9 @@ try {
       ),
       'exact chrome:// limitation wording',
     );
+    expect(body.includes('The fixed adult-site focus guard is always on.'), 'the fixed guard is disclosed');
+    expect(await page.locator('#adult-site-guard').count() === 0, 'there is no ordinary guard toggle');
+    expect(!body.includes('Trusted-site exceptions') && !body.includes('Add a dedicated site'), 'there are no custom-domain or exception editors');
     await page.screenshot({ path: join(shots, 'settings-protection.png'), fullPage: true });
     expect(page.__errors.length === 0, `no page errors: ${page.__errors.join('; ')}`);
     await context.close();
@@ -321,12 +324,20 @@ try {
     expect((await exhausted.locator('body').innerText()).includes('You owe 20m 00s'), 'debt amount on block page');
     await exhausted.screenshot({ path: join(shots, 'block-debt.png') });
 
-    await exhausted.goto(`${base}/block.html?reason=extensions`);
+    await exhausted.goto(`${base}/block.html?reason=extensions&target=chrome%3A%2F%2Fextensions%2F`);
     await exhausted.getByText('Extension settings are protected').waitFor();
+    await exhausted.getByRole('button', { name: 'Continue to Chrome settings' }).waitFor();
     expect(
       (await exhausted.locator('body').innerText()).includes('Chrome prevents extensions from completely controlling privileged chrome:// pages.'),
-      'exact wording on extensions block page',
+      'exact wording on extensions confirmation page',
     );
+
+    await exhausted.goto(`${base}/block.html?reason=motivation`);
+    await exhausted.getByRole('heading', { name: /Bro\/Sis|Did you forget why you started|Time can't be bought|Your future self/ }).waitFor();
+    await exhausted.getByRole('link', { name: 'Back to my goal' }).waitFor();
+    const motivationText = await exhausted.locator('body').innerText();
+    expect(!motivationText.toLowerCase().includes('block'), 'motivation page does not mention the intervention');
+    expect(!motivationText.includes('Balance'), 'motivation page hides wallet details');
     await context.close();
   });
 

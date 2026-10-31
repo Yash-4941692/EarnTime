@@ -40,6 +40,12 @@ The setup wizard opens the first time. It has eight steps:
 | Unproductive | Time spends your balance. Blocked when the balance is empty or you are in debt. |
 | Not listed | Not tracked and not blocked (unless you are in debt, when only productive sites open). |
 
+## Adult-site focus
+
+The adult-site focus guard is always on and uses a fixed, curated list of dedicated adult-site hostnames. It cannot be turned off or edited in Settings. The list is not exhaustive and does not have a user-editable exception list; the separate balance and debt rules still apply independently.
+
+Matching is by hostname and covers subdomains. EarnTime does **not** inspect page text, URL paths, images, search terms or embedded content, so a health, education, news or social page is not classified because of words on it. Mixed-use domains are excluded from the curated list. A matching visit displays a short motivational pause page without naming the site or the reason.
+
 ### YouTube in Productive Mode
 
 - The homepage shows **no videos** — and no blocking banner either. The rest of the page (search box, guide) works normally.
@@ -151,7 +157,7 @@ lists stays one click per entry.
 
 If the balance cannot pay, the change is refused outright and nothing changes. Changes are refused while you are in debt.
 
-EarnTime also redirects `chrome://extensions` and `chrome://settings/extensions` tabs to its block page.
+Opening `chrome://extensions` or `chrome://settings/extensions` in a tab first shows a confirmation page. Choose **Go back**, open EarnTime's settings, or explicitly continue to Chrome's settings once. Chrome may still prevent a standard extension from fully controlling its privileged pages.
 
 > Chrome prevents extensions from completely controlling privileged `chrome://` pages. Therefore this protection cannot be made absolute using a standard Chrome extension alone.
 

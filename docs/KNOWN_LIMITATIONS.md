@@ -6,11 +6,11 @@ EarnTime is a self-discipline tool. It is not a security boundary, and nothing i
 
 > Chrome prevents extensions from completely controlling privileged `chrome://` pages. Therefore this protection cannot be made absolute using a standard Chrome extension alone.
 
-**Can be blocked.** A tab that opens `chrome://extensions` or `chrome://settings/extensions` is redirected to EarnTime's block page. This covers typed addresses, links and the extensions menu, because they all end in a tab navigation.
+**Confirmation interstitial.** A tab that opens `chrome://extensions` or `chrome://settings/extensions` is redirected to an EarnTime confirmation page. The user can go back, open EarnTime's settings, or explicitly continue to the requested Chrome page once. This covers typed addresses, links and the extensions menu, because they all end in a tab navigation.
 
 **API used.** `chrome.tabs` events (`onCreated`, `onUpdated`) with `chrome.tabs.update`. No other technique is used. No hidden page, no injected script into `chrome://` pages, no workaround of Chrome's security model.
 
-**Tested.** In the simulated browser only (`test/sim/flows.test.ts`): a new tab opened at `chrome://extensions` is redirected; a typed `chrome://extensions/?id=…` navigation in an existing tab is redirected; `chrome://settings/extensions` is redirected; `chrome://settings/privacy` is not affected. The redirect is recorded in the ledger. **Not tested in a real Chrome instance** (see `docs/TESTING.md`): the redirect timing, the flash, the extensions-menu route, and tabs restored at startup. Expect a possible brief flash of the extensions page before the redirect runs.
+**Tested.** In the simulated browser only (`test/sim/flows.test.ts`): a new tab opened at `chrome://extensions` and a typed `chrome://extensions/?id=…` navigation both show the confirmation page; an invalid target is refused; an explicit continue allows only the requested navigation; `chrome://settings/extensions` also shows the prompt; `chrome://settings/privacy` is not affected. The interaction is recorded in the ledger. **Not tested in a real Chrome instance** (see `docs/TESTING.md`): the redirect timing, the flash, the Continue action, the extensions-menu route, and tabs restored at startup. Expect a possible brief flash of the extensions page before the redirect runs.
 
 **Bypasses that remain** (none of these were tested in a real browser):
 
@@ -84,6 +84,7 @@ The audit export (Settings → Protection) records each reconciliation's window,
 
 ## 5. Debt and blocking
 
+- **Adult-site focus is fixed and hostname-only.** The guard is always on and uses a curated 45-domain list of dedicated adult destinations. It cannot be changed in Settings and has no user-added domains or exceptions. It checks the host and its subdomains; it does not inspect page text, URL paths, images, search terms or embedded content. Mixed-use domains are intentionally excluded, but the list is not exhaustive and a fixed list can still become inaccurate over time. The existing balance/debt rules can also apply to the same domain. Every matching top-level visit shows a motivational page.
 - **Blocking uses declarativeNetRequest** for top-level page loads. Sub-resources are not blocked.
 - **Navigations inside an already-open page** (single-page apps, `pushState`) are not blocked by the rule. EarnTime watches the address of the open page and re-checks within about three quarters of a second, and open tabs are re-checked at each checkpoint (up to 30 seconds) as a backstop. In-page navigations are still never *network*-blocked: a page already loaded can only be covered or handed a mode choice, not refused.
 - **Debt allows only productive sites** (and half-productive sites in Productive Mode). Unlisted sites are blocked too. Add the search engines and documentation you need to the productive list.

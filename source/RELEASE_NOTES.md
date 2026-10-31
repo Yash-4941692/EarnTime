@@ -1,3 +1,13 @@
+# Unreleased
+
+## Adult-site focus and Chrome settings confirmation
+
+- Added a fixed, hostname-only focus guard for dedicated adult-site domains, using a curated 45-domain list. It matches hosts and subdomains only; it does not scan page text, paths, images, searches or embedded content. The guard is always on and is disclosed in Settings → Protection and the user documentation, but has no user-facing toggle, custom-domain editor or exception editor.
+- Matching top-level visits show a motivational pause page without explaining the redirect. The guard is independent of the earned-time balance and debt rules.
+- Opening `chrome://extensions` or `chrome://settings/extensions` now asks first. The confirmation provides a way back and a target-specific, one-use continue action that expires after 15 seconds.
+- Schema 8 removes the former user-editable guard preferences while preserving the wallet, earned-time rules and history.
+- Verification: strict TypeScript check, **294 source tests** (157 unit, 79 DOM, 58 simulated-browser) and production build pass. The separate Playwright/Chromium suite and real-Chrome checks were not run because no Chromium binary was available.
+
 # EarnTime 2.6.3
 
 ## Correctable interruption estimates, and Shorts that are read harder

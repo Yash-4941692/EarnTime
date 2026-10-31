@@ -116,7 +116,7 @@ function TimeSection({ state, act }: { state: EarnState; act: Act }) {
         <div>
           <h2 className="text-[15px] font-semibold text-slate-50">Unlock cost</h2>
           <p className="mt-1 text-[13px] leading-snug text-slate-400">
-            After setup, any change that makes usage easier costs this many minutes from your balance. Lowering this value is charged at the current price.
+            After setup, changes to the balance/debt rules that make usage easier cost this many minutes from your balance. Lowering this value is charged at the current price; the fixed adult-site focus policy is outside the wallet.
           </p>
         </div>
         <div className="flex items-end gap-3">
@@ -651,6 +651,7 @@ function ProtectionSection({ state }: { state: EarnState }) {
       <Card className="space-y-3">
         <h2 className="text-[15px] font-semibold text-slate-50">What EarnTime enforces</h2>
         <ul className="list-disc space-y-1.5 pl-5 text-[13px] leading-snug text-slate-300">
+          <li>The fixed adult-site focus guard is always on. Dedicated adult-site hostnames open a motivational pause page regardless of balance; mixed-use page content is not inspected. This policy cannot be changed in Settings.</li>
           <li>Unproductive sites are blocked while the balance is empty. Half-productive sites in Unproductive Mode are blocked too.</li>
           <li>
             Time is counted only for the focused window's active tab, while you are at the computer or media is playing. Idle time is not counted.
@@ -660,7 +661,7 @@ function ProtectionSection({ state }: { state: EarnState }) {
             <strong className="text-rose-200">debt</strong>. Only productive sites open until you study it off.
           </li>
           <li>
-            After setup, any change that makes usage easier costs the unlock cost ({state.settings.unlockCostMin} min). Making things stricter is free.
+            After setup, changing the earned-time rules to make usage easier costs the unlock cost ({state.settings.unlockCostMin} min). The fixed adult-site focus policy does not change your balance or debt.
           </li>
           <li>Setup runs once. Balance cannot be reset through settings.</li>
           <li>Every change, charge and debt is written to an audit log. Export it below.</li>
@@ -674,8 +675,8 @@ function ProtectionSection({ state }: { state: EarnState }) {
         </p>
         <div className="space-y-2 text-[13px] leading-snug text-slate-300">
           <p>
-            <strong className="text-slate-100">Can be blocked:</strong> opening <span className="font-mono text-[12px]">chrome://extensions</span> or{' '}
-            <span className="font-mono text-[12px]">chrome://settings/extensions</span> in a tab. EarnTime redirects that tab to its block page.
+            <strong className="text-slate-100">Confirmation first:</strong> opening <span className="font-mono text-[12px]">chrome://extensions</span> or{' '}
+            <span className="font-mono text-[12px]">chrome://settings/extensions</span> in a tab shows a confirmation page. Choose Go back, open EarnTime's settings, or continue to Chrome settings once.
           </p>
           <p>
             <strong className="text-slate-100">API used:</strong> <span className="font-mono text-[12px]">chrome.tabs</span> events (onCreated, onUpdated) with{' '}

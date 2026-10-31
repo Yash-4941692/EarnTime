@@ -38,10 +38,19 @@ test('a schema-3 state that had WhatsApp stripped gets it back exactly once', ()
   assert.equal(afterRemoval.rules.half.includes('web.whatsapp.com'), false, 'never force-added again');
 });
 
-test('the schema-6 upgrade does not re-add WhatsApp or re-grant history to a schema-5 state', () => {
-  const v5 = {
-    schema: 5,
+test('the schema-8 upgrade preserves rules and history but drops editable adult-site preferences', () => {
+  const v7 = {
+    schema: 7,
     setupDone: true,
+    settings: {
+      earnFromMin: 60,
+      earnToMin: 5,
+      unlockCostMin: 10,
+      youtubeKeywords: ['Study'],
+      adultSiteGuard: false,
+      adultSiteHosts: ['private.example'],
+      adultSiteExemptions: ['health.example'],
+    },
     historyGranted: false,
     historyScope: 'local' as const,
     rules: { productive: ['khanacademy.org'], half: ['youtube.com'], unproductive: ['instagram.com'] },
@@ -67,11 +76,14 @@ test('the schema-6 upgrade does not re-add WhatsApp or re-grant history to a sch
     ],
   };
 
-  const state = sanitizeState(v5, T0 + 1);
+  const state = sanitizeState(v7, T0 + 1);
 
   assert.equal(state.schema, SCHEMA_VERSION, 'rewritten as the current schema');
-  assert.equal(state.rules.half.includes('web.whatsapp.com'), false, 'a schema-5 list is authoritative');
+  assert.equal(state.rules.half.includes('web.whatsapp.com'), false, 'a schema-7 list is authoritative');
   assert.equal(state.historyGranted, false, 'a stored screen-time answer wins from schema 5 on');
+  assert.equal('adultSiteGuard' in state.settings, false, 'the fixed guard is no longer a user preference');
+  assert.equal('adultSiteHosts' in state.settings, false, 'schema-7 custom domains are discarded');
+  assert.equal('adultSiteExemptions' in state.settings, false, 'schema-7 exceptions are discarded');
   assert.equal(state.halfReviews.length, 1, 'the question survives the upgrade');
   assert.equal(state.halfReviews[0].productiveMs, 2.5 * MIN);
   assert.equal(state.nextReviewId, 4);
@@ -220,7 +232,7 @@ test('loading a realistic v2.1.1 state preserves the wallet, core settings and t
 
   const state = sanitizeState(v211, T0 + 1);
 
-  assert.equal(SCHEMA_VERSION, 6);
+  assert.equal(SCHEMA_VERSION, 8);
   assert.equal(state.schema, SCHEMA_VERSION, 'the old state is explicitly rewritten as the current schema');
   assert.deepEqual(state.halfReviews, [], 'a state written before the estimate questions has none');
   assert.equal(state.nextReviewId, 1);
