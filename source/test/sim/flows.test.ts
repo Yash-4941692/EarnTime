@@ -21,8 +21,8 @@ import {
 
 /** The static ruleset as Chrome reads it out of the package. */
 function packagedAdultRules(): DnrRule[] {
-  const raw = JSON.parse(readFileSync('../rules/focus_guard.json', 'utf8')) as { rules: DnrRule[] };
-  return raw.rules;
+  const raw = JSON.parse(readFileSync('../rules/focus_guard.json', 'utf8')) as DnrRule[];
+  return raw;
 }
 
 const near = (actual: number, expected: number, tolerance: number, label: string) =>

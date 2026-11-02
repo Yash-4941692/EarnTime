@@ -73,29 +73,27 @@ function writeAdultRules() {
   const domains = JSON.parse(fs.readFileSync(path.join(dataDir, 'adultDomains.json'), 'utf8'));
   const tlds = JSON.parse(fs.readFileSync(path.join(dataDir, 'adultTlds.json'), 'utf8'));
   const pause = { type: 'redirect', redirect: { extensionPath: '/motivation.html' } };
-  const ruleset = {
-    rules: [
-      {
-        id: 1,
-        priority: 100,
-        action: pause,
-        condition: { requestDomains: domains, resourceTypes: ['main_frame'] },
+  const rules = [
+    {
+      id: 1,
+      priority: 100,
+      action: pause,
+      condition: { requestDomains: domains, resourceTypes: ['main_frame'] },
+    },
+    {
+      id: 2,
+      priority: 100,
+      action: pause,
+      condition: {
+        regexFilter: `^https?://[^/?#]+\\.(${tlds.join('|')})([:/?#]|$)`,
+        isUrlFilterCaseSensitive: false,
+        resourceTypes: ['main_frame'],
       },
-      {
-        id: 2,
-        priority: 100,
-        action: pause,
-        condition: {
-          regexFilter: `^https?://[^/?#]+\\.(${tlds.join('|')})([:/?#]|$)`,
-          isUrlFilterCaseSensitive: false,
-          resourceTypes: ['main_frame'],
-        },
-      },
-    ],
-  };
+    },
+  ];
   const target = path.join(outdir, 'rules', 'focus_guard.json');
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, `${JSON.stringify(ruleset, null, 2)}\n`);
+  fs.writeFileSync(target, `${JSON.stringify(rules, null, 2)}\n`);
 }
 
 function copyPages() {

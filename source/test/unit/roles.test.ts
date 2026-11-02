@@ -262,9 +262,12 @@ test('DNR rules: the adult-site pause is independent of wallet limits', () => {
 test('the packaged static ruleset is the same guard the extension applies at runtime', () => {
   const path = new URL('../../../rules/focus_guard.json', import.meta.url);
   const packaged = JSON.parse(readFileSync(path, 'utf8')) as ReturnType<typeof buildAdultGuardRuleSet>;
+  assert.ok(Array.isArray(packaged), 'a static ruleset file must be a bare array of rules');
   assert.deepEqual(packaged, buildAdultGuardRuleSet(), 'rules/focus_guard.json must be the built guard (npm run build regenerates it)');
-  assert.equal(packaged.rules[0].condition.requestDomains?.length, DEFAULT_ADULT_SITE_HOSTS.length);
-  assert.equal(packaged.rules[0].action.redirect.extensionPath, MOTIVATION_PAGE_PATH);
+  const first = packaged[0];
+  assert.equal(first.condition.requestDomains?.length, DEFAULT_ADULT_SITE_HOSTS.length);
+  assert.ok(first.action.type === 'redirect', 'the guard redirects to the pause page');
+  assert.equal(first.action.redirect.extensionPath, MOTIVATION_PAGE_PATH);
 });
 
 test('the shipped package does not advertise the fixed policy before a visit', () => {
