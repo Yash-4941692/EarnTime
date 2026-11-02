@@ -87,33 +87,38 @@ test('the schema-8 upgrade preserves rules and history but drops editable adult-
   assert.equal(state.halfReviews.length, 1, 'the question survives the upgrade');
   assert.equal(state.halfReviews[0].productiveMs, 2.5 * MIN);
   assert.equal(state.nextReviewId, 4);
-  assert.deepEqual(state.settings.guardedHosts, [], 'schema 9 starts the personal pause list empty');
+  assert.equal('guardedHosts' in state.settings, false, 'schema 10 has no personal pause list');
 });
 
-test('schema 9 keeps the personal pause list, normalised, and refuses anything that is not a hostname', () => {
+test('schema 10 drops the retired personal pause list and preserves the rest of the settings', () => {
   const raw = {
     schema: 9,
     setupDone: true,
     settings: {
-      earnFromMin: 60,
-      earnToMin: 5,
-      unlockCostMin: 10,
-      youtubeKeywords: ['Study'],
-      guardedHosts: ['https://www.XhAccess.example/watch?v=1', 'xhaccess.example', 'not a host', 42, 'example.com/'],
+      earnFromMin: 45,
+      earnToMin: 4,
+      unlockCostMin: 7,
+      youtubeKeywords: ['Physics'],
+      guardedHosts: ['https://www.Mystery.example/watch?v=1', 'mystery.example', 'not a host', 42],
     },
-    rules: { productive: [], half: ['youtube.com'], unproductive: [] },
-    balanceMs: 0,
+    rules: { productive: ['khanacademy.org'], half: ['youtube.com'], unproductive: [] },
+    balanceMs: 12 * MIN,
     nextLedgerId: 1,
     nextReviewId: 1,
   };
 
   const state = sanitizeState(raw, T0 + 1);
 
-  assert.deepEqual(
-    state.settings.guardedHosts,
-    ['xhaccess.example', 'example.com'],
-    'inputs are reduced to hostnames, de-duplicated and invalid entries are dropped',
-  );
+  assert.equal(state.schema, SCHEMA_VERSION);
+  assert.equal('guardedHosts' in state.settings, false, 'user-added pause entries are retired with the list');
+  assert.deepEqual(state.settings, {
+    earnFromMin: 45,
+    earnToMin: 4,
+    unlockCostMin: 7,
+    youtubeKeywords: ['Physics'],
+  }, 'the rest of the settings are untouched');
+  assert.equal(state.balanceMs, 12 * MIN);
+  assert.deepEqual(state.rules.productive, ['khanacademy.org']);
 });
 
 test('React prototype storage: balanceSeconds and blocked sites map to unproductive', () => {
@@ -259,7 +264,7 @@ test('loading a realistic v2.1.1 state preserves the wallet, core settings and t
 
   const state = sanitizeState(v211, T0 + 1);
 
-  assert.equal(SCHEMA_VERSION, 9);
+  assert.equal(SCHEMA_VERSION, 10);
   assert.equal(state.schema, SCHEMA_VERSION, 'the old state is explicitly rewritten as the current schema');
   assert.deepEqual(state.halfReviews, [], 'a state written before the estimate questions has none');
   assert.equal(state.nextReviewId, 1);
@@ -292,7 +297,6 @@ test('loading a realistic v2.1.1 state preserves the wallet, core settings and t
     earnToMin: 5,
     unlockCostMin: 10,
     youtubeKeywords: ['JEE', 'Study'],
-    guardedHosts: [],
   });
   for (const removedField of ['whatsappChats', 'whatsappGroups']) {
     assert.equal(Object.prototype.hasOwnProperty.call(state.settings, removedField), false, `${removedField} is not carried forward`);

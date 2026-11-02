@@ -17,9 +17,9 @@
  *  4. `ADULT_HOST_TOKENS` — words that are unambiguous only as a whole label ("sex", "xxx", "milf"),
  *     so `sussex.ac.uk` or `analytics.example.com` are not hit by a substring.
  *
- * A hostname that matches none of these can still be guarded by the user: Settings → Protection
- * keeps a personal "also pause" list (`settings.guardedHosts`), checked by every layer that enforces
- * this guard. `isGuardedHost` is the one entry point those layers use.
+ * The policy is fixed: there is no user-editable domain list and no exception list, so the built-in
+ * rule cannot be weakened from Settings. Every enforcement layer (redirect rules, the tab sweep, the
+ * load-time page guard) asks `isAdultSiteHost`, so all of them agree.
  */
 
 import hosts from '../../data/adultDomains.json';
@@ -47,6 +47,7 @@ export const ADULT_HOST_PARTS: readonly string[] = [
   'xhamsterlive',
   'xhaccess',
   'hentai',
+  'hanime',
   'onlyfans',
   'fansly',
   'brazzers',
@@ -71,12 +72,31 @@ export const ADULT_HOST_PARTS: readonly string[] = [
   'javdb',
   'javmost',
   'javgg',
+  'javdoe',
+  'javsin',
+  'javsky',
+  'javsub',
+  'javwhores',
+  'javhihi',
+  'javdock',
+  'supjav',
+  'vjav',
+  'netflav',
+  'avple',
+  'sextb',
+  'ashemaletube',
+  'letmejerk',
+  'badoink',
+  'heavy-r',
   'nhentai',
 ];
 
 /**
  * Words that only mean something adult as a whole label. Matching is per label token, never a
  * substring, so `sussex`, `essex`, `analytics`, `classics` and `cumulative` stay clear.
+ *
+ * `joi` is deliberately not here: it is also the name of a widely used JavaScript validation
+ * library (`joi.dev`), and the JAV sites that use it are covered by the curated list instead.
  */
 export const ADULT_HOST_TOKENS: readonly string[] = [
   'xxx',
@@ -100,7 +120,6 @@ export const ADULT_HOST_TOKENS: readonly string[] = [
   'whore',
   'fap',
   'jerk',
-  'joi',
   'bdsm',
   'erotic',
   'erotica',
@@ -120,6 +139,30 @@ export const ADULT_HOST_TOKENS: readonly string[] = [
   'threesome',
   'shemale',
   'tranny',
+  'tube8',
+  'redtube',
+  'beeg',
+  'ashemaletube',
+  'hanime',
+  'hanime1',
+  'vjav',
+  'supjav',
+  'javhihi',
+  'javdock',
+  'jav321',
+  'javwhores',
+  '123av',
+  'netflav',
+  'avple',
+  'sextb',
+  'letmejerk',
+  'xbabe',
+  'badoinkvr',
+  'twistys',
+  'familystrokes',
+  'sislovesme',
+  'nubilefilms',
+  'wetplace',
 ];
 
 /**
@@ -186,26 +229,14 @@ export function isAdultSiteHost(host: string): boolean {
 }
 
 /**
- * The complete guard: the fixed policy plus the sites the user added themselves in Settings.
- * Every enforcement layer (redirect rules, the tab sweep, the load-time page guard) asks this one
- * question, so a personal addition is enforced exactly like a built-in entry.
+ * Hostnames the redirect rules should cover: the fixed curated list. Duplicates are dropped so the
+ * packaged ruleset stays compact, and the same list feeds both the static and dynamic rules.
  */
-export function isGuardedHost(host: string | null | undefined, extra: readonly string[] = []): boolean {
-  if (!host) return false;
-  const clean = normalize(host);
-  if (!clean) return false;
-  if (isAdultSiteHost(clean)) return true;
-  return extra.some((entry) => hostMatches(clean, normalize(entry)));
-}
-
-/**
- * Hostnames the redirect rules should cover: the curated list plus the user's own additions.
- * Duplicates are dropped so a personal entry that repeats a built-in one is harmless.
- */
-export function guardedRequestDomains(extra: readonly string[] = []): string[] {
+export function guardedRequestDomains(): string[] {
   const out: string[] = [];
-  for (const host of [...DEFAULT_ADULT_SITE_HOSTS, ...extra.map(normalize)]) {
-    if (host && !out.includes(host)) out.push(host);
+  for (const host of DEFAULT_ADULT_SITE_HOSTS) {
+    const clean = normalize(host);
+    if (clean && !out.includes(clean)) out.push(clean);
   }
   return out;
 }

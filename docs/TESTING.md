@@ -1,8 +1,8 @@
 # Test report
 
-**Status: source logic, simulated flows and jsdom tests verified on 2026-10-31; build passed.** The current Playwright/Chromium suite and the manual checklist with an installed Chrome extension and live YouTube have not been run because no Chromium binary is available.
+**Status: source logic, simulated flows and jsdom tests verified on 2026-11-02; build passed.** The current Playwright/Chromium suite and the manual checklist with an installed Chrome extension and live YouTube have not been run because no Chromium binary is available.
 
-> `cd source && npm test` passes **315 tests**: 169 unit + 84 jsdom DOM + 62 simulated-browser flow tests, plus the strict TypeScript check. The current separate Playwright/Chromium suite was not run. These browser fixtures run the built content script and real controller, not a real Chrome extension installation.
+> `cd source && npm test` passes **311 tests**: 168 unit + 82 jsdom DOM + 61 simulated-browser flow tests, plus the strict TypeScript check. The current separate Playwright/Chromium suite was not run. These browser fixtures run the built content script and real controller, not a real Chrome extension installation.
 
 ## Environment
 
@@ -17,10 +17,10 @@
 | --- | --- | --- |
 | Type check (strict, `noUnusedLocals`) | `npm run typecheck` | **pass** |
 | Build (root artifacts) | `npm run build` | **pass** |
-| Unit tests | `npm run test:unit` | **169 / 169 pass** |
-| DOM tests (jsdom: load-time gate, adult pause, page lifecycle, YouTube filter, Shorts trust) | `npm run test:dom` | **84 / 84 pass** |
-| Flow tests (simulated browser) | `npm run test:sim` | **62 / 62 pass** |
-| Complete source suite | `npm test` | **315 / 315 pass**, including type check |
+| Unit tests | `npm run test:unit` | **168 / 168 pass** |
+| DOM tests (jsdom: load-time gate, pause page, page lifecycle, YouTube filter, Shorts trust) | `npm run test:dom` | **82 / 82 pass** |
+| Flow tests (simulated browser) | `npm run test:sim` | **61 / 61 pass** |
+| Complete source suite | `npm test` | **311 / 311 pass**, including type check |
 | Browser tests (Playwright + Chromium) | `npm run test:browser` | **not run for this change** (needs a Chromium binary) |
 | Real Chrome extension end-to-end | manual checklist below | **not run** |
 
@@ -28,26 +28,26 @@ The release build is verified separately with `npm run build`; browser-specific 
 
 ## What each suite covers
 
-### Unit tests (`source/test/unit`, 164)
+### Unit tests (`source/test/unit`, 168)
 
 - **Host handling:** input normalisation, subdomain matching, most-specific entry wins, strictest list wins on ties, and list de-duplication.
 - **Time and accounting:** local day keys, splitting at midnight, formatting, the 60:5 earning example, unproductive spending, idle/background/internal pages, audible media, clock changes, checkpoints, and reconciliation boundaries.
 - **Half-productive roles:** mode selection and YouTube-only filter selection; pending or failed YouTube filters fail closed. An intentional `covered` YouTube state is distinct from failure and neither earns nor spends time.
 - **Half-time estimates:** a history stretch on a half-productive host is split half study / half unproductive; the study half credits at the current ratio, the other half charges (spending the balance first and creating debt past it), and closed intervals never produce a question. Repeated visits to one host merge into a single question with per-day parts, stretches under a minute are not questioned, at most 20 questions are kept (unanswered first), and a verified mode before the interruption keeps its own charge instead of being estimated.
 - **Answering an estimate:** `review.set` is free (the unlock cost is untouched), validated against the estimate (unknown id → `not-found`; an answer above the estimate → `invalid` with no side effect), re-prices the same local days, and updates balance, debt and the day totals in both directions; `review.keep` accepts the default and changes nothing. Corrections pay debt before the balance when they add credit, take the balance before creating debt when they remove it, and are audited with a `review` ledger entry that is exposed (minutes estimated, answer, credited and charged) in the audit export.
-- **Motivational lines (`src/core/motivation.ts`):** the pause page is a path of its own with no query string for a redirect to lose; a line is stable inside a minute and rotates after it; the adult-site lines mention neither the intervention, the wallet nor a site name.
-- **Schema 8:** the adult-site guard is fixed and always on; upgrading from schema 7 drops the former user-editable enable/domain/exception preferences while preserving the wallet, rules, reviews and `historyGranted`.
-- **Schema 9 and the personal pause list:** the upgrade starts the list empty and preserves everything else; the sanitiser reduces stored entries to normalised hostnames, de-duplicates them and drops anything that is not a hostname. Commands are free in both directions, refuse a built-in domain and a duplicate, and write a `guard` ledger entry each way.
-- **The adult-site hostname tests:** the curated list, the adult sponsored TLDs, distinctive fragments and whole-label words each match, and their deliberate near-misses (`sussex`, `analytics`, `nudestix`, `xxxlutz`) do not.
+- **Motivational lines (`src/core/motivation.ts`):** the pause page is a path of its own with no query string for a redirect to lose; a line is stable inside a minute and rotates after it; the pause lines mention neither the intervention, the wallet nor a site name.
+- **Schema 8:** the fixed hostname policy is always on; upgrading from schema 7 drops the former user-editable enable/domain/exception preferences while preserving the wallet, rules, reviews and `historyGranted`.
+- **Schema 10:** upgrading a schema-9 profile drops the retired extra settings field while preserving the balance, rules, reviews and the rest of the settings.
+- **The hostname policy tests:** curated destinations, sponsored top-level domains, distinctive fragments and whole-label words each match, and deliberately similar ordinary hosts do not.
 - **Migration:** old storage formats and sanitisation, plus a realistic v2.1.1 state fixture proving balance, debt, daily totals, ledger, tasks, settings and non-retired site rules survive schema-3 migration. The retired integration settings/state and its old default half-list entry are removed.
-- **Protection and commands:** setup-once validation, starting-balance cap, free versus paid rule changes, confirmation before a paid change, debt restrictions, task rules, keyword matching, the fixed hostname-only adult-site policy, rejection of legacy adult-site edit commands, and audit export without page URLs.
+- **Protection and commands:** setup-once validation, starting-balance cap, free versus paid rule changes, confirmation before a paid change, debt restrictions, task rules, keyword matching, the fixed hostname-only policy, rejection of legacy edit commands, and audit export without page URLs.
 - **Worker message retry:** bounded retry timing, explicit refusal, eventual success when the worker starts late, and repeated asking (last pause held) until the budget runs out.
 - **Screen-time accounting:** per-site recording inside `chargeSlice` (present roles only, covered and mode-pending time counted but unbilled), the `MAX_DAY_HOSTS` eviction order, `screenMs >= estimatedScreenMs` sanitising, day pruning, and the `historyGranted` migration rule (a pre-schema-5 state keeps access; a fresh install does not have it yet).
 - **Analytics view model (`src/core/analytics.ts`):** today's totals, per-site grouping and `www` collapsing, "other sites" roll-up, the 14-day trend with empty days marked, deltas against yesterday and the average, study share, and the `partlyEstimated` flag.
 - **Worker-free page verdict (`src/content/local.ts`):** rule narrowing to the shared `DirectiveInput` shape, half-site chooser verdicts, productive/unproductive/neutral verdicts, the 30-second gate-cache TTL, the 100-entry cache limit, and cache read/write failure being non-fatal.
 - **Invariants:** 25 seeded random sequences (200 steps each) keep balance and debt non-negative and conserve value; a ledger-size limit test.
 
-### DOM tests (`source/test/dom`, 79)
+### DOM tests (`source/test/dom`, 82)
 
 **Load-time gate (`gate.test.ts`) and page lifecycle (`page.test.ts`)** run the real content-script code against jsdom with injected globals and a virtual clock:
 
@@ -76,11 +76,11 @@ The release build is verified separately with `npm run build`; browser-specific 
 - an unreadable Short is no longer refused outright: the card shows `Shorts channel not verified` with `Continue (trust)`, the page pauses until the answer, continuing reports a healthy trust state, and the next reel asks again;
 - the channel name is read from the channel bar, the link's `title`/`aria-label`, the page's own data for the video id in the address bar, or the channel handle before the trust card appears — while prefetched reels, cached search/watch authors and handles belonging to other reels stay invisible to the check.
 
-### Flow tests on a simulated browser (`source/test/sim`, 59)
+### Flow tests on a simulated browser (`source/test/sim`, 61)
 
 The simulator (`test/sim/fakeBrowser.ts`) exposes a Chrome-shaped object and runs the real Chrome adapter, event wiring and controller. Time is virtual. It models tabs and normal/popup/app/devtools windows, focus, minimise, idle with a 15-second detection interval, audible tabs, history, declarativeNetRequest rules, service-worker suspension and restart, extension disable and enable, browser restart, wall-clock changes, and incognito gating. It does not model Chrome's own internals.
 
-Scenarios cover install and setup; 60:5 earning; spending; fixed adult-domain motivational redirects, neutral content and rejected legacy edit commands; background tabs, focus, idle and audible media; worker/browser restarts; interruption reconciliation and debt; extension-management confirmation plus one-time continuation; YouTube mode choice, intentional covers (no credit or charge), and actual filter failure (charged fail-closed); half-productive mode lifetimes; recurring tasks; legacy migration; clock changes; incognito; audit export; unlock quotes; tab replacement; and setup reopening.
+Scenarios cover install and setup; 60:5 earning; spending; fixed hostname-policy redirects, neutral content and rejected legacy edit commands; background tabs, focus, idle and audible media; worker/browser restarts; interruption reconciliation and debt; extension-management confirmation plus one-time continuation; YouTube mode choice, intentional covers (no credit or charge), and actual filter failure (charged fail-closed); half-productive mode lifetimes; recurring tasks; legacy migration; clock changes; incognito; audit export; unlock quotes; tab replacement; and setup reopening.
 
 The v2.4.0 scenarios add: gate-cache publication for half-classified tabs (first visit publishes `choose`, following a choice publishes `active`, leaving and returning republishes `choose`, non-half tabs publish nothing); per-site screen time for a whole foreground day including unbilled neutral time; idle time not counting as screen time; history-reconstructed gaps recorded as estimated screen time against the right site; no reconstruction and no invented sites when access is absent; granting and removing access through the worker route with a ledger line for each; a revoked permission being noticed on the next worker start; setup recording the access answer and the worker correcting it against Chrome; and the popup heartbeat keeping the timer (and the charging) alive while the popup holds OS focus, then stopping once it closes.
 
@@ -88,7 +88,7 @@ The simulator also models two behaviours Chrome has and earlier versions of the 
 
 ### Browser tests (`source/test/browser`, 15)
 
-The Playwright harness builds the extension pages and content script, serves fixture pages for YouTube, and injects a simulated-browser/controller harness. It covers popup, settings, setup, mode chooser, the adult-site motivational page, extension-management confirmation and cover presentation. It does **not** load the extension into Chrome and does not replace the real-browser checks below. The suite also checks visible Shorts links, click-through to a player receiving real canvas-stream video frames, non-study swipe/pausing, mode changes, covered-time reporting and usable cover-card actions. The harness accepts the array storage keys used by real content scripts; stale setup-step and rule-cost expectations have also been updated.
+The Playwright harness builds the extension pages and content script, serves fixture pages for YouTube, and injects a simulated-browser/controller harness. It covers popup, settings, setup, mode chooser, the pause page, extension-management confirmation and cover presentation. It does **not** load the extension into Chrome and does not replace the real-browser checks below. The suite also checks visible Shorts links, click-through to a player receiving real canvas-stream video frames, non-study swipe/pausing, mode changes, covered-time reporting and usable cover-card actions. The harness accepts the array storage keys used by real content scripts; stale setup-step and rule-cost expectations have also been updated.
 
 ## Regression checks added for this change (v2.4.2)
 
@@ -152,12 +152,6 @@ Use a dedicated Chrome profile. EarnTime redirects `chrome://extensions`, so rel
 19. **Layout:** inspect popup, settings and setup at 100% and 125% zoom, plus the chooser and cover in a narrow window.
 20. **Setup recovery:** close setup unfinished and restart Chrome; setup should reopen. Finish it and restart again; it should not reopen.
 
-### Additional checks for the current change
-
-- Visit a built-in adult-only hostname and a subdomain; both should show the motivational pause page without explaining why. **Back to my goal** should open a productive target.
-- Confirm Settings → Protection discloses that the fixed guard is always on and that there is no Focus guard toggle, custom-domain editor or exception editor.
-- Visit a mixed-use health/education site, an unlisted domain, and an ordinary domain with words such as `explicit` or `porn` in the URL path/query; none should match the hostname-only list.
-- Upgrade a schema-7 profile with adult-site preferences and verify the fixed guard remains on while balance, rules and history are preserved.
 21. **Free changes:** after setup, add a productive site and a YouTube keyword; neither should ask for the unlock cost. Removing an unproductive site should ask for confirmation.
 22. **First-visit gate (v2.4.0):** open `youtube.com` in a brand-new tab with no prior choice for it. The chooser must appear over the page immediately — the video list must never be usable or scrollable first, and answering must not require a reload. Repeat in a second window and after restarting Chrome.
 23. **SPA re-check (v2.4.0):** inside `web.whatsapp.com`, click through chats, and inside YouTube navigate by clicking rather than reloading. Each in-page navigation that changes the classification must re-ask or re-cover without a reload.
@@ -199,30 +193,3 @@ Two user-reported problems drove this change: a half-productive site charged *en
 - Answering an estimate cannot be used as a bypass: it is free but strictly bounded by the estimated total, it changes only the days the estimate came from, and it is written to the ledger and the audit export.
 - The Shorts trust flow was added *after* the deeper readers: `test/dom/youtube.test.ts` pins that a prefetched reel, a cached watch-page owner and a cached search author can never qualify the active Short, that a non-study Short with a readable name is still covered, and that trust is per reel.
 - `npm test` (291 source tests) and `npm run build` pass. No live YouTube request or installed-extension end-to-end test was performed for this change, and the Chromium fixture suite was not re-run.
-
-## Motivational pause regression checks (v2.6.5)
-
-The reported problem was that a visit to a guarded adult site showed the ordinary block page — "it only blocks" — instead of the motivational pause.
-
-- The pause no longer depends on anything the redirect has to carry: `MOTIVATION_PAGE_PATH` is `/motivation.html`, a page that is the motivational pause on its own. A unit test pins that the path has no `?` and no `#`, and that it is not the block page, so a `declarativeNetRequest` redirect that keeps only the path still lands on the pause.
-- Both redirect targets (`block.html`, `motivation.html`) are declared in `web_accessible_resources`, which Chrome requires before it will load an extension page reached from a navigation that started on a website. The manifest entry is checked by the release packaging step, which fails if a file it expects is missing.
-- Simulated-browser flow tests cover both ways an adult-site visit is stopped: a new navigation (the redirect rule) and a tab that was already open when EarnTime started (the worker sending the tab to the page). Both assert `motivation.html`, never `block.html`.
-- A new unit test file (`test/unit/motivation.test.ts`) pins the rotation (stable inside a minute, different after it, every line reachable, a pre-epoch clock still answers) and the wording: the adult-site lines mention neither the intervention, nor the balance or debt, nor a site.
-- The encouragement on the debt and empty-balance pages is marked with `data-et-motivation="study"` so the Chromium suite can wait for it without depending on which line the minute picked. Those browser tests were not run for this change (no Chromium binary available).
-- `npm test` (302 source tests) and `npm run build` pass.
-
-Manual update check: reload EarnTime on `chrome://extensions`, visit a domain from the fixed list (for example `pornhub.com`) and confirm the motivational pause appears with *Back to my goal* and no balance line; then run the balance to zero and confirm the block page shows a study line above the numbers.
-
-## Adult-site guard regression checks (v2.6.6)
-
-Two reports drove this change: an adult site showed only an ordinary block instead of the pause, and one site (`xhaccess`) opened anyway.
-
-- **Recognition.** Unit tests pin the four hostname tests and, just as importantly, their deliberate non-matches: `sussex.ac.uk`, `essex.gov.uk`, `analytics.example.com`, `nudestix.com`, `classictube.com` and `xxxlutz.at` stay open, while `pornhub.com`, `xhaccess.com`, `xhaccess.xxx` (adult TLD), `a-free-porn-tube.example` (fragment), `free-sex-videos.example` (whole label) and `xxx1.example` (brand label) are caught. Nothing reads page text, paths or embedded content.
-- **No drift between the package and the runtime.** A unit test parses the committed `rules/adult_guard.json` and requires it to be deep-equal to `buildAdultGuardRuleSet()`, the function the extension uses. `npm run build` regenerates the file from the same `data/adultDomains.json` and `data/adultTlds.json` the core imports, so a domain added to the list cannot be missing from the packaged ruleset.
-- **Static rules before the worker.** The simulated browser now models packaged rulesets (`loadStaticRules`), competing with dynamic rules on priority like Chrome does. A flow test starts with **no dynamic rules at all** and asserts that a navigation to `pornhub.com` still lands on `motivation.html`.
-- **The personal list.** Commands are tested in both directions (free in both, duplicate and built-in additions refused, ledger entries written), as is the storage sanitiser (hostnames only, normalised, invalid entries dropped). Flow tests add a site in Protection, assert the pause for a later navigation **and** for a tab that was already open, then remove it and assert it opens again.
-- **The in-page pause.** jsdom tests drive the real content script: an adult address is gated synchronously at `document_start` with the pause on screen and *no* `page.init` round trip, an adult TLD is paused without being on any list, a personal entry is paused from stored settings, a worker answering `{kind:'none'}` cannot open a guarded page, and adding a site to the list closes a page that is already open.
-- **Time on a guarded page is charged.** Unit tests assert that `roleOf` and `gapRoleForHost` return an unproductive role for a guarded host, so a page that slips through is neither credited nor uncounted.
-- `npm test` (315 source tests) and `npm run build` pass. The Playwright/Chromium suite and a real installed Chrome were **not** run for this change (no Chromium binary available), so the static ruleset's behaviour in real Chrome and the redirect timing still need a manual check.
-
-Manual update check: reload EarnTime on `chrome://extensions`, then open `https://www.xhaccess.xxx/` and confirm the motivational pause (encouragement plus three steps, no balance line). Open Settings → Protection, add a site of your own (for example a domain that is not on the built-in list), load it and confirm the pause; remove it and confirm it opens again. Then confirm an ordinary site such as `khanacademy.org` and a health site still open normally.

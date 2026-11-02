@@ -32,7 +32,7 @@ function stateWith(overrides: Partial<EarnState> = {}): EarnState {
     setupDone: true,
     historyGranted: true,
     createdAt: T0,
-    settings: { earnFromMin: 60, earnToMin: 5, unlockCostMin: 10, youtubeKeywords: ['Study'], guardedHosts: [] },
+    settings: { earnFromMin: 60, earnToMin: 5, unlockCostMin: 10, youtubeKeywords: ['Study'] },
     rules: { productive: ['khanacademy.org'], half: ['youtube.com'], unproductive: ['instagram.com'] },
     balanceMs: 30 * MIN,
     debtMs: 0,
@@ -604,16 +604,6 @@ test('an adult sponsored TLD is paused without being on any list', async () => {
   h.cleanup();
 });
 
-test('a site the user added to their own pause list is paused, even though it is not on any built-in list', async () => {
-  const state = stateWith({ settings: { ...stateWith().settings, guardedHosts: ['mystery.example'] } });
-  const h = new Harness({ url: 'https://www.mystery.example/feed', state, replies: [{ ok: true, directive: { kind: 'none' }, tabId: 3 }] });
-  attachPage(h.dom.window.document, h.env);
-  await h.flush();
-  assert.equal(h.gated(), true, 'the personal list closes the page too');
-  assert.ok(ADULT_PAUSE_LINES.some((line) => line.title === h.cardTitle()));
-  h.cleanup();
-});
-
 test('a worker answer never opens a guarded page', async () => {
   const h = new Harness({
     url: 'https://www.xhamster.com/videos/1',
@@ -622,26 +612,6 @@ test('a worker answer never opens a guarded page', async () => {
   attachPage(h.dom.window.document, h.env);
   await h.flush();
   assert.equal(h.gated(), true, 'the "nothing to do" answer cannot open an adult page');
-  assert.ok(ADULT_PAUSE_LINES.some((line) => line.title === h.cardTitle()));
-  h.cleanup();
-});
-
-test('adding a site to the personal pause list closes the page that is already open', async () => {
-  const plain = stateWith();
-  const h = new Harness({
-    url: 'https://www.mystery.example/feed',
-    state: plain,
-    replies: [{ ok: true, directive: { kind: 'none' }, tabId: 6 }],
-  });
-  attachPage(h.dom.window.document, h.env);
-  await h.flush();
-  assert.equal(h.gated(), false, 'not guarded until the user says so');
-
-  const guarded = stateWith({
-    settings: { ...plain.settings, guardedHosts: ['mystery.example'] },
-  });
-  await h.changeState(guarded);
-  assert.equal(h.gated(), true, 'the rule change is picked up live, with no reload');
   assert.ok(ADULT_PAUSE_LINES.some((line) => line.title === h.cardTitle()));
   h.cleanup();
 });

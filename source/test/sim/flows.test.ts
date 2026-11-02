@@ -21,13 +21,8 @@ import {
 
 /** The static ruleset as Chrome reads it out of the package. */
 function packagedAdultRules(): DnrRule[] {
-  const raw = JSON.parse(readFileSync('../rules/adult_guard.json', 'utf8')) as { rules: DnrRule[] };
+  const raw = JSON.parse(readFileSync('../rules/focus_guard.json', 'utf8')) as { rules: DnrRule[] };
   return raw.rules;
-}
-
-/** Counts how many tabs currently sit on the pause page. */
-function pauseTabs(b: { tabs: Map<number, { url: string }> }): number {
-  return [...b.tabs.values()].filter((tab) => tab.url.startsWith(`${EXT_ORIGIN}/motivation.html`)).length;
 }
 
 const near = (actual: number, expected: number, tolerance: number, label: string) =>
@@ -389,27 +384,6 @@ test('an adult address that no list could name is paused by the adult-TLD rule',
   await installAndSetup(b, { initialBalanceMin: 20 });
   const tab = await b.openTab('https://xhaccess.xxx/watch/9', { active: true });
   assert.equal(b.tabUrl(tab), `${EXT_ORIGIN}/motivation.html`, 'the pause, not the ordinary block page');
-});
-
-test('a site the user adds in Protection is paused from then on, and can be removed again', async () => {
-  const b = newBrowser();
-  await installAndSetup(b, { initialBalanceMin: 20 });
-
-  const first = await b.openTab('https://www.mystery.example/feed', { active: true });
-  assert.equal(b.tabUrl(first), 'https://www.mystery.example/feed', 'not guarded yet');
-
-  const added = await command(b, { type: 'guard.add', host: 'mystery.example' });
-  assert.equal(added.ok, true);
-  assert.equal(balanceMin(b), 20, 'restricting is free');
-
-  const paused = await b.openTab('https://sub.mystery.example/feed', { active: true });
-  assert.equal(b.tabUrl(paused), `${EXT_ORIGIN}/motivation.html`, 'the personal addition pauses the site');
-  assert.equal(pauseTabs(b), 2, 'both the new tab and the one that was already open are paused');
-
-  const removed = await command(b, { type: 'guard.remove', host: 'mystery.example' });
-  assert.equal(removed.ok, true);
-  const openAgain = await b.openTab('https://www.mystery.example/feed', { active: true });
-  assert.equal(b.tabUrl(openAgain), 'https://www.mystery.example/feed');
 });
 
 test('the packaged static ruleset pauses an adult site before the worker has installed anything', async () => {

@@ -291,9 +291,10 @@ try {
       ),
       'exact chrome:// limitation wording',
     );
-    expect(body.includes('The fixed adult-site focus guard is always on.'), 'the fixed guard is disclosed');
-    expect(await page.locator('#adult-site-guard').count() === 0, 'there is no ordinary guard toggle');
-    expect(!body.includes('Trusted-site exceptions') && !body.includes('Add a dedicated site'), 'there are no custom-domain or exception editors');
+    expect(!body.toLowerCase().includes('adult'), 'the fixed policy is not disclosed before a visit');
+    expect(!body.includes('Your own pause list'), 'there is no personal pause list');
+    expect(await page.locator('#guard-add').count() === 0, 'there is no custom-domain editor');
+    expect(!body.includes('Trusted-site exceptions'), 'there are no exception editors');
     await page.screenshot({ path: join(shots, 'settings-protection.png'), fullPage: true });
     expect(page.__errors.length === 0, `no page errors: ${page.__errors.join('; ')}`);
     await context.close();

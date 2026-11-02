@@ -1,3 +1,45 @@
+# EarnTime 2.6.7
+
+## Adult blocking audit, and the personal list removed
+
+This build is the same extension with three corrections to the fixed hostname policy, a narrower
+surface for it, and no user-editable additions.
+
+- **Fixed a false positive in the sponsored-TLD rule.** The host part of `ADULT_TLD_REGEX` was
+  `[^/]+`, which also swallowed a query or fragment after the host: `https://example.com#x=.sex`
+  and `https://example.com?next=foo.porn` paused an ordinary page because of text in its address.
+  The host part is now `[^/?#]+`, which is what a hostname can actually contain. Unit tests pin the
+  fragment and query cases, and the generated static ruleset uses the same pattern.
+- **Fixed a false positive in the word list.** The whole-label token `joi` also matched `joi.dev`,
+  the documentation site of the widely used JavaScript validation library. It is removed; JAV
+  destinations remain covered by the curated list and the specific `jav*` fragments.
+- **Coverage audit.** The curated list grows from 263 to 296 dedicated destinations after checking
+  the popular sites the first list missed: `tube8.com/.net`, `ashemaletube.com`, `heavy-r.com`,
+  `xbabe.com`, `letmejerk.com`, `badoinkvr.com`, `twistys.com`, `tushy.com`, `deeper.com`,
+  `familystrokes.com`, `sislovesme.com`, `nubilefilms.com`, `passion-hd.com`, `wetplace.com`,
+  `vjav.com`, `supjav.com`, `javhihi.com`, `javdock.com`, `jav321.com`, `javwhores.com`,
+  `123av.com`, `avple.tv`, `sextb.net`, `netflav.com`, `hanime1.me`, `javdoe.com`, `javsin.com`,
+  `javsky.tv`, `javsub.tv`, `beeg.net`, `redtube.net` and `missav.ws`. Matching fragments and
+  whole-label words grew with them, so alternate TLDs of those brands are covered too.
+- **Personal pause list removed.** `guard.add` / `guard.remove`, `settings.guardedHosts`, the
+  Settings → Protection list editor and its sanitiser entry are gone. The fixed policy is now the
+  only input. The storage schema moves to 10; upgrading drops the retired list and preserves the
+  balance, rules, reviews, tasks and the rest of the settings.
+- **No advance disclosure.** The Settings page, README, user guide, known-limitations document and
+  test report no longer describe the policy. The static ruleset is named `focus_guard` (not
+  `adult_guard`), so the manifest and the package do not name it either. A visit is the first
+  moment the pause becomes visible; it still explains nothing about the site, the reason or the
+  wallet. A unit test pins that the shipped files contain no advance disclosure.
+- **Verified:** strict TypeScript check, **311 source tests** (168 unit, 82 DOM, 61
+  simulated-browser) and the production build. The separate Playwright/Chromium suite and a real
+  installed Chrome were not run (no Chromium binary available).
+
+## Install or update
+
+Download **EarnTime-2.6.7.zip**, extract it, and select the folder containing `manifest.json` via Chrome's **Load unpacked** option.
+
+For an existing unpacked installation, replace its files with the extracted release and click **Reload** for EarnTime at `chrome://extensions`. **Do not uninstall** if you want to keep your settings and balance. Reload once after updating: the static ruleset is read when the extension loads.
+
 # EarnTime 2.6.6
 
 ## The pause actually pauses, and you can add any site you find

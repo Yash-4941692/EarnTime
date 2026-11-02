@@ -58,7 +58,7 @@ const tailwindPlugin = {
 };
 
 /**
- * Writes `rules/adult_guard.json`, the static declarativeNetRequest ruleset Chrome loads with the
+ * Writes `rules/focus_guard.json`, the static declarativeNetRequest ruleset Chrome loads with the
  * extension.
  *
  * The service worker installs the same guard as *dynamic* rules, but only once it has run a job — so
@@ -86,14 +86,14 @@ function writeAdultRules() {
         priority: 100,
         action: pause,
         condition: {
-          regexFilter: `^https?://[^/]+\\.(${tlds.join('|')})([:/?#]|$)`,
+          regexFilter: `^https?://[^/?#]+\\.(${tlds.join('|')})([:/?#]|$)`,
           isUrlFilterCaseSensitive: false,
           resourceTypes: ['main_frame'],
         },
       },
     ],
   };
-  const target = path.join(outdir, 'rules', 'adult_guard.json');
+  const target = path.join(outdir, 'rules', 'focus_guard.json');
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, `${JSON.stringify(ruleset, null, 2)}\n`);
 }
