@@ -30,6 +30,16 @@ EarnTime is a self-discipline tool. It is not a security boundary, and nothing i
 - **The popup now counts.** Opening EarnTime's popup takes OS focus away from the browser window and Chrome announces no event for it, which used to freeze counting and the display. The popup beats once a second while it is open, and the worker treats that beat as "the user is here" for up to 2.5 seconds, so the timer keeps moving in front of you. Devtools and unrelated application windows are still not counted.
 - **Picture-in-picture** and **embedded players on other sites** are not analysed. Only the top-level page is evaluated.
 - **Incognito** is not tracked unless the user allows EarnTime in incognito. The popup shows a warning when it is not.
+  Once it is allowed, Chrome runs a second copy of EarnTime inside incognito windows, which is what
+  the manifest asks for with `"incognito": "split"`. That setting is required, not cosmetic: in
+  Chrome's default *spanning* mode a tab in an incognito window may not load a page from the
+  extension's own package, so the pause and the block would be replaced by Chrome's own
+  `ERR_BLOCKED_BY_CLIENT` page. The wallet, rules and settings are the same in both copies, because
+  `chrome.storage.local` is shared between them; only `chrome.storage.session` (the per-tab verdict
+  cache) is separate. Because two copies of the worker now read and write that one document, a
+  checkpoint that runs in both at the same instant can overwrite the other copy's write, so one
+  30-second interval of accounting can be missed; the next checkpoint continues from whatever the
+  document says. A storage-level lock is the fix if that ever becomes visible.
 - **One profile, one ledger.** Each Chrome profile has its own EarnTime state.
 - **Device selection is local versus all synced history, not a remote-device picker.** `chrome.history.getVisits` exposes `isLocal`, but no source-device identifier. This-device mode is the default and excludes visits with `isLocal: false` or an unknown source; all synced history is opt-in in Settings → Analytics. This preference affects future imports only. Chrome versions without visit-source information cannot import history in this-device mode. Live tracking always remains local.
 - **Same-day reclassification uses recorded screen time.** Adding/moving a site to Unproductive charges earlier recorded use today and can immediately create debt. It does not replay the day's history, revoke earlier study rewards, or back-bill earlier days. Estimates retain their existing caps. Older releases lack per-host billing records: on upgrade, existing screen time on already half/unproductive sites is conservatively treated as covered when that day has spending, to avoid duplicate charges.

@@ -29,7 +29,7 @@ The setup wizard opens the first time. It has eight steps:
 - **EarnTime's own popup counts too.** Opening the popup takes focus away from the page, so it used to freeze the numbers until you closed it. The popup now beats once a second and the timer keeps falling while you watch it.
 - A tab playing audio counts even while you are away from the keyboard (for example, a video you are watching).
 - A locked screen does not count.
-- Incognito windows are **not tracked** unless you allow EarnTime in incognito (`chrome://extensions` → EarnTime → *Allow in Incognito*). The popup warns you when they are not tracked.
+- Incognito windows are **not tracked** unless you allow EarnTime in incognito (`chrome://extensions` → EarnTime → *Allow in Incognito*). The popup warns you when they are not tracked. Once you allow it, the pause and block pages open inside incognito tabs as well — before that, a blocked site only shows Chrome's own error page there.
 
 ## Site modes
 
