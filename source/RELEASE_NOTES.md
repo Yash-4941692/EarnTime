@@ -1,4 +1,4 @@
-# Unreleased
+# EarnTime 2.6.7
 
 ## Adult blocking audit, and the personal list removed
 
@@ -33,6 +33,12 @@ surface for it, and no user-editable additions.
 - **Verified:** strict TypeScript check, **311 source tests** (168 unit, 82 DOM, 61
   simulated-browser) and the production build. The separate Playwright/Chromium suite and a real
   installed Chrome were not run (no Chromium binary available).
+
+## Install or update
+
+Download **EarnTime-2.6.7.zip**, extract it, and select the folder containing `manifest.json` via Chrome's **Load unpacked** option.
+
+For an existing unpacked installation, replace its files with the extracted release and click **Reload** for EarnTime at `chrome://extensions`. **Do not uninstall** if you want to keep your settings and balance. Reload once after updating: the static ruleset is read when the extension loads.
 
 # EarnTime 2.6.6
 
