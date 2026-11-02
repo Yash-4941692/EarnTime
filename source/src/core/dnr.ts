@@ -125,39 +125,23 @@ export function buildBlockingRules(state: EarnState): DnrRule[] {
  * the first moment EarnTime is enabled. `source/esbuild.config.js` writes this file, at build time,
  * from the same curated list, so the two can never drift apart.
  */
-export interface StaticRuleSet {
-  rules: Array<{
-    id: number;
-    priority: number;
-    action: { type: 'redirect'; redirect: { extensionPath: string } };
-    condition: {
-      requestDomains?: string[];
-      regexFilter?: string;
-      isUrlFilterCaseSensitive?: boolean;
-      resourceTypes: string[];
-    };
-  }>;
-}
-
-export function buildAdultGuardRuleSet(): StaticRuleSet {
-  return {
-    rules: [
-      {
-        id: 1,
-        priority: 100,
-        action: { type: 'redirect', redirect: { extensionPath: MOTIVATION_PAGE_PATH } },
-        condition: { requestDomains: guardedRequestDomains(), resourceTypes: ['main_frame'] },
+export function buildAdultGuardRuleSet(): DnrRule[] {
+  return [
+    {
+      id: 1,
+      priority: 100,
+      action: { type: 'redirect', redirect: { extensionPath: MOTIVATION_PAGE_PATH } },
+      condition: { requestDomains: guardedRequestDomains(), resourceTypes: ['main_frame'] },
+    },
+    {
+      id: 2,
+      priority: 100,
+      action: { type: 'redirect', redirect: { extensionPath: MOTIVATION_PAGE_PATH } },
+      condition: {
+        regexFilter: ADULT_TLD_REGEX,
+        isUrlFilterCaseSensitive: false,
+        resourceTypes: ['main_frame'],
       },
-      {
-        id: 2,
-        priority: 100,
-        action: { type: 'redirect', redirect: { extensionPath: MOTIVATION_PAGE_PATH } },
-        condition: {
-          regexFilter: ADULT_TLD_REGEX,
-          isUrlFilterCaseSensitive: false,
-          resourceTypes: ['main_frame'],
-        },
-      },
-    ],
-  };
+    },
+  ];
 }

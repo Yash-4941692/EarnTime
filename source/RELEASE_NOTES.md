@@ -1,3 +1,27 @@
+# EarnTime 2.6.8
+
+## The package loads again
+
+2.6.6 and 2.6.7 could not be installed: Chrome reported `focus_guard.json: Rules file must
+contain a list.` and `Could not load manifest`, because the static ruleset file was written as
+`{ "rules": [...] }` instead of a bare list.
+
+- **Fixed:** `rules/focus_guard.json` is now a plain array of rules, which is what
+  `declarative_net_request.rule_resources` requires.
+- **Regression test added:** a unit test asserts the packaged ruleset is an array, and the
+  release workflow refuses to publish a ZIP whose ruleset is not a list.
+- **Nothing else changed in the guard.** The dynamic rules, the curated 296-host list, the
+  hostname and sponsored-TLD tests and the pause page are exactly as they were in 2.6.7; the
+  changes listed for that release still apply and are repeated below.
+- **Verified:** strict TypeScript check, **311 source tests** (168 unit, 82 DOM, 61
+  simulated-browser) and the production build.
+
+## Install or update
+
+Download **EarnTime-2.6.8.zip**, extract it, and select the folder containing `manifest.json` via Chrome's **Load unpacked** option.
+
+**Already on 2.6.6 or 2.6.7?** Those builds cannot be installed at all, so replace the contents of your unpacked folder with this release and click **Reload** for EarnTime at `chrome://extensions`. **Do not uninstall** if you want to keep your settings and balance — uninstalling discards them.
+
 # EarnTime 2.6.7
 
 ## Adult blocking audit, and the personal list removed
