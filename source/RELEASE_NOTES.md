@@ -1,3 +1,33 @@
+# EarnTime 2.6.9
+
+## The pause page works in incognito windows
+
+In an incognito window, EarnTime's redirects landed on Chrome's own page instead of EarnTime's:
+`<extension id> is blocked` / `ERR_BLOCKED_BY_CLIENT`. The pause appeared in a normal window and
+not in an incognito one, which made the guard look broken exactly where it was least wanted off.
+
+- **Cause.** Chrome will not load a page from an extension's own package into the main frame of an
+  incognito tab while the extension runs in the default **spanning** incognito mode — even with
+  *Allow in Incognito* switched on. Every page EarnTime interrupts with (`motivation.html`,
+  `block.html`) is such a page, so both the pause and the block page were refused there.
+- **Fixed.** The manifest now asks for `"incognito": "split"`, which runs a second copy of EarnTime
+  inside incognito windows; that copy is allowed to show the extension's own pages. The wallet,
+  rules and settings stay shared between the two copies, because `chrome.storage.local` always is.
+- **Unchanged.** The curated host list, the sponsored-TLD test, the redirect rules and the wording
+  of the pause are exactly as they were in 2.6.8.
+- **Known consequence.** Two copies of the worker now share one state document. A checkpoint that
+  runs in both at the same instant can overwrite the other's write, so up to one 30-second interval
+  of accounting can be missed; the next checkpoint continues from the stored state. This is
+  documented in `docs/KNOWN_LIMITATIONS.md`.
+- **Regression test added.** A unit test fails if the manifest loses `"incognito": "split"`, and
+  checks that every page a redirect points at is listed in `web_accessible_resources`.
+
+## Install or update
+
+Download **EarnTime-2.6.9.zip**, extract it, and select the folder containing `manifest.json` via Chrome's **Load unpacked** option.
+
+**Already on 2.6.8?** Replace the contents of your unpacked folder with this release and click **Reload** for EarnTime at `chrome://extensions`. A manifest change needs that reload; incognito windows must be closed and reopened afterwards. **Do not uninstall** if you want to keep your settings and balance.
+
 # EarnTime 2.6.8
 
 ## The package loads again

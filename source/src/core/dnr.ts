@@ -30,7 +30,11 @@ export const BLOCK_PAGE_PATH = '/block.html';
  * ordinary "screen time used up" block. `motivation.html` always is the motivational pause, so what
  * the rule asks for is what the user gets. The page must also be listed in
  * `web_accessible_resources`, or Chrome refuses to load it for a navigation that started on a
- * website (for example a link click) instead of the address bar.
+ * website (for example a link click) instead of the address bar. And the manifest must ask for
+ * `"incognito": "split"`: in the default spanning mode Chrome will not put a page from the
+ * extension's own package into the main frame of an incognito tab at all, so the redirect ends on
+ * Chrome's `ERR_BLOCKED_BY_CLIENT` page instead of the pause — the pause worked in a normal window
+ * and nowhere else. `test/unit/manifest.test.ts` holds both requirements.
  */
 export const MOTIVATION_PAGE_PATH = '/motivation.html';
 
