@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ADULT_TLD_REGEX, buildAdultGuardRuleSet, buildBlockingRules, MOTIVATION_PAGE_PATH } from '../../src/core/dnr';
-import { DEFAULT_ADULT_SITE_HOSTS, isAdultSiteHost, isGuardedHost } from '../../src/core/adultSites';
+import { DEFAULT_ADULT_SITE_HOSTS, isAdultSiteHost } from '../../src/core/adultSites';
 import { pageDirective } from '../../src/core/directive';
-import { blockReasonForHost, filterStateNeeded, gapRoleForHost, isGuardedUrl, roleOf } from '../../src/core/roles';
+import { blockReasonForHost, filterStateNeeded, isGuardedUrl, roleOf } from '../../src/core/roles';
 import { freshState, MIN, obs, T0 } from './helpers';
 
 test('roleOf: background, locked, idle and internal pages are not counted', () => {
@@ -109,6 +109,31 @@ test('the adult-site guard covers a curated list, adult TLDs and unmistakable ho
   assert.equal(isAdultSiteHost('free-sex-videos.example'), true, 'an unambiguous whole-label word');
   assert.equal(isAdultSiteHost('xxxvideos.example'), true, 'known xxx-brand labels');
   assert.equal(isAdultSiteHost('xxx1.example'), true, 'numbered mirrors of a brand label');
+  // Coverage added after auditing the popular destinations the first list missed.
+  for (const host of [
+    'tube8.com',
+    'tube8.net',
+    'redtube.net',
+    'ashemaletube.com',
+    'heavy-r.com',
+    'xbabe.com',
+    'letmejerk.com',
+    'vjav.com',
+    'supjav.com',
+    'javhihi.com',
+    'jav321.com',
+    '123av.com',
+    'avple.tv',
+    'sextb.net',
+    'netflav.com',
+    'hanime1.me',
+    'tushy.com',
+    'deeper.com',
+    'twistys.com',
+    'passion-hd.com',
+  ]) {
+    assert.equal(isAdultSiteHost(host), true, `${host} is a dedicated destination and must be covered`);
+  }
   assert.equal(blockReasonForHost(state, 'www.pornhub.com', 1), 'adult', 'independent of earned balance');
 });
 
@@ -125,6 +150,8 @@ test('the adult-site guard stays off ordinary sites, including mixed-use ones', 
     'nudestix.com',
     'classictube.com',
     'xxxlutz.at',
+    'joi.dev',
+    'deeper.dev',
   ]) {
     assert.equal(isAdultSiteHost(host), false, `${host} is not classified by page wording or a partial word`);
     assert.equal(blockReasonForHost(state, host, 1), null);
@@ -132,22 +159,6 @@ test('the adult-site guard stays off ordinary sites, including mixed-use ones', 
   for (const setting of ['adultSiteGuard', 'adultSiteHosts', 'adultSiteExemptions']) {
     assert.equal(setting in state.settings, false, `${setting} is not a user-editable setting`);
   }
-});
-
-test('a site the user adds to the pause is guarded like a built-in one, and its time is charged', () => {
-  const state = freshState();
-  assert.equal(isGuardedHost('mystery.example', []), false, 'nothing is guarded before it is added');
-  state.settings.guardedHosts = ['mystery.example'];
-  assert.equal(isGuardedHost('www.mystery.example', state.settings.guardedHosts), true, 'subdomains follow');
-  assert.equal(blockReasonForHost(state, 'sub.mystery.example', 1), 'adult', 'the pause beats every wallet rule');
-  assert.deepEqual(roleOf(state, obs({ at: T0, host: 'www.mystery.example' })), {
-    k: 'unproductive',
-    host: 'www.mystery.example',
-  }, 'time on a guarded page is charged, never credited and never free');
-  assert.deepEqual(gapRoleForHost(state, 'www.mystery.example'), {
-    k: 'unproductive',
-    host: 'www.mystery.example',
-  }, 'a visit recorded while EarnTime was off is charged as well');
 });
 
 test('pageDirective: choose screen offers Unproductive Mode only when the balance is positive', () => {
@@ -221,12 +232,11 @@ test('DNR rules: the adult-site pause is independent of wallet limits', () => {
   assert.equal(tldPattern.test('https://a.porn:8443/x'), true);
   assert.equal(tldPattern.test('https://example.com/porn'), false, 'the path is never read');
   assert.equal(tldPattern.test('https://notporn.example.com/'), false);
+  assert.equal(tldPattern.test('https://example.com#x=.sex'), false, 'a fragment is not a hostname');
+  assert.equal(tldPattern.test('https://example.com?next=foo.porn'), false, 'a query is not a hostname');
+  assert.equal(tldPattern.test('https://example.com/?next=foo.porn'), false, 'a path query is not a hostname');
   assert.equal(tld.condition.isUrlFilterCaseSensitive, false);
   if (tld.action.type === 'redirect') assert.equal(tld.action.redirect.extensionPath, MOTIVATION_PAGE_PATH);
-
-  state.settings.guardedHosts = ['mystery.example'];
-  rules = buildBlockingRules(state);
-  assert.ok(rules.find((rule) => rule.id === 4)?.condition.requestDomains?.includes('mystery.example'), 'personal additions ride the same rule');
 
   state.balanceMs = 0;
   rules = buildBlockingRules(state);
@@ -250,11 +260,28 @@ test('DNR rules: the adult-site pause is independent of wallet limits', () => {
 });
 
 test('the packaged static ruleset is the same guard the extension applies at runtime', () => {
-  const path = new URL('../../../rules/adult_guard.json', import.meta.url);
+  const path = new URL('../../../rules/focus_guard.json', import.meta.url);
   const packaged = JSON.parse(readFileSync(path, 'utf8')) as ReturnType<typeof buildAdultGuardRuleSet>;
-  assert.deepEqual(packaged, buildAdultGuardRuleSet(), 'rules/adult_guard.json must be the built guard (npm run build regenerates it)');
+  assert.deepEqual(packaged, buildAdultGuardRuleSet(), 'rules/focus_guard.json must be the built guard (npm run build regenerates it)');
   assert.equal(packaged.rules[0].condition.requestDomains?.length, DEFAULT_ADULT_SITE_HOSTS.length);
   assert.equal(packaged.rules[0].action.redirect.extensionPath, MOTIVATION_PAGE_PATH);
+});
+
+test('the shipped package does not advertise the fixed policy before a visit', () => {
+  const read = (file: string): string =>
+    readFileSync(new URL(`../../../${file}`, import.meta.url), 'utf8').toLowerCase();
+  for (const file of [
+    'manifest.json',
+    'README.md',
+    'docs/USER_GUIDE.md',
+    'docs/KNOWN_LIMITATIONS.md',
+    'docs/TESTING.md',
+  ]) {
+    const text = read(file);
+    for (const word of ['adult', 'porn']) {
+      assert.equal(text.includes(word), false, `${file} must not disclose the policy in advance ("${word}")`);
+    }
+  }
 });
 
 test('isGuardedUrl matches extension management pages only', () => {

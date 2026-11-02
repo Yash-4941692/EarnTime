@@ -273,7 +273,40 @@
           "xxxstreams.org",
           "yespornplease.com",
           "youjizz.com",
-          "youporn.com"
+          "youporn.com",
+          "ashemaletube.com",
+          "tube8.com",
+          "tube8.net",
+          "redtube.net",
+          "heavy-r.com",
+          "xbabe.com",
+          "letmejerk.com",
+          "badoinkvr.com",
+          "twistys.com",
+          "tushy.com",
+          "deeper.com",
+          "familystrokes.com",
+          "sislovesme.com",
+          "nubilefilms.com",
+          "passion-hd.com",
+          "wetplace.com",
+          "vjav.com",
+          "javwhores.com",
+          "supjav.com",
+          "javhihi.com",
+          "javdock.com",
+          "jav321.com",
+          "123av.com",
+          "avple.tv",
+          "sextb.net",
+          "netflav.com",
+          "hanime1.me",
+          "beeg.net",
+          "missav.ws",
+          "javdoe.com",
+          "javsin.com",
+          "javsky.tv",
+          "javsub.tv"
         ],
         "resourceTypes": [
           "main_frame"
@@ -290,7 +323,7 @@
         }
       },
       "condition": {
-        "regexFilter": "^https?://[^/]+\\.(xxx|porn|adult|sex|sexy)([:/?#]|$)",
+        "regexFilter": "^https?://[^/?#]+\\.(xxx|porn|adult|sex|sexy)([:/?#]|$)",
         "isUrlFilterCaseSensitive": false,
         "resourceTypes": [
           "main_frame"

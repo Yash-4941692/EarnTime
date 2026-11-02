@@ -68,8 +68,8 @@ jobs:
           unzip -t "$ZIP_NAME"
           unzip -p "$ZIP_NAME" manifest.json | grep -q '"version": "2.6.6"'
           unzip -p "$ZIP_NAME" content.js | grep -q 'data-et-gate'
-          unzip -p "$ZIP_NAME" rules/adult_guard.json | grep -q 'motivation.html'
-          unzip -p "$ZIP_NAME" manifest.json | grep -q 'adult_guard'
+          unzip -p "$ZIP_NAME" rules/focus_guard.json | grep -q 'motivation.html'
+          unzip -p "$ZIP_NAME" manifest.json | grep -q 'focus_guard'
           SHA256=$(sha256sum "$ZIP_NAME" | cut -d' ' -f1)
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           cp "$GITHUB_WORKSPACE/source/RELEASE_NOTES.md" "$RUNNER_TEMP/notes.md"

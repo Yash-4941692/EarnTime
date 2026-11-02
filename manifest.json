@@ -37,9 +37,9 @@
   "declarative_net_request": {
     "rule_resources": [
       {
-        "id": "adult_guard",
+        "id": "focus_guard",
         "enabled": true,
-        "path": "rules/adult_guard.json"
+        "path": "rules/focus_guard.json"
       }
     ]
   },

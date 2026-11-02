@@ -23,7 +23,7 @@
  * because a page nobody manages must not stay hidden.
  */
 
-import { isAdultSiteHost, isGuardedHost } from '../core/adultSites';
+import { isAdultSiteHost } from '../core/adultSites';
 import type { PageDirective } from '../core/directive';
 import { ADULT_PAUSE_LINES, pickMotivationLine } from '../core/motivation';
 import type { HalfMode } from '../core/types';
@@ -168,7 +168,7 @@ async function run(rt: Runtime): Promise<void> {
     return;
   }
 
-  // 0. The adult-site pause is decided from the address alone. It runs before the first await, so a
+  // 0. The focus pause is decided from the address alone. It runs before the first await, so a
   //    guarded page is closed and covered before it can paint, with no worker round trip at all.
   if (isAdultSiteHost(rt.host)) {
     showAdultPause(rt);
@@ -186,8 +186,6 @@ async function run(rt: Runtime): Promise<void> {
   //    chooser for a half-productive first visit is on screen before the site paints.
   await refreshLocal(rt);
   if (stopped(rt)) return;
-  // Sites the user added themselves live in stored settings, so they are known from here on — still
-  // without the worker, and still before the page has painted.
   if (guardActive(rt)) {
     showAdultPause(rt);
     return;
@@ -255,9 +253,8 @@ function applyProvisional(rt: Runtime, verdict: Provisional): void {
 
 function applyDirective(rt: Runtime, directive: PageDirective | undefined): void {
   if (stopped(rt)) return;
-  // A guarded adult destination never opens, whatever the worker said: the pause wins over every
-  // directive, including the "nothing to do" answer for a page EarnTime does not track and a
-  // half-productive mode that was chosen before the site was added to the list.
+  // A guarded destination never opens, whatever the worker said: the pause wins over every
+  // directive, including the "nothing to do" answer for a page EarnTime does not track.
   if (guardActive(rt)) {
     showAdultPause(rt);
     return;
@@ -335,9 +332,9 @@ function release(rt: Runtime, key: string): void {
   rt.lastKey = key;
 }
 
-/** True when this page is an adult destination (fixed policy or the user's own list). */
+/** True when this page is a fixed-policy destination. The address alone is the whole verdict. */
 function guardActive(rt: Runtime): boolean {
-  return isGuardedHost(rt.host, rt.local?.guardedHosts ?? []);
+  return rt.host !== null && isAdultSiteHost(rt.host);
 }
 
 /**

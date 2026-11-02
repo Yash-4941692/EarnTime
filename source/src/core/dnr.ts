@@ -3,17 +3,16 @@
  * Only top-level page loads are matched; sub-resources are never touched.
  *
  *  - The hostname-only adult-site guard is independent of the wallet and wins over every other rule.
- *    It is enforced twice: by the curated list plus the user's own additions (`requestDomains`), and
- *    by a regular expression for adult sponsored top-level domains, which cannot be expressed as a
- *    domain list.
+ *    It is enforced twice: by the curated list (`requestDomains`), and by a regular expression for
+ *    adult sponsored top-level domains, which cannot be expressed as a domain list.
  *  - Zero balance: unproductive domains redirect to the block page.
  *  - Debt: every http(s) navigation redirects, except productive and half-productive domains
  *    (priority 3 allow beats priority 1 redirect).
  *
- * Hostname fragments that need a token test (for example "xnxx", "hentai", "xhaccess" or a personal
- * addition): the redirect rules carry the domains and the TLDs, and the load-time page guard in the
- * content script closes the remaining gap, so a matching site is never usable even when no rule
- * matches its address.
+ * Hostname fragments that need a token test (for example "xnxx", "hentai" or "xhaccess"): the
+ * redirect rules carry the domains and the TLDs, and the load-time page guard in the content script
+ * closes the remaining gap, so a matching site is never usable even when no rule matches its
+ * address.
  *
  * Tabs that are already open are handled by the controller, which navigates them directly.
  */
@@ -38,8 +37,12 @@ export const MOTIVATION_PAGE_PATH = '/motivation.html';
 /**
  * Any http(s) address whose hostname ends in an adult sponsored TLD. Expressed as a regular
  * expression because `requestDomains` needs whole domains, not suffixes.
+ *
+ * The host part is `[^/?#]+` on purpose: a plain `[^/]+` also swallows a query or fragment that
+ * follows the host (`https://example.com#x=.sex`), which would pause an ordinary page because of
+ * text in its address rather than its hostname. Hostnames cannot contain `/`, `?` or `#`.
  */
-export const ADULT_TLD_REGEX = `^https?://[^/]+\\.(${ADULT_TLDS.join('|')})([:/?#]|$)`;
+export const ADULT_TLD_REGEX = `^https?://[^/?#]+\\.(${ADULT_TLDS.join('|')})([:/?#]|$)`;
 
 export interface DnrRule {
   id: number;
@@ -61,13 +64,13 @@ export function buildBlockingRules(state: EarnState): DnrRule[] {
   const redirect = { type: 'redirect' as const, redirect: { extensionPath: BLOCK_PAGE_PATH } };
   const pause = { type: 'redirect' as const, redirect: { extensionPath: MOTIVATION_PAGE_PATH } };
 
-  // The guard itself: curated domains plus whatever the user added in Settings → Protection.
+  // The guard itself: the fixed curated domains.
   rules.push({
     id: 4,
     priority: 6,
     action: pause,
     condition: {
-      requestDomains: guardedRequestDomains(state.settings.guardedHosts),
+      requestDomains: guardedRequestDomains(),
       resourceTypes: ['main_frame'],
     },
   });
