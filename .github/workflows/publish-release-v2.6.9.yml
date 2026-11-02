@@ -1,0 +1,179 @@
+name: Publish v2.6.9
+
+# A commit on the session branch with [publish v2.6.9] triggers publication.
+# The PR must already be merged: every asset is rebuilt from that exact merge commit.
+#
+# Three assets are attached to the release:
+#   1. EarnTime-2.6.9.zip         — the extension package (unzip and "Load unpacked")
+#   2. EarnTime-2.6.9-source.zip  — the full source tree of the merged commit
+#   3. SHA256SUMS.txt             — checksums of both, so a download can be verified
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/0eb4f716-earntime]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[publish v2.6.9]')
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: v2.6.9
+      ZIP_NAME: EarnTime-2.6.9.zip
+      SOURCE_NAME: EarnTime-2.6.9-source.zip
+    steps:
+      - name: Find the merged commit for this session branch
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          MERGE_SHA=$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state merged \
+            --head "$GITHUB_REF_NAME" \
+            --limit 100 \
+            --json mergeCommit,mergedAt \
+            --jq 'sort_by(.mergedAt) | last | .mergeCommit.oid')
+          if [[ -z "$MERGE_SHA" || "$MERGE_SHA" == "null" ]]; then
+            echo "No merged pull request found for $GITHUB_REF_NAME; refusing to publish." >&2
+            exit 1
+          fi
+          echo "sha=$MERGE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Publishing from merged commit $MERGE_SHA"
+
+      - name: Check out the merged commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.merge.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.3'
+
+      - name: Install dependencies
+        working-directory: source
+        run: npm ci
+
+      - name: Verify the merged source
+        working-directory: source
+        run: npm test
+
+      - name: Build release ZIP from the merged commit
+        working-directory: source
+        run: npm run package -- --out-dir "$RUNNER_TEMP/dist"
+
+      - name: Build the source archive
+        run: |
+          set -euo pipefail
+          # The whole tree of the merged commit, including source/ and the tests. `git archive`
+          # records a fixed mtime per entry, so this archive is reproducible from the commit.
+          git archive \
+            --format=zip \
+            --prefix="EarnTime-2.6.9-source/" \
+            --output="$RUNNER_TEMP/dist/$SOURCE_NAME" \
+            HEAD
+
+      - name: Verify package, checksum both assets and prepare release notes
+        id: package
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dist"
+          unzip -t "$ZIP_NAME"
+          unzip -p "$ZIP_NAME" manifest.json | grep -q '"version": "2.6.9"'
+          # Chrome will not load EarnTime's own pages into an incognito tab in spanning mode, which is
+          # the whole point of this release; the package must carry the key or the fix is not shipped.
+          unzip -p "$ZIP_NAME" manifest.json | grep -q '"incognito": "split"'
+          unzip -p "$ZIP_NAME" content.js | grep -q 'data-et-gate'
+          unzip -p "$ZIP_NAME" rules/focus_guard.json | grep -q 'motivation.html'
+          # A static ruleset file must be a bare array of rules; Chrome rejects a { "rules": [...] }
+          # wrapper with "Rules file must contain a list" and then refuses the whole manifest.
+          unzip -p "$ZIP_NAME" rules/focus_guard.json > "$RUNNER_TEMP/rules.json"
+          node -e "const r=require('$RUNNER_TEMP/rules.json'); if(!Array.isArray(r)){console.error('rules file must be a list');process.exit(1)}; if(r.length!==2) process.exit(1);"
+
+          # The source archive must be a real tree, not an empty or partial one.
+          unzip -t "$SOURCE_NAME" >/dev/null
+          unzip -l "$SOURCE_NAME" | grep -q 'EarnTime-2.6.9-source/source/package.json'
+          unzip -l "$SOURCE_NAME" | grep -q 'EarnTime-2.6.9-source/manifest.json'
+
+          sha256sum "$ZIP_NAME" "$SOURCE_NAME" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          ZIP_SHA=$(sha256sum "$ZIP_NAME" | cut -d' ' -f1)
+          SOURCE_SHA=$(sha256sum "$SOURCE_NAME" | cut -d' ' -f1)
+          echo "sha256=$ZIP_SHA" >> "$GITHUB_OUTPUT"
+          echo "source_sha256=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+          # The body opens with the direct download link, then only this version's section: the
+          # notes file keeps every older release below it, and the asset used to be buried under
+          # all of them.
+          {
+            echo "**[⬇ Download $ZIP_NAME](https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/$ZIP_NAME)**"
+            echo
+            awk '/^# EarnTime /{n++; if(n==2) exit} {print}' "$GITHUB_WORKSPACE/source/RELEASE_NOTES.md"
+            echo
+            echo '## Assets'
+            echo
+            echo "| File | What it is |"
+            echo '| --- | --- |'
+            echo "| \`$ZIP_NAME\` | The extension. Unzip it and load the folder that contains \`manifest.json\` via the browser's **Load unpacked** option. |"
+            echo "| \`$SOURCE_NAME\` | The complete source tree this build was made from (TypeScript, tests, build scripts). |"
+            echo '| `SHA256SUMS.txt` | SHA-256 of both archives, for verifying a download. |'
+            echo
+            echo '## Asset checksums (SHA-256)'
+            echo
+            echo '```'
+            cat SHA256SUMS.txt
+            echo '```'
+          } > "$RUNNER_TEMP/notes.md"
+
+      - name: Publish release with all three assets attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ASSETS=(
+            "$RUNNER_TEMP/dist/$ZIP_NAME"
+            "$RUNNER_TEMP/dist/$SOURCE_NAME"
+            "$RUNNER_TEMP/dist/SHA256SUMS.txt"
+          )
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq '.sha')
+            if [[ "$TAG_SHA" != '${{ steps.merge.outputs.sha }}' ]]; then
+              echo "Existing release does not point to the merged PR; refusing to replace it." >&2
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" "${ASSETS[@]}" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --title 'EarnTime v2.6.9' --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$RELEASE_TAG" "${ASSETS[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target '${{ steps.merge.outputs.sha }}' \
+              --title 'EarnTime v2.6.9' \
+              --latest \
+              --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
+      - name: Download every published asset and verify its checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/download"
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$RUNNER_TEMP/download"
+          cd "$RUNNER_TEMP/download"
+          test -f "$ZIP_NAME"
+          test -f "$SOURCE_NAME"
+          test -f SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          test "$(sha256sum "$ZIP_NAME" | cut -d' ' -f1)" = '${{ steps.package.outputs.sha256 }}'
+          test "$(sha256sum "$SOURCE_NAME" | cut -d' ' -f1)" = '${{ steps.package.outputs.source_sha256 }}'
+          echo "Published $ZIP_NAME, $SOURCE_NAME and SHA256SUMS.txt from merge commit ${{ steps.merge.outputs.sha }}"
