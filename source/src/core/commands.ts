@@ -52,7 +52,7 @@ export type Command =
   | { type: 'site.move'; host: string; to: ListName; confirm?: boolean }
   | { type: 'youtube.add'; keyword: string }
   | { type: 'youtube.remove'; keyword: string }
-  | { type: 'task.add'; title: string; rewardMin: number; recurring: boolean; confirm?: boolean }
+  | { type: 'task.add'; title: string; rewardMin: number; recurring: boolean }
   | { type: 'task.update'; id: string; title?: string; rewardMin?: number; recurring?: boolean; confirm?: boolean }
   | { type: 'task.delete'; id: string }
   | { type: 'task.toggle'; id: string }
@@ -215,15 +215,9 @@ function applyTaskCommand(state: EarnState, now: number, cmd: Extract<Command, {
     case 'task.add': {
       const valid = validateTask(cmd);
       if (!valid.ok) return valid;
-      const paid = charge(
-        state,
-        now,
-        state.settings.unlockCostMin,
-        `new task "${valid.data.title}"`,
-        `Adding the task "${valid.data.title}"`,
-        cmd.confirm,
-      );
-      if (!paid.ok) return paid;
+      // Creating a task is free, even with an empty balance or in debt: it only defines a goal.
+      // Nothing is credited until task.toggle records completion; rewards then repay debt first.
+      // Making an existing task more generous remains subject to the unlock cost below.
       const task: Task = {
         id: newTaskId(now),
         title: valid.data.title,

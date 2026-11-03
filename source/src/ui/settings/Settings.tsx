@@ -342,10 +342,11 @@ function TasksSection({ state, act }: { state: EarnState; act: Act }) {
       <Card className="space-y-2 text-[13px] leading-snug text-slate-400">
         <h2 className="text-[15px] font-semibold text-slate-50">Daily tasks</h2>
         <p>Recurring tasks pay once each local day when ticked. One-off tasks pay once, ever. Un-ticking never takes back a reward, and ticking again the same day does not pay twice.</p>
+        <p>Raising an existing task's reward or making it recurring costs the unlock cost ({state.settings.unlockCostMin} min).</p>
       </Card>
       <Card className="space-y-3">
         <form onSubmit={add} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_96px_auto]">
-          <Field label="Task" htmlFor="task-title" hint={state.setupDone ? 'Adding a task costs the unlock cost.' : undefined}>
+          <Field label="Task" htmlFor="task-title" hint="Free to add. The reward is paid only when you complete the task.">
             <input id="task-title" className="field" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. 20 mock questions" maxLength={80} />
           </Field>
           <Field label="Reward (min)" htmlFor="task-reward">

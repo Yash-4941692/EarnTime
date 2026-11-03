@@ -112,6 +112,12 @@ The audit export (Settings → Protection) records each reconciliation's window,
   one click per entry. The quote is a prompt in EarnTime's own UI — it is not a Chrome-level
   confirmation, and a change made by editing storage directly bypasses it entirely.
 - Setup runs once. Its starting balance is capped at 30 minutes.
+- **Task creation is free.** A new task does not spend or award time, including when the balance is
+  empty or debt is active; its reward is paid on completion and repays debt first. Raising an existing
+  task's reward or making it recurring still costs the unlock price. This is an honesty setting, not
+  a lock: deleting and recreating a task bypasses that edit cost and gives the replacement a fresh
+  reward history. Free creation deliberately makes it possible to plan tasks without first earning
+  screen time.
 - **A cost applies only when an existing restriction is lifted.** Adding a site to any list is free,
   because a site on no list is already unrestricted; adding or removing YouTube keywords is free,
   because that list never gates access to a site. The consequences are deliberate and worth

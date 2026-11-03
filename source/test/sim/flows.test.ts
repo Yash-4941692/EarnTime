@@ -565,6 +565,26 @@ test('an Unproductive Mode session ends when the balance runs out; the choice is
   assert.equal(refused.ok, false);
 });
 
+test('a task can be added with one minute against a ten-minute unlock cost; only completion pays', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 1, unlockCostMin: 10 });
+  const added = await command(b, { type: 'task.add', title: 'Revise formulas', rewardMin: 5, recurring: true });
+  assert.equal(added.ok, true, JSON.stringify(added));
+  assert.equal(balanceMin(b), 1, 'adding a task does not charge or credit the wallet');
+  const task = b.storedState().tasks.find((t: { id: string }) => t.id === added.data);
+  assert.ok(task, 'the worker persisted the new task');
+  assert.equal(task.completedOn, null);
+  assert.equal(task.rewardedOn, null);
+  assert.equal(b.storedState().ledger.some((e: { kind: string }) => e.kind === 'unlock' || e.kind === 'task'), false);
+
+  const completed = await command(b, { type: 'task.toggle', id: added.data });
+  assert.equal(completed.ok, true, JSON.stringify(completed));
+  assert.equal(balanceMin(b), 6, 'the original minute plus the completion reward');
+  await command(b, { type: 'task.toggle', id: added.data });
+  await command(b, { type: 'task.toggle', id: added.data });
+  assert.equal(balanceMin(b), 6, 'un-ticking and re-ticking do not pay twice');
+});
+
 test('a recurring task pays once per day; un-ticking and re-ticking do not pay twice', async () => {
   const b = newBrowser();
   await installAndSetup(b, { tasks: [{ title: 'Revise formulas', rewardMin: 5, recurring: true }] });

@@ -1,14 +1,14 @@
 # Test report
 
-**Status: source logic, simulated flows and jsdom tests verified on 2026-11-02; build passed.** The current Playwright/Chromium suite and the manual checklist with an installed Chrome extension and live YouTube have not been run because no Chromium binary is available.
+**Status: source logic, simulated flows, jsdom and Playwright/Chromium fixture tests verified on 2026-11-03; build passed.** The manual checklist with an installed Chrome extension and live YouTube has not been run.
 
-> `cd source && npm test` passes **311 tests**: 168 unit + 82 jsdom DOM + 61 simulated-browser flow tests, plus the strict TypeScript check. The current separate Playwright/Chromium suite was not run. These browser fixtures run the built content script and real controller, not a real Chrome extension installation.
+> `cd source && npm test` passes **317 tests**: 173 unit + 82 jsdom DOM + 62 simulated-browser flow tests, plus the strict TypeScript check. The separate Playwright/Chromium suite passes **16 / 16 tests**. These browser fixtures run the built pages, content script and real controller, not a real Chrome extension installation.
 
 ## Environment
 
 - Debian 12 sandbox, Node 22.22.3, npm 10.9.8, 2 CPU, no display.
 - Tests run with `TZ=Asia/Kolkata`. The simulated clock starts at 2026-10-08 09:00 local.
-- Browser tests use `playwright-core` with Chromium 153.0.8010.0, supplied temporarily via `@sparticuz/chromium` in the ignored test-output directory. The binary and its libraries are not extension dependencies or release assets. Set `CHROME_PATH` to your own compatible binary when reproducing the tests.
+- Browser tests use `playwright-core` with Chromium 153.0.8010.0, supplied temporarily via `@sparticuz/chromium` and extracted outside the checkout. The binary and its libraries are not extension dependencies or release assets and add no package-lock entries. Set `CHROME_PATH` to your own compatible binary when reproducing the tests.
 - Build and source: TypeScript 5.9 (strict), esbuild 0.25, React 18.3, Tailwind 3.4.
 
 ## Results
@@ -17,18 +17,18 @@
 | --- | --- | --- |
 | Type check (strict, `noUnusedLocals`) | `npm run typecheck` | **pass** |
 | Build (root artifacts) | `npm run build` | **pass** |
-| Unit tests | `npm run test:unit` | **168 / 168 pass** |
+| Unit tests | `npm run test:unit` | **173 / 173 pass** |
 | DOM tests (jsdom: load-time gate, pause page, page lifecycle, YouTube filter, Shorts trust) | `npm run test:dom` | **82 / 82 pass** |
-| Flow tests (simulated browser) | `npm run test:sim` | **61 / 61 pass** |
-| Complete source suite | `npm test` | **311 / 311 pass**, including type check |
-| Browser tests (Playwright + Chromium) | `npm run test:browser` | **not run for this change** (needs a Chromium binary) |
+| Flow tests (simulated browser) | `npm run test:sim` | **62 / 62 pass** |
+| Complete source suite | `npm test` | **317 / 317 pass**, including type check |
+| Browser tests (Playwright + Chromium) | `npm run test:browser` | **16 / 16 pass** |
 | Real Chrome extension end-to-end | manual checklist below | **not run** |
 
 The release build is verified separately with `npm run build`; browser-specific behaviours still need a real Chrome profile before relying on them.
 
 ## What each suite covers
 
-### Unit tests (`source/test/unit`, 168)
+### Unit tests (`source/test/unit`, 173)
 
 - **Host handling:** input normalisation, subdomain matching, most-specific entry wins, strictest list wins on ties, and list de-duplication.
 - **Time and accounting:** local day keys, splitting at midnight, formatting, the 60:5 earning example, unproductive spending, idle/background/internal pages, audible media, clock changes, checkpoints, and reconciliation boundaries.
@@ -76,7 +76,7 @@ The release build is verified separately with `npm run build`; browser-specific 
 - an unreadable Short is no longer refused outright: the card shows `Shorts channel not verified` with `Continue (trust)`, the page pauses until the answer, continuing reports a healthy trust state, and the next reel asks again;
 - the channel name is read from the channel bar, the link's `title`/`aria-label`, the page's own data for the video id in the address bar, or the channel handle before the trust card appears — while prefetched reels, cached search/watch authors and handles belonging to other reels stay invisible to the check.
 
-### Flow tests on a simulated browser (`source/test/sim`, 61)
+### Flow tests on a simulated browser (`source/test/sim`, 62)
 
 The simulator (`test/sim/fakeBrowser.ts`) exposes a Chrome-shaped object and runs the real Chrome adapter, event wiring and controller. Time is virtual. It models tabs and normal/popup/app/devtools windows, focus, minimise, idle with a 15-second detection interval, audible tabs, history, declarativeNetRequest rules, service-worker suspension and restart, extension disable and enable, browser restart, wall-clock changes, and incognito gating. It does not model Chrome's own internals.
 
@@ -86,7 +86,7 @@ The v2.4.0 scenarios add: gate-cache publication for half-classified tabs (first
 
 The simulator also models two behaviours Chrome has and earlier versions of the harness did not: `windows.getLastFocused` stops reporting the browser window as focused while a popup is open, and `enableExtension()` re-fires `onInstalled` so permissions are re-read from Chrome rather than trusted from storage.
 
-### Browser tests (`source/test/browser`, 15)
+### Browser tests (`source/test/browser`, 16)
 
 The Playwright harness builds the extension pages and content script, serves fixture pages for YouTube, and injects a simulated-browser/controller harness. It covers popup, settings, setup, mode chooser, the pause page, extension-management confirmation and cover presentation. It does **not** load the extension into Chrome and does not replace the real-browser checks below. The suite also checks visible Shorts links, click-through to a player receiving real canvas-stream video frames, non-study swipe/pausing, mode changes, covered-time reporting and usable cover-card actions. The harness accepts the array storage keys used by real content scripts; stale setup-step and rule-cost expectations have also been updated.
 
@@ -152,7 +152,7 @@ Use a dedicated Chrome profile. EarnTime redirects `chrome://extensions`, so rel
 19. **Layout:** inspect popup, settings and setup at 100% and 125% zoom, plus the chooser and cover in a narrow window.
 20. **Setup recovery:** close setup unfinished and restart Chrome; setup should reopen. Finish it and restart again; it should not reopen.
 
-21. **Free changes:** after setup, add a productive site and a YouTube keyword; neither should ask for the unlock cost. Removing an unproductive site should ask for confirmation.
+21. **Free changes:** after setup, add a productive site and a YouTube keyword; neither should ask for the unlock cost. With only 1 minute remaining and a 10-minute unlock cost, add a daily task: it should save without a payment prompt or balance change, then pay only when completed. Removing an unproductive site or raising an existing task's reward should still ask for confirmation when affordable.
 22. **First-visit gate (v2.4.0):** open `youtube.com` in a brand-new tab with no prior choice for it. The chooser must appear over the page immediately — the video list must never be usable or scrollable first, and answering must not require a reload. Repeat in a second window and after restarting Chrome.
 23. **SPA re-check (v2.4.0):** inside `web.whatsapp.com`, click through chats, and inside YouTube navigate by clicking rather than reloading. Each in-page navigation that changes the classification must re-ask or re-cover without a reload.
 24. **Live timer (v2.4.0):** with an unproductive page in front of you, open the popup and watch it. The remaining time must fall second by second while the popup stays open, and the per-day figures must move too. Close the popup and confirm counting resumes normally.
@@ -164,6 +164,14 @@ Use a dedicated Chrome profile. EarnTime redirects `chrome://extensions`, so rel
 28. **Estimate questions (v2.6.3):** create an interruption that includes YouTube, then open the popup: the card must show the estimated minutes, the host and the last mode you chose. Answer "all study" and verify the charge is refunded and the extra credit repays debt first; answer "none" and verify the whole stretch is charged and debt appears if the balance cannot cover it; press *Keep half & half* and verify nothing changes. Check the audit export contains the question and the answer. Also verify the debt block page mentions the estimate while the question is unanswered.
 
 Record the result of each step, Chrome version and date before release.
+
+## Free task creation regression checks (2026-11-03)
+
+- Reproduced the reported failure before the fix: with a 1-minute balance and a 10-minute unlock cost, `task.add` failed the new unit assertions instead of creating an unfinished task.
+- Task creation now passes with 1 minute, zero balance and active debt. It neither charges nor credits the wallet or writes an unlock/reward ledger entry. Completion pays once; un-ticking and re-ticking do not pay again, and rewards repay debt first.
+- Existing-task reward increases and one-off-to-recurring changes retain their unlock cost and confirmation. Invalid task names/rewards are still rejected. Other protection costs and their insufficient-balance checks are unchanged.
+- The Settings browser test starts with exactly 1 minute, adds a 5-minute daily task without a dialog, verifies the unchanged balance and incomplete/unpaid state, then completes it and verifies a final balance of 6 minutes with no duplicate reward.
+- Verified after restoring locked dependencies with `npm ci`: production build, strict TypeScript check, **317 source tests** (173 unit, 82 DOM, 62 simulated-browser) and **16 Playwright/Chromium fixture tests**. No installed-extension or live-YouTube test was performed.
 
 ## Device-source and same-day debt regression checks
 
