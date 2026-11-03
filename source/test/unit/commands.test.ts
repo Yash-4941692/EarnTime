@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyCommand, applySetup, auditExport, type Command, type SetupPayload } from '../../src/core/commands';
 import { siteChangeLoosens, ratioLoosens } from '../../src/core/protection';
+import { dayKey } from '../../src/core/time';
 import type { EarnState, RuleResult } from '../../src/core/types';
 import { freshState, MIN, SEC, T0 } from './helpers';
 
@@ -270,20 +271,76 @@ test('legacy adult-site edit commands are rejected', () => {
   assert.equal(result.ok === false && result.code, 'invalid', 'the guard is not an editable command');
 });
 
-test('tasks: adding and raising rewards costs, deleting and lowering is free', () => {
+test('tasks: adding, deleting and lowering rewards is free; raising a reward still costs', () => {
   const state = freshState(true);
   state.balanceMs = 30 * MIN;
-  const added = applyConfirmed(state, { type: 'task.add', title: 'Mock test', rewardMin: 5, recurring: true }, T0);
+  const added = applyCommand(state, { type: 'task.add', title: 'Mock test', rewardMin: 5, recurring: true }, T0);
   assert.equal(added.ok, true);
-  assert.equal(state.balanceMs, 20 * MIN);
+  assert.equal(state.balanceMs, 30 * MIN, 'creating a task does not spend the balance');
   const id = state.tasks[0].id;
   assert.equal(applyCommand(state, { type: 'task.update', id, rewardMin: 3 }, T0).ok, true);
-  assert.equal(state.balanceMs, 20 * MIN);
+  assert.equal(state.balanceMs, 30 * MIN);
+  assert.equal(applyCommand(state, { type: 'task.update', id, recurring: false }, T0).ok, true);
+  assert.equal(state.balanceMs, 30 * MIN, 'making a task one-off is free');
+  assert.equal(applyConfirmed(state, { type: 'task.update', id, recurring: true }, T0).ok, true);
+  assert.equal(state.balanceMs, 20 * MIN, 'making an existing task recurring still costs');
   assert.equal(applyConfirmed(state, { type: 'task.update', id, rewardMin: 9 }, T0).ok, true);
-  assert.equal(state.balanceMs, 10 * MIN);
+  assert.equal(state.balanceMs, 10 * MIN, 'making an existing task more generous still costs');
   assert.equal(applyCommand(state, { type: 'task.delete', id }, T0).ok, true);
   assert.equal(state.tasks.length, 0);
   assert.equal(state.balanceMs, 10 * MIN);
+});
+
+test('a task can be added with one minute or no balance, without a quote or an early reward', () => {
+  for (const balanceMin of [1, 0]) {
+    const state = freshState(true);
+    state.balanceMs = balanceMin * MIN;
+    const result = applyCommand(state, { type: 'task.add', title: 'Revise formulas', rewardMin: 5, recurring: true }, T0);
+    assert.equal(result.ok, true, 'a 10 min unlock cost must not block task creation');
+    assert.equal(state.balanceMs, balanceMin * MIN, 'creation neither charges nor rewards');
+    assert.equal(state.tasks.length, 1);
+    assert.equal(state.tasks[0].completedOn, null);
+    assert.equal(state.tasks[0].rewardedOn, null);
+    assert.equal(state.ledger.some((e) => e.kind === 'unlock' || e.kind === 'task'), false);
+    assert.equal(state.days[dayKey(T0)]?.taskMs ?? 0, 0, 'no task reward before completion');
+
+    const completed = applyCommand(state, { type: 'task.toggle', id: state.tasks[0].id }, T0 + MIN);
+    assert.equal(completed.ok, true);
+    assert.equal(state.tasks[0].rewardedOn, dayKey(T0 + MIN), 'completion records the reward');
+    assert.equal(state.balanceMs, (balanceMin + 5) * MIN, 'only completion pays');
+  }
+});
+
+test('task creation stays free in debt; completing the task repays debt first', () => {
+  const state = freshState(true);
+  state.balanceMs = 0;
+  state.debtMs = 3 * MIN;
+  state.debtOriginMs = 3 * MIN;
+  state.debtSince = T0 - MIN;
+  assert.equal(applyCommand(state, { type: 'task.add', title: 'Read a chapter', rewardMin: 5, recurring: false }, T0).ok, true);
+  assert.equal(state.debtMs, 3 * MIN);
+  assert.equal(state.balanceMs, 0);
+  assert.equal(applyCommand(state, { type: 'task.toggle', id: state.tasks[0].id }, T0).ok, true);
+  assert.equal(state.debtMs, 0);
+  assert.equal(state.balanceMs, 2 * MIN);
+  assert.equal(state.ledger.some((e) => e.kind === 'unlock'), false);
+});
+
+test('free task creation still validates input and existing reward increases are still protected', () => {
+  const state = freshState(true);
+  state.balanceMs = MIN;
+  assert.equal(applyCommand(state, { type: 'task.add', title: ' ', rewardMin: 5, recurring: true }, T0).ok, false);
+  assert.equal(applyCommand(state, { type: 'task.add', title: 'Invalid reward', rewardMin: 0, recurring: true }, T0).ok, false);
+  assert.equal(state.tasks.length, 0);
+  assert.equal(applyCommand(state, { type: 'task.add', title: 'Read', rewardMin: 5, recurring: true }, T0).ok, true);
+  const id = state.tasks[0].id;
+  const before = JSON.stringify(state);
+  const increased = applyCommand(state, { type: 'task.update', id, rewardMin: 10 }, T0);
+  assert.equal(increased.ok === false && increased.code, 'insufficient');
+  assert.equal(JSON.stringify(state), before, 'the rejected edit changes nothing');
+  const recurring = applyCommand(state, { type: 'task.update', id, recurring: false }, T0);
+  assert.equal(recurring.ok, true, 'a stricter edit remains free');
+  assert.equal(state.balanceMs, MIN);
 });
 
 test('task toggle through commands pays the reward', () => {

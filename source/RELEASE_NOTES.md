@@ -1,3 +1,36 @@
+# EarnTime 2.6.10
+
+## Adding a daily task no longer spends screen time
+
+Adding a task with a 1-minute balance and a 10-minute unlock cost previously failed with:
+“This change costs 10 min of screen time, and you have 1 min.” Creating a goal should not require
+screen time before you have a way to earn it.
+
+- **Fixed:** adding a daily or one-off task is free, even with a low or zero balance or while in debt.
+  Creating the task neither spends nor awards time and never asks for an unlock payment.
+- **Rewards still require completion.** A new task starts unfinished and unpaid. Its reward is paid
+  when you tick it, once per local day for a recurring task or once ever for a one-off task. Rewards
+  repay debt before adding to the balance; un-ticking and re-ticking do not pay twice.
+- **Existing protection remains.** Raising an existing task's reward or changing it from one-off to
+  recurring still costs the configured unlock price and asks for confirmation. Other rule-change
+  costs are unchanged. As with other honesty settings, deleting and recreating a task can bypass
+  that edit cost and resets its reward history; this trade-off is documented in the user guide.
+- **Clearer settings.** The task form now says that adding is free and payment happens only on
+  completion. Existing settings, balances and tasks are preserved; no storage migration is needed.
+- **Verified:** strict TypeScript checking, **317 source tests** (173 unit, 82 DOM and 62
+  simulated-browser), **16 Playwright/Chromium fixture tests**, and the production build. The new
+  checks cover the reported 1-minute balance, zero balance, debt, validation and duplicate rewards.
+  An installed-extension test in real Chrome was not performed.
+
+## Install or update
+
+Download **EarnTime-2.6.10.zip**, extract it, and select the folder containing `manifest.json` via
+Chrome's **Load unpacked** option.
+
+**Already using EarnTime?** Replace the contents of your existing unpacked folder with this release,
+open `chrome://extensions`, and click **Reload** on EarnTime. **Do not uninstall** if you want to keep
+your settings and balance. Open Settings again after reloading to use the updated task form.
+
 # EarnTime 2.6.9
 
 ## The pause page works in incognito windows

@@ -540,6 +540,40 @@ try {
     await context.close();
   });
 
+  await test('settings: adding a task with one minute is free and pays only on completion', async () => {
+    const context = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+    await runSetup(context, base, SETUP_PAYLOAD, 1);
+    const page = await newPage(context, { role: 'ui' });
+    const dialogs = [];
+    page.on('dialog', async (dialog) => {
+      dialogs.push(dialog.message());
+      await dialog.dismiss();
+    });
+    await page.goto(`${base}/settings.html#tasks`);
+    await page.getByText('Free to add. The reward is paid only when you complete the task.').waitFor();
+    await page.locator('#task-title').fill('Revise formulas');
+    await page.locator('#task-reward').fill('5');
+    await page.getByRole('button', { name: 'Add task', exact: true }).click();
+    await page.getByRole('status').filter({ hasText: 'Task "Revise formulas" added.' }).waitFor();
+
+    const readState = () => page.evaluate(async () => (await chrome.storage.local.get('state')).state);
+    let state = await readState();
+    expect(state.balanceMs === 60000, `creation leaves the one-minute balance intact (got ${state.balanceMs})`);
+    expect(state.tasks.length === 1 && state.tasks[0].completedOn === null && state.tasks[0].rewardedOn === null, 'the new task starts incomplete and unpaid');
+    expect(!state.ledger.some((entry) => entry.kind === 'unlock' || entry.kind === 'task'), 'creation records neither an unlock charge nor a reward');
+    expect(dialogs.length === 0, `free creation must not ask to spend time: ${dialogs.join('; ')}`);
+
+    const checkbox = page.getByLabel('Mark "Revise formulas" done today');
+    await checkbox.click();
+    await page.waitForFunction(async () => (await chrome.storage.local.get('state')).state.balanceMs === 6 * 60000);
+    await checkbox.click();
+    await checkbox.click();
+    state = await readState();
+    expect(state.balanceMs === 6 * 60000, 'completion pays once, and un-ticking/re-ticking does not pay again');
+    expect(page.__errors.length === 0, `no page errors: ${page.__errors.join('; ')}`);
+    await context.close();
+  });
+
   await test('popup: completing a task pays the reward once', async () => {
     const context = await browser.newContext({ viewport: { width: 400, height: 800 } });
     await runSetup(context, base, { ...SETUP_PAYLOAD, tasks: [{ title: 'Revise formulas', rewardMin: 5, recurring: true }] }, 0);

@@ -110,7 +110,8 @@ Live tracking always measures the current device. Chrome's history API cannot id
 
 - Tick a task to pay its reward. A recurring task pays once per local day. A one-off task pays once.
 - Un-ticking never takes back a reward, and ticking again the same day does not pay twice.
-- Adding a task, or raising its reward, costs the unlock cost. Deleting a task is free.
+- Adding a task is free, even with a low or zero balance or while in debt. Creating it does not pay its reward; tick it when you have completed it. In debt, the reward repays debt before adding to your balance.
+- Raising an existing task's reward or changing it from one-off to recurring costs the unlock cost. Lowering its reward, renaming it, making it one-off, or deleting it is free.
 
 ## Protection (what costs time)
 
@@ -124,7 +125,7 @@ enforcing.**
 | Removing a half-productive or unproductive site (it becomes untracked, so always open) | Adding a site to *any* list, including Productive |
 | Moving a site to a more permissive list (unproductive → half → productive) | Moving a site to a stricter list |
 | Raising the earn ratio; lowering the unlock cost (charged at the current price) | Removing a productive site; lowering the earn ratio; raising the unlock cost |
-| Adding a task; raising a task reward | Deleting a task; lowering a task reward |
+| Raising an existing task's reward; making a one-off task recurring | Adding or deleting a task; lowering a task reward; making a task one-off |
 | — | Adding or removing a YouTube keyword |
 
 Why adding a site is free: a site that is on no list is **not restricted at all** — it already opens
@@ -137,7 +138,13 @@ half-productive, so the mode prompt is what gates it; a keyword only decides whi
 study inside a Productive Mode you already chose. *Trade-off to be aware of:* a very broad keyword
 (like `a`) would let most of YouTube count as study time. Keywords are an honesty setting, not a lock.
 
-Adding a task still costs, because a task is a button that pays you minutes on demand.
+Adding a task is free so you can plan your goals without first earning screen time. The task starts
+unfinished and pays nothing until you tick it. Making an existing task more generous still costs:
+raising its reward or changing it from one-off to recurring lifts a limit on future rewards.
+
+This is an honesty setting, not a lock: deleting and recreating a task avoids the edit cost and resets
+its reward history. The once-per-day / once-ever limits apply to each task, not to a goal recreated
+under a new task.
 
 ### You are asked before anything is charged
 
