@@ -1,3 +1,67 @@
+# EarnTime 2.7.0
+
+## Debt estimates are fully answerable, gaps are billed across days, and an opt-in hard "No exit"
+
+Three fixes from user reports, plus one opt-in guard for those who want no way out.
+
+### "Was that study time?" — the full time is always enterable
+
+The estimate question after an interruption truncated its input to whole minutes, while the worker
+validates the answer against exact milliseconds — so entering the full estimated time was refused
+with "Enter between 0 and N minutes of study time", and any sub-minute remainder of the estimate
+could never be credited as study.
+
+- **Fixed.** The input's largest value now always means "all of it was study" — its cap rounds up
+  and the answer sent to the worker is clamped to the exact estimated milliseconds. The remainder
+  is always enterable.
+- The question is asked once per half-productive site for the whole unverifiable stretch, allocated
+  back to the days the time came from. Answering stays free in both directions.
+
+### Time is now billed across days, not just since midnight
+
+Reconciliation started at local midnight whenever the last checkpoint was earlier, so a user who
+left EarnTime disabled for days with heavy use and re-enabled it the next day saw **0 debt**.
+
+- **Fixed.** A start point provided by the last checkpoint is honoured across day boundaries, and
+  the lookback window was raised from 7 to **90 days** (Chrome's default history retention).
+- A browser restart no longer drops every visit before midnight: the whole gap from the last
+  checkpoint is reconstructed, both on startup and on the first checkpoint after a re-enable.
+- The one-time setup path still never bills time from before EarnTime was set up.
+- Half-productive time in the gap is still split half study / half unproductive by default and
+  asked about once per site per gap; the 6 hours observed live are never re-asked or re-charged.
+- New simulated-browser regression tests reproduce the day-boundary restart and the gap-vs-observed
+  split (the multi-day test fails on the old code).
+
+### No exit (opt-in): Chrome's extension settings are blocked outright
+
+*Settings → Protection* has a new **No exit** switch. While it is on, opening `chrome://extensions`
+or `chrome://settings/extensions` lands on a block page with **no continue choice**, and the worker
+refuses the continue request itself — there is no way out from inside EarnTime.
+
+- **Turning it on is free.** Turning it off lifts a restriction EarnTime was enforcing, so it costs
+  the unlock price (quoted first, default 10 min) and is refused while you are in debt mode.
+- **Off by default.** Everyone who does not turn it on keeps the confirmation page unchanged.
+- **Honest scope.** Chrome's own menus, its flags, safe mode, your operating system and
+  *Remove from Chrome* remain outside EarnTime's reach; No exit removes only EarnTime's own escape
+  hatch. Chrome still may not allow an extension to completely control `chrome://` pages.
+
+### Verified
+
+Strict TypeScript checking, **322 source tests** (175 unit, 82 DOM and 65 simulated-browser), and
+the production build. The new checks cover the full-time answer boundary, the multi-day
+reconciliation window (fails on the old code), the gap-vs-observed split and the No exit command
+lifecycle. An installed-extension test in real Chrome was not performed.
+
+## Install or update
+
+Download **EarnTime-2.7.0.zip**, extract it, and select the folder containing `manifest.json` via
+Chrome's **Load unpacked** option.
+
+**Already using EarnTime?** Replace the contents of your existing unpacked folder with this release,
+open `chrome://extensions`, and click **Reload** on EarnTime. **Do not uninstall** if you want to keep
+your settings and balance. Existing settings, balances and tasks are preserved; schema 11 adds only
+the default-off No exit flag, migrated silently.
+
 # EarnTime 2.6.10
 
 ## Adding a daily task no longer spends screen time
