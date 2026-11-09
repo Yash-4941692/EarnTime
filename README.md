@@ -70,7 +70,7 @@ npm run build          # esbuild → ../background.js, ../content.js, ../popup.*
 npm run typecheck      # tsc --strict over src/ and test/
 npm run test:unit      # 175 unit tests: accounting, reconciliation, rules, costs, migration, estimates, invariants
 npm run test:dom       # 82 jsdom tests: the real YouTube filter, gate, covers, trust cards and health states
-npm run test:sim       # 64 flow tests against a simulated browser (real controller, real chrome adapter)
+npm run test:sim       # 65 flow tests against a simulated browser (real controller, real chrome adapter)
 npm test               # typecheck + unit + dom + simulated-browser flow tests (no browser binary needed)
 CHROME_PATH=/path/to/chromium npm run test:browser   # built pages and content scripts in headless Chromium
 CHROME_PATH=/path/to/chromium npm run test:all       # everything

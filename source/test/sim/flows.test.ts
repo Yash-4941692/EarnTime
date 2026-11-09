@@ -1260,3 +1260,39 @@ test('a restart after a day off reconciles from the last checkpoint, not from mi
   assert.equal(s.days['2026-10-08'].unprodMs > 0, true, 'the estimated time is billed to the day it came from');
   void tabId;
 });
+
+test('after a 3-day gap, the estimate question covers only the unobserved time, never the already-counted time', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 30 });
+  const { tabId } = await openedWindowWithTab(b, 'https://www.youtube.com/watch?v=start');
+  await b.sendFromTab(tabId, { type: 'page.choose', url: 'https://www.youtube.com/watch?v=start', mode: 'unproductive' });
+  // 20 minutes of YouTube in Unproductive Mode while EarnTime is running: charged live, counted.
+  await b.runFor(20 * MIN);
+  const observedUnprodMin = b.storedState().days['2026-10-08'].halfUnprodMs / MIN;
+  assert.ok(observedUnprodMin >= 19, `the observed time was charged live (got ${observedUnprodMin})`);
+
+  // EarnTime is off for 3 days. Chrome history records the gap: one visit every 6 hours.
+  b.disableExtension();
+  for (let day = 1; day <= 3; day++) {
+    b.visits.push({ url: `https://www.youtube.com/watch?v=gap-d${day}-a`, at: START + day * 24 * 60 * MIN + 2 * 60 * MIN });
+    b.visits.push({ url: `https://www.youtube.com/watch?v=gap-d${day}-b`, at: START + day * 24 * 60 * MIN + 8 * 60 * MIN });
+    b.visits.push({ url: `https://www.youtube.com/watch?v=gap-d${day}-c`, at: START + day * 24 * 60 * MIN + 14 * 60 * MIN });
+    b.visits.push({ url: `https://www.youtube.com/watch?v=gap-d${day}-d`, at: START + day * 24 * 60 * MIN + 20 * 60 * MIN });
+  }
+  b.shiftWallClock(3 * 24 * 60 * MIN);
+  await b.enableExtension();
+  await b.runFor(2 * MIN);
+
+  const s = b.storedState();
+  assert.equal(s.halfReviews.length, 1, 'one question, aggregated per site for the whole gap');
+  const review = s.halfReviews[0];
+  assert.equal(review.host, 'www.youtube.com');
+  // The estimate comes only from the 12 gap visits (15-min cap each, never the observed hour).
+  assert.ok(review.totalMs <= 12 * 15 * MIN, `the estimate is capped per visit (got ${review.totalMs / MIN} min)`);
+  assert.ok(review.totalMs > observedUnprodMin * MIN, 'the estimate carries the gap, which dwarfs the observed stretch');
+  // The observed time is still on its own day, not inside the question.
+  assert.ok(s.days['2026-10-08'].halfUnprodMs >= 20 * MIN, 'the observed time stays charged to the day it happened');
+  assert.ok(s.days['2026-10-09'], 'gap days were billed to the days they came from');
+  assert.ok(s.days['2026-10-10'], 'gap days were billed to the days they came from');
+  assert.ok(s.days['2026-10-11'], 'gap days were billed to the days they came from');
+});
