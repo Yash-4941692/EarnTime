@@ -264,7 +264,7 @@ test('loading a realistic v2.1.1 state preserves the wallet, core settings and t
 
   const state = sanitizeState(v211, T0 + 1);
 
-  assert.equal(SCHEMA_VERSION, 10);
+  assert.equal(SCHEMA_VERSION, 11);
   assert.equal(state.schema, SCHEMA_VERSION, 'the old state is explicitly rewritten as the current schema');
   assert.deepEqual(state.halfReviews, [], 'a state written before the estimate questions has none');
   assert.equal(state.nextReviewId, 1);
@@ -304,4 +304,24 @@ test('loading a realistic v2.1.1 state preserves the wallet, core settings and t
   for (const removedField of ['autoReplies', 'autoReplyQueue', 'autoReplyLog', 'autoReplySent', 'nextAutoReplyLogId']) {
     assert.equal(Object.prototype.hasOwnProperty.call(state, removedField), false, `${removedField} is not carried forward`);
   }
+});
+
+test('No exit defaults to off for stored states and survives a round trip', () => {
+  // A state written before schema 11 has no `noExit` field: it defaults to off.
+  const stored = {
+    schema: 10,
+    setupDone: true,
+    settings: { earnFromMin: 60, earnToMin: 5, unlockCostMin: 10, youtubeKeywords: ['Study'] },
+    rules: { productive: ['khanacademy.org'], half: ['youtube.com'], unproductive: ['instagram.com'] },
+    balanceMs: 5 * MIN,
+  };
+  const loaded = sanitizeState(stored, T0);
+  assert.equal(loaded.noExit, false, 'missing flag means the default confirmation flow');
+  assert.equal(loaded.schema, SCHEMA_VERSION);
+
+  const on = sanitizeState({ ...stored, noExit: true }, T0);
+  assert.equal(on.noExit, true, 'an explicit opt-in is preserved');
+
+  const bogus = sanitizeState({ ...stored, noExit: 'yes' }, T0);
+  assert.equal(bogus.noExit, false, 'anything but a boolean true is off');
 });

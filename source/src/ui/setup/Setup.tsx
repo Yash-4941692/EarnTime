@@ -335,7 +335,7 @@ export function Setup() {
               <dt className="text-slate-500">Tasks</dt>
               <dd>{draft.tasks.length}</dd>
               <dt className="text-slate-500">Screen-time access</dt>
-              <dd>{draft.screenTimeAccess ? 'granted (evaluates whole day history)' : 'declined (live counting only)'}</dd>
+              <dd>{draft.screenTimeAccess ? 'granted (evaluates your history)' : 'declined (live counting only)'}</dd>
             </dl>
             <Notice tone="warn">Setup can be completed once. After this, the starting balance and earn rule can only change by the rules in Settings → Protection.</Notice>
           </div>
@@ -389,15 +389,16 @@ function ScreenTimeStep({ granted, onChange }: { granted: boolean; onChange: (gr
 
   return (
     <div className="space-y-4">
-      <h2 className="text-[18px] font-semibold text-slate-50">Screen-time access (whole day)</h2>
+      <h2 className="text-[18px] font-semibold text-slate-50">Screen-time access (your history)</h2>
       <p className="text-[13.5px] leading-relaxed text-slate-400">
-        EarnTime asks for access to your <strong className="text-slate-200">whole screen-time history of the day</strong>.
-        Once setup is complete or when turned on, EarnTime inspects your browsing history since midnight: study sites earn
+        EarnTime asks for access to your <strong className="text-slate-200">whole screen-time history</strong>.
+        Once setup is complete or when turned on, EarnTime inspects your browsing history — today's, and any earlier days you have used the
+        browser while it was not running: study sites earn
         screen time at your earn ratio, while distracting sites spend balance or put you into <strong className="text-rose-400">Debt Mode</strong>.
       </p>
       <ul className="list-disc space-y-1.5 pl-5 text-[13px] leading-relaxed text-slate-400">
         <li>Only visits from this device are imported by default. Change the source in Settings → Analytics. Chrome does not identify individual remote devices.</li>
-        <li>Whole-day history evaluation: gives initial screen time or debt based on the websites you visited today.</li>
+        <li>Whole-history evaluation: gives initial screen time or debt from the websites you visited — today and any earlier days Chrome still holds.</li>
         <li>Hostnames and minutes only. No page addresses, titles or search terms are stored or uploaded.</li>
         <li>Without it, EarnTime counts only live browsing, and past gaps cannot be evaluated.</li>
         <li>You can grant or remove screen-time access at any time in Settings → Analytics.</li>

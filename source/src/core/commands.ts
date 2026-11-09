@@ -60,6 +60,12 @@ export type Command =
   | { type: 'screenTime.set'; granted: boolean }
   | { type: 'screenTime.scope'; scope: 'local' | 'all' }
   /**
+   * Turns "No exit" mode on or off. Turning it on is free (it only adds a restriction). Turning it
+   * off lifts a restriction EarnTime was enforcing, so it costs the unlock price and is refused
+   * while in debt mode — the same protection every other loosening change has.
+   */
+  | { type: 'guard.noExit'; enabled: boolean; confirm?: boolean }
+  /**
    * Answers the question about estimated half-productive time: how much of that stretch was study.
    * Free — telling EarnTime the truth about time it already counted is not a loosening of a rule.
    */
@@ -378,6 +384,25 @@ export function applyCommand(state: EarnState, cmd: Command, now: number): RuleR
         addLedger(state, 'rule', now, 0, `History source: ${cmd.scope === 'local' ? 'this device only' : 'all synced devices'}`);
       }
       return { ok: true };
+    case 'guard.noExit': {
+      const enabled = cmd.enabled === true;
+      if (state.noExit === enabled) return { ok: true, data: { noExit: state.noExit } };
+      if (!enabled) {
+        // Turning it off lifts a restriction EarnTime was already enforcing: it costs the unlock
+        // price (quoted first) and is refused in debt mode, like every other loosening change.
+        const paid = charge(state, now, state.settings.unlockCostMin, 'No exit off', 'Turning off No exit', cmd.confirm);
+        if (!paid.ok) return paid;
+      }
+      state.noExit = enabled;
+      addLedger(
+        state,
+        'rule',
+        now,
+        0,
+        enabled ? 'No exit enabled: Chrome extension settings are blocked outright' : 'No exit disabled',
+      );
+      return { ok: true, data: { noExit: state.noExit } };
+    }
     case 'screenTime.set':
       // The worker asked Chrome before this command was sent, so the answer is already known: this
       // only records it, and the ledger entry makes the decision auditable.
@@ -394,7 +419,7 @@ export function applyCommand(state: EarnState, cmd: Command, now: number): RuleR
       if (cmd.type === 'review.set' && (!Number.isFinite(answer) || answer < 0 || answer > review.totalMs)) {
         return fail(
           'invalid',
-          `Enter between 0 and ${Math.round(review.totalMs / MINUTE_MS)} minutes of study time.`,
+          `Enter a value between 0 and ${(review.totalMs / MINUTE_MS).toFixed(1)} minutes of study time.`,
         );
       }
       const change = applyHalfReview(state, review, answer, now);
@@ -427,6 +452,7 @@ export function auditExport(state: EarnState, now: number): Record<string, unkno
     settings: state.settings,
     rules: state.rules,
     historyScope: state.historyScope,
+    noExit: state.noExit,
     balanceMinutes: +(state.balanceMs / MINUTE_MS).toFixed(2),
     debtMinutes: +(state.debtMs / MINUTE_MS).toFixed(2),
     debtOriginMinutes: +(state.debtOriginMs / MINUTE_MS).toFixed(2),

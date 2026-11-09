@@ -1193,3 +1193,106 @@ test('Chrome storage accepts the array keys used by content scripts in both stor
     assert.deepEqual(await storage.get([]), {});
   }
 });
+
+test('No exit blocks the Chrome extension settings outright, including the continue escape hatch', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 25 });
+
+  // Turning it on is free — it only adds a restriction.
+  const on = await command(b, { type: 'guard.noExit', enabled: true });
+  assert.equal(on.ok, true);
+  assert.equal(b.storedState().noExit, true);
+
+  const created = await b.openTab('chrome://extensions/', { active: true });
+  assert.equal(b.tabUrl(created), blockExtensions('chrome://extensions/'), 'the tab still lands on the block page');
+
+  const refused = await b.sendFromTab(created, { type: 'ui.guardContinue', target: 'chrome://extensions/' });
+  assert.equal(refused.ok, false, 'the escape hatch is refused while No exit is on');
+  assert.match((refused.error?.message as string) ?? '', /No exit/);
+  assert.equal(b.tabUrl(created), blockExtensions('chrome://extensions/'), 'and stays blocked');
+
+  const settingsRoute = await b.openTab('chrome://settings/extensions', { active: true });
+  assert.equal(b.tabUrl(settingsRoute), blockExtensions('chrome://settings/extensions'), 'the other route is blocked too');
+  const refusedSettings = await b.sendFromTab(settingsRoute, { type: 'ui.guardContinue', target: 'chrome://settings/extensions' });
+  assert.equal(refusedSettings.ok, false);
+
+  // Turning it off lifts a restriction EarnTime was enforcing, so it is quoted first…
+  const quoted = await command(b, { type: 'guard.noExit', enabled: false });
+  assert.equal(quoted.ok, false);
+  assert.equal(quoted.error?.code, 'confirm');
+  assert.equal(b.storedState().noExit, true, 'nothing changes without the confirmation');
+  // …and only an accepted quote turns it off, spending the unlock price.
+  const off = await command(b, { type: 'guard.noExit', enabled: false, confirm: true });
+  assert.equal(off.ok, true);
+  assert.equal(b.storedState().noExit, false);
+  assert.equal(balanceMin(b), 15, 'the unlock price (10 min) was spent');
+
+  // With it off again, the confirmation page keeps its continue option.
+  const restored = await b.openTab('chrome://extensions/', { active: true });
+  assert.equal(b.tabUrl(restored), blockExtensions('chrome://extensions/'));
+  const continued = await b.sendFromTab(restored, { type: 'ui.guardContinue', target: 'chrome://extensions/' });
+  assert.equal(continued.ok, true, 'the escape hatch works again');
+});
+
+test('a restart after a day off reconciles from the last checkpoint, not from midnight today', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  const { tabId } = await openedWindowWithTab(b, 'https://www.instagram.com/p/start');
+  await b.runFor(30 * SEC); // a checkpoint is recorded earlier that day
+
+  // The browser is closed for the rest of the day. Chrome history records the evening browsing.
+  b.visits.push(
+    { url: 'https://www.instagram.com/p/evening-1', at: START + 10 * 60 * MIN },
+    { url: 'https://www.instagram.com/p/evening-2', at: START + 12 * 60 * MIN },
+    { url: 'https://www.instagram.com/p/evening-3', at: START + 14 * 60 * MIN },
+  );
+  b.shiftWallClock(16 * 60 * MIN); // now it is past midnight: 2026-10-09 01:00
+  await b.restartBrowser();        // onStartup must look at all the days it has, not just today
+
+  const s = b.storedState();
+  assert.equal(s.balanceMs, 0, 'yesterday evening’s browsing drained the balance');
+  // Two visits are capped at 15 min each (plus the checkpoint's own 30 s) and the last page gets
+  // the two-minute continuation cap: 32 min estimated, minus the 10 min balance.
+  near(s.debtMs / MIN, 22, 1.5, 'yesterday’s usage became debt, not nothing');
+  assert.ok(s.lastReconcile, 'reconciliation summary is stored');
+  assert.ok(s.lastReconcile.from <= START + 10 * 60 * MIN, 'the window starts from the last checkpoint, before midnight');
+  assert.ok(s.lastReconcile.from < new Date(2026, 9, 9).getTime(), 'the window starts before today’s midnight');
+  assert.equal(s.days['2026-10-08'].unprodMs > 0, true, 'the estimated time is billed to the day it came from');
+  void tabId;
+});
+
+test('after a 3-day gap, the estimate question covers only the unobserved time, never the already-counted time', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 30 });
+  const { tabId } = await openedWindowWithTab(b, 'https://www.youtube.com/watch?v=start');
+  await b.sendFromTab(tabId, { type: 'page.choose', url: 'https://www.youtube.com/watch?v=start', mode: 'unproductive' });
+  // 20 minutes of YouTube in Unproductive Mode while EarnTime is running: charged live, counted.
+  await b.runFor(20 * MIN);
+  const observedUnprodMin = b.storedState().days['2026-10-08'].halfUnprodMs / MIN;
+  assert.ok(observedUnprodMin >= 19, `the observed time was charged live (got ${observedUnprodMin})`);
+
+  // EarnTime is off for 3 days. Chrome history records the gap: one visit every 6 hours.
+  b.disableExtension();
+  for (let day = 1; day <= 3; day++) {
+    b.visits.push({ url: `https://www.youtube.com/watch?v=gap-d${day}-a`, at: START + day * 24 * 60 * MIN + 2 * 60 * MIN });
+    b.visits.push({ url: `https://www.youtube.com/watch?v=gap-d${day}-b`, at: START + day * 24 * 60 * MIN + 8 * 60 * MIN });
+    b.visits.push({ url: `https://www.youtube.com/watch?v=gap-d${day}-c`, at: START + day * 24 * 60 * MIN + 14 * 60 * MIN });
+    b.visits.push({ url: `https://www.youtube.com/watch?v=gap-d${day}-d`, at: START + day * 24 * 60 * MIN + 20 * 60 * MIN });
+  }
+  b.shiftWallClock(3 * 24 * 60 * MIN);
+  await b.enableExtension();
+  await b.runFor(2 * MIN);
+
+  const s = b.storedState();
+  assert.equal(s.halfReviews.length, 1, 'one question, aggregated per site for the whole gap');
+  const review = s.halfReviews[0];
+  assert.equal(review.host, 'www.youtube.com');
+  // The estimate comes only from the 12 gap visits (15-min cap each, never the observed hour).
+  assert.ok(review.totalMs <= 12 * 15 * MIN, `the estimate is capped per visit (got ${review.totalMs / MIN} min)`);
+  assert.ok(review.totalMs > observedUnprodMin * MIN, 'the estimate carries the gap, which dwarfs the observed stretch');
+  // The observed time is still on its own day, not inside the question.
+  assert.ok(s.days['2026-10-08'].halfUnprodMs >= 20 * MIN, 'the observed time stays charged to the day it happened');
+  assert.ok(s.days['2026-10-09'], 'gap days were billed to the days they came from');
+  assert.ok(s.days['2026-10-10'], 'gap days were billed to the days they came from');
+  assert.ok(s.days['2026-10-11'], 'gap days were billed to the days they came from');
+});

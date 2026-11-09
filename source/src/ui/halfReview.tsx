@@ -34,13 +34,16 @@ function lastModeHint(review: HalfReview): string {
 }
 
 function ReviewRow({ state, review, onError }: { state: EarnState; review: HalfReview; onError: (message: string) => void }) {
-  const totalMin = Math.max(1, Math.round(review.totalMs / MINUTE_MS));
-  const [minutes, setMinutes] = useState<string>(String(Math.round(review.productiveMs / MINUTE_MS)));
+  // The input counts whole minutes, rounded *up*, so the largest value it accepts always means
+  // "all of it". The estimate itself can be a fraction of a minute, so the answer sent to the
+  // worker is clamped to the exact estimated milliseconds — the full time is always enterable.
+  const totalMin = Math.max(1, Math.ceil(review.totalMs / MINUTE_MS));
+  const [minutes, setMinutes] = useState<string>(String(Math.min(totalMin, Math.round(review.productiveMs / MINUTE_MS))));
   const [busy, setBusy] = useState(false);
   const parsed = Number(minutes);
   const valid = Number.isFinite(parsed) && parsed >= 0 && parsed <= totalMin;
-  const plannedStudyMin = valid ? Math.round(parsed) : Math.round(review.productiveMs / MINUTE_MS);
-  const plannedUnproductiveMin = Math.max(0, totalMin - plannedStudyMin);
+  const plannedMs = Math.min(review.totalMs, Math.max(0, Math.round((valid ? parsed : review.productiveMs / MINUTE_MS) * MINUTE_MS)));
+  const plannedUnproductiveMs = Math.max(0, review.totalMs - plannedMs);
 
   const send = async (command: Command) => {
     setBusy(true);
@@ -61,7 +64,7 @@ function ReviewRow({ state, review, onError }: { state: EarnState; review: HalfR
         EarnTime was not running. Half of this time ({formatMinutes(review.productiveMs)}) is already counted as study and{' '}
         {formatMinutes(review.chargedMs)} was charged as unproductive. {lastModeHint(review)}
       </p>
-      <Field label="How many of those minutes were study?" hint="The rest is charged as unproductive. This is free — it only corrects the estimate.">
+      <Field label="How many of those minutes were study?" hint="The rest is charged as unproductive. Enter the largest value to mark all of it as study. This is free — it only corrects the estimate.">
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -70,21 +73,21 @@ function ReviewRow({ state, review, onError }: { state: EarnState; review: HalfR
             step={1}
             value={minutes}
             onChange={(event) => setMinutes(event.target.value)}
-            aria-label={`Study minutes out of ${totalMin} for ${review.entry}`}
+            aria-label={`Study minutes out of ${formatDuration(review.totalMs)} for ${review.entry}`}
             className="field w-24"
           />
-          <span className="text-[12.5px] text-slate-400">of {totalMin} min study</span>
+          <span className="text-[12.5px] text-slate-400">of {totalMin} min ({formatDuration(review.totalMs)}) study</span>
         </div>
       </Field>
       <p className="text-[12px] tabular-nums text-slate-400">
-        That earns {formatDuration(creditFor(state, plannedStudyMin * MINUTE_MS))} of screen time ({state.settings.earnFromMin}:
-        {state.settings.earnToMin}) and charges {plannedUnproductiveMin} min.
+        That earns {formatDuration(creditFor(state, plannedMs))} of screen time ({state.settings.earnFromMin}:{state.settings.earnToMin}) and
+        charges {formatDuration(plannedUnproductiveMs)}.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button
           variant="primary"
           disabled={busy || !valid}
-          onClick={() => void send({ type: 'review.set', id: review.id, productiveMs: plannedStudyMin * MINUTE_MS })}
+          onClick={() => void send({ type: 'review.set', id: review.id, productiveMs: plannedMs })}
         >
           Save answer
         </Button>

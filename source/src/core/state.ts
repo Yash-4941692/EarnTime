@@ -49,6 +49,8 @@ export function createInitialState(now: number): EarnState {
     // Screen-time access is asked for during setup, so a state that has never been set up has none.
     historyGranted: false,
     historyScope: 'local',
+    // Off by default: the confirmation page stays the default experience.
+    noExit: false,
     createdAt: now,
     settings: {
       earnFromMin: DEFAULT_EARN_FROM_MIN,
@@ -355,6 +357,7 @@ export function sanitizeState(raw: unknown, now: number): EarnState {
     historyGranted:
       typeof r.historyGranted === 'boolean' ? r.historyGranted : storedSchema < HISTORY_FLAG_SCHEMA,
     historyScope: r.historyScope === 'all' ? 'all' : 'local',
+    noExit: r.noExit === true,
     createdAt: finiteNumber(r.createdAt, now),
     settings: sanitizeSettings(r.settings),
     rules,

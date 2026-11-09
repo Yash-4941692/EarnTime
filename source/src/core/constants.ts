@@ -18,8 +18,10 @@ export const DAY_MS = 24 * HOUR_MS;
  * 9 added `settings.guardedHosts`: a personal pause list edited in Settings.
  * 10 removes that personal list again, so the fixed policy is the only input and the extension has
  * no user-visible surface that mentions it before a matching visit.
+ * 11 adds `noExit`: the opt-in that blocks Chrome's extension-management pages outright
+ * (`chrome://extensions`, `chrome://settings/extensions`) instead of asking first. Off by default.
  */
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 /** Storage key holding the entire persisted state (one key = atomic writes). */
 export const STATE_KEY = 'state';
@@ -39,8 +41,13 @@ export const RECONCILE_GAP_MS = 120_000;
 export const CONTINUATION_CAP_MS = 120_000;
 /** A single history visit is assumed to last at most this long. */
 export const VISIT_CAP_MS = 15 * MINUTE_MS;
-/** Reconciliation never looks further back than this. */
-export const MAX_RECONCILE_WINDOW_MS = 7 * DAY_MS;
+/**
+ * Reconciliation never looks further back than this. Chrome retains roughly three months of
+ * history by default, and a user may leave EarnTime disabled for days at a stretch — so the
+ * window covers everything Chrome is likely to still hold rather than just the last week.
+ * Visits are capped per visit and the whole reconciliation is an estimate either way.
+ */
+export const MAX_RECONCILE_WINDOW_MS = 90 * DAY_MS;
 /** Upper bound on URLs whose visits are inspected during one reconciliation. */
 export const MAX_HISTORY_URLS = 1000;
 

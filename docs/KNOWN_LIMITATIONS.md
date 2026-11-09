@@ -8,9 +8,11 @@ EarnTime is a self-discipline tool. It is not a security boundary, and nothing i
 
 **Confirmation interstitial.** A tab that opens `chrome://extensions` or `chrome://settings/extensions` is redirected to an EarnTime confirmation page. The user can go back, open EarnTime's settings, or explicitly continue to the requested Chrome page once. This covers typed addresses, links and the extensions menu, because they all end in a tab navigation.
 
+**No exit (opt-in).** In *Settings → Protection → No exit* the user can turn that confirmation into a hard block: opening `chrome://extensions` or `chrome://settings/extensions` then lands on a block page with no continue choice, and the worker itself refuses the `ui.guardContinue` escape hatch, so a crafted message does not reopen it either. Turning it on is free; turning it off lifts a restriction EarnTime was enforcing, so it costs the unlock price (default 10 min, quoted before it is charged) and is refused while in debt mode. Off by default — everyone who does not turn it on keeps the confirmation page unchanged. This removes EarnTime's own escape hatch only: Chrome's menus, its flags, safe mode and the operating system remain outside EarnTime's reach, and **Remove from Chrome** still works.
+
 **API used.** `chrome.tabs` events (`onCreated`, `onUpdated`) with `chrome.tabs.update`. No other technique is used. No hidden page, no injected script into `chrome://` pages, no workaround of Chrome's security model.
 
-**Tested.** In the simulated browser only (`test/sim/flows.test.ts`): a new tab opened at `chrome://extensions` and a typed `chrome://extensions/?id=…` navigation both show the confirmation page; an invalid target is refused; an explicit continue allows only the requested navigation; `chrome://settings/extensions` also shows the prompt; `chrome://settings/privacy` is not affected. The interaction is recorded in the ledger. **Not tested in a real Chrome instance** (see `docs/TESTING.md`): the redirect timing, the flash, the Continue action, the extensions-menu route, and tabs restored at startup. Expect a possible brief flash of the extensions page before the redirect runs.
+**Tested.** In the simulated browser only (`test/sim/flows.test.ts`): a new tab opened at `chrome://extensions` and a typed `chrome://extensions/?id=…` navigation both show the confirmation page; an invalid target is refused; an explicit continue allows only the requested navigation; `chrome://settings/extensions` also shows the prompt; `chrome://settings/privacy` is not affected. With No exit on: the block page offers no continue choice and the continue message is refused at the worker, and the tab stays blocked; turning it off is quoted first and only an accepted quote turns it off. The interaction is recorded in the ledger. **Not tested in a real Chrome instance** (see `docs/TESTING.md`): the redirect timing, the flash, the Continue action, the extensions-menu route, and tabs restored at startup. Expect a possible brief flash of the extensions page before the redirect runs.
 
 **Bypasses that remain** (none of these were tested in a real browser):
 
@@ -58,7 +60,7 @@ When the worker was not running (extension disabled, browser closed, computer as
 - The question is EarnTime's own prompt, not a Chrome confirmation: it can be ignored, and ignoring it keeps the default split.
 - If the browser was closed, only the last 30 seconds before closing are charged.
 - Incognito visits are not in history, so they are not counted during an interruption.
-- Reconciliation looks back at most **7 days**.
+- Reconciliation looks back at most **90 days** (Chrome's default history retention), and the window starts from the last checkpoint — across midnights and across days. Leaving EarnTime disabled for days is billed from the history of those days when it starts again, subject to the same per-visit caps and estimates as any interruption. The one-time setup path never bills time from before EarnTime was set up.
 - After a sleep without a screen lock, returning to the same page can charge up to 15 minutes. If the screen locks, counting stops at lock time.
 
 The audit export (Settings → Protection) records each reconciliation's window, charged minutes, credited minutes and debt added, and each estimate question with the minutes credited and charged, and the answer once there is one.

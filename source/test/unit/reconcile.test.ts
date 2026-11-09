@@ -218,9 +218,9 @@ test('a browser restart inside the gap cuts the gap at the last checkpoint', () 
 test('the reconciliation window never reaches further back than the maximum', () => {
   const state = freshState();
   const input: ReconcileInput = {
-    from: T0 - 60 * 24 * 3600 * 1000,
+    from: T0 - 400 * 24 * 3600 * 1000,
     to: T0,
-    visits: [{ at: T0 - 30 * 24 * 3600 * 1000, host: 'instagram.com' }],
+    visits: [{ at: T0 - 120 * 24 * 3600 * 1000, host: 'instagram.com' }],
     prevRole: null,
     prevHost: null,
     current: { counts: false, host: null },
@@ -228,7 +228,7 @@ test('the reconciliation window never reaches further back than the maximum', ()
   };
   const plan = planReconcile(state, input);
   assert.equal(plan.windowFrom, T0 - MAX_RECONCILE_WINDOW_MS);
-  assert.equal(plan.visitCount, 0);
+  assert.equal(plan.visitCount, 0, 'visits older than the 90-day window are dropped');
   assert.equal(plan.segments.length, 0);
 });
 
