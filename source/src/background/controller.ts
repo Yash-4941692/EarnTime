@@ -261,13 +261,17 @@ export function createController(opts: ControllerOptions): Controller {
   }
 
   /**
-   * Reconciles the whole day's browsing history from midnight up to `now` (or from `sinceMs` if provided).
-   * Used on setup completion, when screen-time access is granted, or when the extension is turned on / starts up.
+   * Reconciles browsing history from `sinceMs` up to `now`, or from local midnight today when no
+   * start point is provided (the one-time setup/grant paths, which must never bill time from before
+   * EarnTime was set up). A provided start point is used even when it falls on an earlier day: the
+   * extension may have been disabled, the browser closed or the machine asleep for days, and Chrome's
+   * history holds those days too — so re-enabling EarnTime after a day off accounts for the whole
+   * gap instead of silently treating midnight today as the start.
    */
   async function reconcileDayHistory(state: EarnState, now: number, sinceMs?: number | null): Promise<ReconcileSummary | null> {
     if (!state.setupDone || !state.historyGranted) return null;
-    const dayStart = startOfLocalDay(now);
-    const from = typeof sinceMs === 'number' && sinceMs >= dayStart ? sinceMs : dayStart;
+    const requested = typeof sinceMs === 'number' && Number.isFinite(sinceMs) ? sinceMs : startOfLocalDay(now);
+    const from = Math.max(0, Math.min(requested, now));
     if (from >= now) return null;
 
     const obs = await observe(state, now, uiOpenAt !== null && now - uiOpenAt <= UI_OPEN_MS);
@@ -693,6 +697,14 @@ export function createController(opts: ControllerOptions): Controller {
           return fail('invalid', 'That Chrome settings page is not available from this prompt.');
         }
         return job('guard-continue', false, async (state, now): Promise<Reply> => {
+          if (state.noExit) {
+            // No exit mode: the confirmation page exists only for those who have not turned it on,
+            // so this escape hatch refuses even when the request is otherwise valid.
+            return fail(
+              'unavailable',
+              'No exit is on, so Chrome’s extension settings are blocked. Turning it off is in Settings → Protection and costs the unlock price.',
+            );
+          }
           approvedGuardNavigations.set(tabId, { url: canonicalGuardUrl(message.target), expiresAt: now + 15_000 });
           try {
             await api.tabs.update(tabId, message.target);

@@ -216,6 +216,13 @@ export interface EarnState {
   historyGranted: boolean;
   /** Chrome exposes local vs synced visits, not individual remote device identities. */
   historyScope: 'local' | 'all';
+  /**
+   * Opt-in "No exit" mode. When on, opening Chrome's extension-management pages
+   * (`chrome://extensions`, `chrome://settings/extensions`) is blocked outright instead of showing
+   * the confirmation page, and the `ui.guardContinue` escape hatch is refused. Off by default; the
+   * confirmation behaviour is unchanged for everyone who does not turn it on.
+   */
+  noExit: boolean;
   createdAt: number;
   settings: Settings;
   rules: Rules;

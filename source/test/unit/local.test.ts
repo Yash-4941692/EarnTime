@@ -28,6 +28,7 @@ function stored(overrides: Partial<EarnState> = {}): EarnState {
     setupDone: true,
     historyGranted: true,
     historyScope: 'local',
+    noExit: false,
     createdAt: T0,
     settings: { earnFromMin: 60, earnToMin: 5, unlockCostMin: 10, youtubeKeywords: ['Study', 'JEE'] },
     rules: { productive: ['khanacademy.org'], half: ['youtube.com'], unproductive: ['instagram.com'] },

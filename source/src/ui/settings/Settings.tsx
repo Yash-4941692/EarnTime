@@ -479,7 +479,7 @@ function AnalyticsSection({ state }: { state: EarnState }) {
             <h2 className="text-[15px] font-semibold text-slate-50">Screen-time access</h2>
             <p className="mt-1 max-w-prose text-[12.5px] leading-snug text-slate-400">
               Chrome's optional <span className="font-mono text-[11.5px] text-slate-300">history</span> permission. With it, EarnTime evaluates
-              the whole screen-time history of the day — reconstructing gaps and prior browsing since midnight so study sites earn screen time
+              your browsing history — reconstructing gaps and catching everything before it was last running, across days, so study sites earn screen time
               and distracting sites spend balance or put you into debt mode. Without it, only time EarnTime observed live is counted.
             </p>
           </div>
@@ -617,13 +617,23 @@ function AnalyticsSection({ state }: { state: EarnState }) {
   );
 }
 
-function ProtectionSection({ state }: { state: EarnState }) {
+function ProtectionSection({ state, act }: { state: EarnState; act: Act }) {
   const [incognito, setIncognito] = useState<boolean | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [noExitBusy, setNoExitBusy] = useState(false);
   useEffect(() => {
     void incognitoAllowed().then(setIncognito);
   }, []);
+
+  const toggleNoExit = async (enabled: boolean) => {
+    setNoExitBusy(true);
+    await act(
+      { type: 'guard.noExit', enabled },
+      enabled ? 'No exit is on: Chrome extension settings are blocked.' : 'No exit is off.',
+    );
+    setNoExitBusy(false);
+  };
 
   const download = async () => {
     setExporting(true);
@@ -677,6 +687,7 @@ function ProtectionSection({ state }: { state: EarnState }) {
           <p>
             <strong className="text-slate-100">Confirmation first:</strong> opening <span className="font-mono text-[12px]">chrome://extensions</span> or{' '}
             <span className="font-mono text-[12px]">chrome://settings/extensions</span> in a tab shows a confirmation page. Choose Go back, open EarnTime's settings, or continue to Chrome settings once.
+            With <strong className="text-slate-100">No exit</strong> (below), there is no continue choice at all.
           </p>
           <p>
             <strong className="text-slate-100">API used:</strong> <span className="font-mono text-[12px]">chrome.tabs</span> events (onCreated, onUpdated) with{' '}
@@ -697,7 +708,49 @@ function ProtectionSection({ state }: { state: EarnState }) {
         </div>
       </Card>
 
-      <Card className="space-y-2">
+      <Card className="space-y-3 border-rose-500/30">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold text-rose-100">No exit</h2>
+            <p className="mt-1 max-w-prose text-[12.5px] leading-snug text-slate-400">
+              When on, opening <span className="font-mono text-[11.5px] text-slate-300">chrome://extensions</span> or{' '}
+              <span className="font-mono text-[11.5px] text-slate-300">chrome://settings/extensions</span> is blocked outright — no confirmation
+              page, no continue button. Links to those pages and the extensions menu end in a tab navigation, so they land on the same block.
+              There is no way out from inside EarnTime while it is on.
+            </p>
+            <p className="mt-2 max-w-prose text-[12.5px] leading-snug text-slate-400">
+              Turning it on is free. Turning it off lifts a restriction EarnTime was already enforcing, so it costs the unlock price
+              ({state.settings.unlockCostMin} min) and is refused while you are in debt mode. The default is off: everyone else keeps the
+              confirmation page.
+            </p>
+            <p className="mt-2 text-[11.5px] leading-snug text-slate-500">
+              Chrome's menus, its flags, safe mode and your operating system stay outside EarnTime's reach — see the limitation above. No exit
+              removes EarnTime's own escape hatch; it does not stop Chrome itself.
+            </p>
+          </div>
+          <div className="shrink-0">
+            {state.noExit ? (
+              <Button variant="danger" onClick={() => void toggleNoExit(false)} disabled={noExitBusy}>
+                {noExitBusy ? 'Working…' : 'Turn off No exit…'}
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={() => void toggleNoExit(true)} disabled={noExitBusy}>
+                {noExitBusy ? 'Working…' : 'Turn on No exit'}
+              </Button>
+            )}
+          </div>
+        </div>
+        <p className="text-[12.5px] text-slate-400">
+          Current status:{' '}
+          {state.noExit ? (
+            <span className="text-rose-300">on — extension settings are blocked</span>
+          ) : (
+            <span className="text-slate-300">off — the confirmation page shows first</span>
+          )}
+        </p>
+      </Card>
+
+      <Card className="space-y-3">
         <h2 className="text-[15px] font-semibold text-slate-50">Status</h2>
         <div className="text-[13px] text-slate-300">
           Incognito access:{' '}
@@ -770,7 +823,7 @@ export function Settings() {
       case 'analytics':
         return <AnalyticsSection state={state} />;
       case 'protection':
-        return <ProtectionSection state={state} />;
+        return <ProtectionSection state={state} act={act} />;
     }
   }, [state, section, act]);
 

@@ -86,10 +86,11 @@ function ExhaustedBlock({ state }: { state: EarnState }) {
   );
 }
 
-function ExtensionsBlock({ target }: { target: string | null }) {
+function ExtensionsBlock({ target, noExit }: { target: string | null; noExit: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const canContinue = target !== null && isGuardedUrl(target);
+  // In No exit mode the confirmation is not offered at all — this page is the whole answer.
+  const canContinue = !noExit && target !== null && isGuardedUrl(target);
 
   const continueToChrome = async () => {
     if (!target || !canContinue) return;
@@ -99,6 +100,22 @@ function ExtensionsBlock({ target }: { target: string | null }) {
     setBusy(false);
     if (!result.ok) setError(result.message ?? 'Chrome could not open its extension settings.');
   };
+
+  if (noExit) {
+    return (
+      <>
+        <h1 className="text-[24px] font-semibold text-slate-50">No exit is on</h1>
+        <p className="mt-2 text-[14px] leading-relaxed text-slate-300">
+          Opening Chrome's extension settings is blocked. This was turned on in EarnTime's settings — to keep yourself honest, not to trap you.
+          If you genuinely need it, you can turn No exit off in <strong className="text-slate-100">Settings → Protection</strong>; turning it off costs
+          the unlock price and is refused while you are in debt mode.
+        </p>
+        <p className="mt-3 rounded-xl bg-amber-950/30 p-3 text-[12.5px] leading-snug text-amber-100/90">
+          <InlineCode text={CHROME_LIMITATION_SENTENCE} />
+        </p>
+      </>
+    );
+  }
 
   return (
     <>
@@ -183,7 +200,11 @@ export function Block({ reason, target }: { reason: string | null; target: strin
           EarnTime
         </div>
         {extensions ? (
-          <ExtensionsBlock target={target} />
+          state === null ? (
+            <p className="text-slate-500">Loading…</p>
+          ) : (
+            <ExtensionsBlock target={target} noExit={state.noExit} />
+          )
         ) : motivation ? (
           <MotivationBlock />
         ) : state === null ? (

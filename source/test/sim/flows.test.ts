@@ -1193,3 +1193,70 @@ test('Chrome storage accepts the array keys used by content scripts in both stor
     assert.deepEqual(await storage.get([]), {});
   }
 });
+
+test('No exit blocks the Chrome extension settings outright, including the continue escape hatch', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 25 });
+
+  // Turning it on is free — it only adds a restriction.
+  const on = await command(b, { type: 'guard.noExit', enabled: true });
+  assert.equal(on.ok, true);
+  assert.equal(b.storedState().noExit, true);
+
+  const created = await b.openTab('chrome://extensions/', { active: true });
+  assert.equal(b.tabUrl(created), blockExtensions('chrome://extensions/'), 'the tab still lands on the block page');
+
+  const refused = await b.sendFromTab(created, { type: 'ui.guardContinue', target: 'chrome://extensions/' });
+  assert.equal(refused.ok, false, 'the escape hatch is refused while No exit is on');
+  assert.match((refused.error?.message as string) ?? '', /No exit/);
+  assert.equal(b.tabUrl(created), blockExtensions('chrome://extensions/'), 'and stays blocked');
+
+  const settingsRoute = await b.openTab('chrome://settings/extensions', { active: true });
+  assert.equal(b.tabUrl(settingsRoute), blockExtensions('chrome://settings/extensions'), 'the other route is blocked too');
+  const refusedSettings = await b.sendFromTab(settingsRoute, { type: 'ui.guardContinue', target: 'chrome://settings/extensions' });
+  assert.equal(refusedSettings.ok, false);
+
+  // Turning it off lifts a restriction EarnTime was enforcing, so it is quoted first…
+  const quoted = await command(b, { type: 'guard.noExit', enabled: false });
+  assert.equal(quoted.ok, false);
+  assert.equal(quoted.error?.code, 'confirm');
+  assert.equal(b.storedState().noExit, true, 'nothing changes without the confirmation');
+  // …and only an accepted quote turns it off, spending the unlock price.
+  const off = await command(b, { type: 'guard.noExit', enabled: false, confirm: true });
+  assert.equal(off.ok, true);
+  assert.equal(b.storedState().noExit, false);
+  assert.equal(balanceMin(b), 15, 'the unlock price (10 min) was spent');
+
+  // With it off again, the confirmation page keeps its continue option.
+  const restored = await b.openTab('chrome://extensions/', { active: true });
+  assert.equal(b.tabUrl(restored), blockExtensions('chrome://extensions/'));
+  const continued = await b.sendFromTab(restored, { type: 'ui.guardContinue', target: 'chrome://extensions/' });
+  assert.equal(continued.ok, true, 'the escape hatch works again');
+});
+
+test('a restart after a day off reconciles from the last checkpoint, not from midnight today', async () => {
+  const b = newBrowser();
+  await installAndSetup(b, { initialBalanceMin: 10 });
+  const { tabId } = await openedWindowWithTab(b, 'https://www.instagram.com/p/start');
+  await b.runFor(30 * SEC); // a checkpoint is recorded earlier that day
+
+  // The browser is closed for the rest of the day. Chrome history records the evening browsing.
+  b.visits.push(
+    { url: 'https://www.instagram.com/p/evening-1', at: START + 10 * 60 * MIN },
+    { url: 'https://www.instagram.com/p/evening-2', at: START + 12 * 60 * MIN },
+    { url: 'https://www.instagram.com/p/evening-3', at: START + 14 * 60 * MIN },
+  );
+  b.shiftWallClock(16 * 60 * MIN); // now it is past midnight: 2026-10-09 01:00
+  await b.restartBrowser();        // onStartup must look at all the days it has, not just today
+
+  const s = b.storedState();
+  assert.equal(s.balanceMs, 0, 'yesterday evening’s browsing drained the balance');
+  // Two visits are capped at 15 min each (plus the checkpoint's own 30 s) and the last page gets
+  // the two-minute continuation cap: 32 min estimated, minus the 10 min balance.
+  near(s.debtMs / MIN, 22, 1.5, 'yesterday’s usage became debt, not nothing');
+  assert.ok(s.lastReconcile, 'reconciliation summary is stored');
+  assert.ok(s.lastReconcile.from <= START + 10 * 60 * MIN, 'the window starts from the last checkpoint, before midnight');
+  assert.ok(s.lastReconcile.from < new Date(2026, 9, 9).getTime(), 'the window starts before today’s midnight');
+  assert.equal(s.days['2026-10-08'].unprodMs > 0, true, 'the estimated time is billed to the day it came from');
+  void tabId;
+});

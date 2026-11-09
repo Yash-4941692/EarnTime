@@ -161,6 +161,8 @@ If the balance cannot pay, the change is refused outright and nothing changes. C
 
 Opening `chrome://extensions` or `chrome://settings/extensions` in a tab first shows a confirmation page. Choose **Go back**, open EarnTime's settings, or explicitly continue to Chrome's settings once. Chrome may still prevent a standard extension from fully controlling its privileged pages.
 
+**No exit (optional).** If you want the confirmation gone entirely, turn on *Settings → Protection → No exit*. Opening `chrome://extensions` or `chrome://settings/extensions` then lands on a block page with no way to continue — typed addresses, links and the extensions menu all end in a tab navigation, so they are all stopped. The worker refuses the continue request too, so there is no hidden way through. Turning it on is free; turning it off costs the unlock price (quoted first, default 10 min) and is refused while you are in debt mode. The default is off for everyone who does not turn it on. No exit removes EarnTime's own escape hatch only — Chrome, its flags and your operating system stay outside its reach, and *Remove from Chrome* still works.
+
 > Chrome prevents extensions from completely controlling privileged `chrome://` pages. Therefore this protection cannot be made absolute using a standard Chrome extension alone.
 
 See `docs/KNOWN_LIMITATIONS.md` section 1 for the API this uses, what has been tested, and which bypasses remain.

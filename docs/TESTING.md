@@ -2,7 +2,7 @@
 
 **Status: source logic, simulated flows, jsdom and Playwright/Chromium fixture tests verified on 2026-11-03; build passed.** The manual checklist with an installed Chrome extension and live YouTube has not been run.
 
-> `cd source && npm test` passes **317 tests**: 173 unit + 82 jsdom DOM + 62 simulated-browser flow tests, plus the strict TypeScript check. The separate Playwright/Chromium suite passes **16 / 16 tests**. These browser fixtures run the built pages, content script and real controller, not a real Chrome extension installation.
+> `cd source && npm test` passes **321 tests**: 175 unit + 82 jsdom DOM + 64 simulated-browser flow tests, plus the strict TypeScript check. The separate Playwright/Chromium suite passes **16 / 16 tests**. These browser fixtures run the built pages, content script and real controller, not a real Chrome extension installation.
 
 ## Environment
 
@@ -17,10 +17,10 @@
 | --- | --- | --- |
 | Type check (strict, `noUnusedLocals`) | `npm run typecheck` | **pass** |
 | Build (root artifacts) | `npm run build` | **pass** |
-| Unit tests | `npm run test:unit` | **173 / 173 pass** |
+| Unit tests | `npm run test:unit` | **175 / 175 pass** |
 | DOM tests (jsdom: load-time gate, pause page, page lifecycle, YouTube filter, Shorts trust) | `npm run test:dom` | **82 / 82 pass** |
-| Flow tests (simulated browser) | `npm run test:sim` | **62 / 62 pass** |
-| Complete source suite | `npm test` | **317 / 317 pass**, including type check |
+| Flow tests (simulated browser) | `npm run test:sim` | **64 / 64 pass** |
+| Complete source suite | `npm test` | **321 / 321 pass**, including type check |
 | Browser tests (Playwright + Chromium) | `npm run test:browser` | **16 / 16 pass** |
 | Real Chrome extension end-to-end | manual checklist below | **not run** |
 
@@ -171,7 +171,7 @@ Record the result of each step, Chrome version and date before release.
 - Task creation now passes with 1 minute, zero balance and active debt. It neither charges nor credits the wallet or writes an unlock/reward ledger entry. Completion pays once; un-ticking and re-ticking do not pay again, and rewards repay debt first.
 - Existing-task reward increases and one-off-to-recurring changes retain their unlock cost and confirmation. Invalid task names/rewards are still rejected. Other protection costs and their insufficient-balance checks are unchanged.
 - The Settings browser test starts with exactly 1 minute, adds a 5-minute daily task without a dialog, verifies the unchanged balance and incomplete/unpaid state, then completes it and verifies a final balance of 6 minutes with no duplicate reward.
-- Verified after restoring locked dependencies with `npm ci`: production build, strict TypeScript check, **317 source tests** (173 unit, 82 DOM, 62 simulated-browser) and **16 Playwright/Chromium fixture tests**. No installed-extension or live-YouTube test was performed.
+- Verified after restoring locked dependencies with `npm ci`: production build, strict TypeScript check, **321 source tests** (175 unit, 82 DOM, 64 simulated-browser) and **16 Playwright/Chromium fixture tests**. No installed-extension or live-YouTube test was performed.
 
 ## Device-source and same-day debt regression checks
 

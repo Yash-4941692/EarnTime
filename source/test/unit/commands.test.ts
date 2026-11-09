@@ -427,3 +427,52 @@ test('answering an estimate is free and corrects the books in both directions', 
   assert.ok(Array.isArray(exported.halfReviews) && exported.halfReviews.length === 1, 'the audit export lists the question');
   assert.equal((exported.halfReviews as Array<{ answeredAsStudyMinutes: number | null }>)[0].answeredAsStudyMinutes, 10);
 });
+
+test('No exit: enabling is free; disabling is protected like every loosening change', () => {
+  const state = freshState(true);
+  state.balanceMs = 30 * MIN;
+  state.settings.unlockCostMin = 10;
+
+  const on = applyCommand(state, { type: 'guard.noExit', enabled: true }, T0);
+  assert.equal(on.ok, true);
+  assert.equal(state.noExit, true);
+  assert.equal(state.balanceMs, 30 * MIN, 'enabling is free');
+  assert.ok(state.ledger.some((entry) => entry.note.includes('No exit enabled')));
+
+  // Quoted first: nothing changes on the unconfirmed call.
+  const quoted = applyCommand(state, { type: 'guard.noExit', enabled: false }, T0);
+  assert.equal(quoted.ok, false);
+  assert.equal(quoted.ok === false && quoted.code, 'confirm');
+  assert.equal(state.noExit, true, 'the quote changed nothing');
+  assert.equal(state.balanceMs, 30 * MIN, 'and charged nothing');
+
+  // Refused in debt mode even with confirmation.
+  const inDebt = freshState(true);
+  inDebt.noExit = true;
+  inDebt.debtMs = 5 * MIN;
+  const refused = applyCommand(inDebt, { type: 'guard.noExit', enabled: false, confirm: true }, T0);
+  assert.equal(refused.ok === false && refused.code, 'debt');
+  assert.equal(inDebt.noExit, true, 'No exit cannot be dropped while in debt');
+
+  // Enabled while in debt mode is allowed: it only adds a restriction.
+  const debtOn = freshState(true);
+  debtOn.debtMs = 5 * MIN;
+  const allowed = applyCommand(debtOn, { type: 'guard.noExit', enabled: true }, T0);
+  assert.equal(allowed.ok, true);
+  assert.equal(debtOn.noExit, true);
+
+  // Confirmed loosening pays the unlock price.
+  const off = applyCommand(state, { type: 'guard.noExit', enabled: false, confirm: true }, T0);
+  assert.equal(off.ok, true);
+  assert.equal(state.noExit, false);
+  assert.equal(state.balanceMs, 20 * MIN);
+  assert.ok(state.ledger.some((entry) => entry.note.includes('No exit disabled')));
+
+  // A zero unlock price makes it free.
+  const free = freshState(true);
+  free.settings.unlockCostMin = 0;
+  free.noExit = true;
+  const freeOff = applyCommand(free, { type: 'guard.noExit', enabled: false }, T0);
+  assert.equal(freeOff.ok, true);
+  assert.equal(free.noExit, false);
+});
